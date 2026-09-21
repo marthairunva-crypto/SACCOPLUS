@@ -129,17 +129,116 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     );
   }
 
-  // Mobile: Stacked layout
+  // Mobile: Stacked layout with image background
   Widget _buildMobileLayout() {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          SizedBox(
-            height: 300,
-            child: _buildImageSection(),
+    return Container(
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/login.JPG'),
+          fit: BoxFit.cover,
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              ModernTheme.primaryBlue.withOpacity(0.85),
+              ModernTheme.primaryBlue.withOpacity(0.75),
+            ],
           ),
-          _buildFormSection(),
-        ],
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Logo and branding at top
+                Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    children: [
+                      // Logo
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 30,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Image.asset(
+                          'assets/images/logo2.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      const Text(
+                        'SACCOPLUS',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black38,
+                              blurRadius: 12,
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 8),
+                      
+                      const Text(
+                        'Your trusted SACCO management system',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black38,
+                              blurRadius: 12,
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Login form in white card
+                Container(
+                  margin: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 30,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(24),
+                  child: _buildFormFields(),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -260,10 +359,17 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: _buildFormFields(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormFields() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
               // Heading
               Text(
                 _useAccountNumber ? 'Enter your account number to log in' : 'Enter your phone number to log in',
@@ -545,9 +651,6 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
     );
   }
 }
