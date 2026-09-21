@@ -1,0 +1,63 @@
+name: saccoplus_pro
+description: "SACCOPLUS Pro — Modern SACCO & Cooperative Fintech Platform"
+publish_to: 'none'
+
+version: 2.0.0+1
+
+environment:
+  sdk: '>=3.3.2 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Firebase — pinned to avoid Firestore Web SDK 11.9.x internal assertion bug
+  firebase_core: 3.6.0
+  firebase_auth: 5.3.1
+  cloud_firestore: 5.4.4
+  firebase_storage: 12.3.2
+
+  # State management
+  provider: ^6.1.2
+
+  # UI & utilities
+  google_fonts: ^6.2.1
+  fl_chart: ^0.69.0
+  intl: 0.20.2
+  image_picker: ^1.1.2
+  http: ^1.2.2
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+  lottie: ^3.1.2
+  flutter_animate: ^4.5.0
+  shared_preferences: ^2.3.2
+  uuid: ^4.5.1
+  url_launcher: ^6.3.0
+  device_preview: ^1.2.0
+  qr_flutter: ^4.1.0
+  pdf: ^3.11.1
+  printing: ^5.13.1
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/lottie/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo2.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#0D2B6B"
+  adaptive_icon_foreground: "assets/images/logo2.png"
+  web:
+    generate: false

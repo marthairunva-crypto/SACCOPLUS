@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: marzpay-proxy
+    env: node
+    region: oregon
+    plan: free
+    rootDir: proxy
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: MARZPAY_BASE_URL
+        value: https://wallet.wearemarz.com/api/v1
+      - key: MARZPAY_AUTH
+        sync: false        # paste your base64 auth in Render dashboard
+      - key: PROXY_KEY
+        sync: false        # paste saccoplus_pro_2025_proxy_key in Render dashboard
