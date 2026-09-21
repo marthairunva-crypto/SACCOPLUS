@@ -44,23 +44,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _changePin() {
-    final phone = FirebaseService.sessionProfile?['phone'] as String? ?? '';
-    if (phone.isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OtpVerifyScreen(
-          phone: FirebaseService.formatPhone(phone),
-          afterVerified: () => Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => SetPinScreen(
-                isReset: true,
-                phone: FirebaseService.formatPhone(phone),
+    // Show dialog instead since OTP screens were removed
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.lock_reset, color: AppTheme.primary),
+            ),
+            const SizedBox(width: 12),
+            const Text('Change PIN'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'To change your PIN, please contact our support team:',
+              style: TextStyle(fontSize: 15),
+            ),
+            SizedBox(height: 16),
+            Text(
+              '+256 778474686',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primary,
               ),
             ),
-          ),
+            SizedBox(height: 12),
+            Text(
+              'Our team will verify your identity and help you change your PIN securely.',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            ),
+          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }
