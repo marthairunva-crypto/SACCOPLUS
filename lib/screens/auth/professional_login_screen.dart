@@ -496,7 +496,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               
               // Footer
               const Text(
-                'SECURITY ALERT\ndfcu Bank does not send emails requesting for confidential information such as account codes, PINs, passwords, or PIN codes. Consider all email requests for such personal information to be suspicious and contact our call center (0414 351 000 or 0414 351 351) or send us an email.',
+                'SECURITY ALERT\nSACCOPLUS does not send emails requesting for confidential information such as account codes, PINs, passwords, or PIN codes. Consider all email requests for such personal information to be suspicious and contact us immediately.',
                 style: TextStyle(
                   color: ModernTheme.textHint,
                   fontSize: 11,
