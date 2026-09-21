@@ -186,9 +186,9 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                         'SACCOPLUS',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
+                          fontSize: 42,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
                           shadows: [
                             Shadow(
                               color: Colors.black38,
@@ -198,13 +198,14 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                         ),
                       ),
                       
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       
                       const Text(
-                        'Your trusted SACCO management system',
+                        'Complete SACCO Management',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w300,
                           shadows: [
                             Shadow(
                               color: Colors.black38,
@@ -257,88 +258,111 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              ModernTheme.primaryBlue.withOpacity(0.75),
-              ModernTheme.primaryBlue.withOpacity(0.6),
+              const Color(0xFF0D2B6B).withOpacity(0.88),
+              const Color(0xFF1565C0).withOpacity(0.75),
             ],
           ),
         ),
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(48),
+            padding: const EdgeInsets.all(60),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Your logo
+                // Elegant logo with glow effect
                 Container(
-                  width: 140,
-                  height: 140,
+                  width: 160,
+                  height: 160,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(30),
                     boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.3),
+                        blurRadius: 60,
+                        spreadRadius: 10,
+                      ),
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
                         blurRadius: 40,
-                        spreadRadius: 5,
+                        spreadRadius: 0,
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   child: Image.asset(
                     'assets/images/logo2.png',
                     fit: BoxFit.contain,
                   ),
                 ),
                 
-                const SizedBox(height: 40),
+                const SizedBox(height: 50),
                 
+                // Premium title
                 const Text(
-                  'Welcome to',
+                  'SACCOPLUS',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.5,
+                    fontSize: 64,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 3,
                     shadows: [
                       Shadow(
-                        color: Colors.black38,
-                        blurRadius: 12,
+                        color: Colors.black45,
+                        blurRadius: 20,
+                        offset: Offset(0, 4),
                       ),
                     ],
                   ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Decorative line
+                Container(
+                  width: 100,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Colors.transparent, Colors.white, Colors.transparent],
+                    ),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                
+                const Text(
+                  'Complete SACCO Management Solution',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 0.5,
+                    height: 1.4,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black38,
+                        blurRadius: 15,
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
                 
                 const SizedBox(height: 12),
                 
                 const Text(
-                  'SACCOPLUS',
+                  'Loans • Savings • Members • Reports',
                   style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 56,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black38,
-                        blurRadius: 12,
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 20),
-                
-                const Text(
-                  'Your trusted SACCO management system',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
+                    color: Colors.white70,
+                    fontSize: 16,
                     fontWeight: FontWeight.w400,
-                    letterSpacing: 0.3,
+                    letterSpacing: 1,
                     shadows: [
                       Shadow(
                         color: Colors.black38,
-                        blurRadius: 12,
+                        blurRadius: 10,
                       ),
                     ],
                   ),
@@ -370,17 +394,45 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-              // Heading
+              // Modern heading with icon
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: ModernTheme.primaryBlue,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _useAccountNumber ? 'Account Login' : 'Sign In',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: ModernTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 8),
+              
               Text(
-                _useAccountNumber ? 'Enter your account number to log in' : 'Enter your phone number to log in',
+                _useAccountNumber 
+                    ? 'Enter your account number to continue' 
+                    : 'Enter your phone number to continue',
                 style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                  color: ModernTheme.textPrimary,
+                  fontSize: 15,
+                  color: ModernTheme.textSecondary,
+                  height: 1.4,
                 ),
               ),
               
-              const SizedBox(height: 32),
+              const SizedBox(height: 36),
               
               // Username/Account Number field
               TextFormField(
@@ -541,36 +593,50 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               
               const SizedBox(height: 8),
               
-              // Register link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    "Don't have access? ",
-                    style: TextStyle(
-                      color: ModernTheme.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      // TODO: Registration
-                    },
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'Click here to register',
+              // Register section - Prominent
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: ModernTheme.bgLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ModernTheme.borderLight, width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      "Don't have an account?",
                       style: TextStyle(
-                        color: ModernTheme.primaryBlue,
-                        fontSize: 14,
-                        decoration: TextDecoration.underline,
+                        color: ModernTheme.textSecondary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          _showSnack('Registration coming soon! Contact +256 778474686', ModernTheme.primaryBlue);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: ModernTheme.primaryBlue, width: 2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Create New Account',
+                          style: TextStyle(
+                            color: ModernTheme.primaryBlue,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               
               const SizedBox(height: 32),
@@ -602,53 +668,93 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 ),
               ),
               
-              const SizedBox(height: 48),
+              const SizedBox(height: 40),
               
-              // Footer
-              const Text(
-                'SECURITY ALERT',
-                style: TextStyle(
-                  color: ModernTheme.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  height: 1.6,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 8),
-              
-              const Text(
-                'SACCOPLUS does not send emails requesting for confidential information such as account codes, PINs, passwords, or PIN codes. Consider all email requests for such personal information to be suspicious and contact us immediately.',
-                style: TextStyle(
-                  color: ModernTheme.textHint,
-                  fontSize: 12,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 16),
-              
-              // Support contact
+              // Clean divider
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.phone,
-                    size: 16,
-                    color: ModernTheme.primaryBlue,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Support: +256 778474686',
-                    style: TextStyle(
-                      color: ModernTheme.primaryBlue,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                  Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'SECURE & TRUSTED',
+                      style: TextStyle(
+                        color: ModernTheme.textHint,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
+                  Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
                 ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Support card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F9FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE3F2FD), width: 1),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: ModernTheme.primaryBlue,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.headset_mic,
+                            size: 20,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Need Help?',
+                              style: TextStyle(
+                                color: ModernTheme.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              '+256 778474686',
+                              style: TextStyle(
+                                color: ModernTheme.primaryBlue,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Never share your PIN or password with anyone.',
+                      style: TextStyle(
+                        color: ModernTheme.textHint,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ],
     );
