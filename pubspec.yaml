@@ -12,11 +12,11 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
 
-  # Firebase — pinned to avoid Firestore Web SDK 11.9.x internal assertion bug
-  firebase_core: 3.6.0
-  firebase_auth: 5.3.1
-  cloud_firestore: 5.4.4
-  firebase_storage: 12.3.2
+  # Firebase — updated for Flutter 3.44.5 compatibility
+  firebase_core: ^4.0.0
+  firebase_auth: ^6.0.0
+  cloud_firestore: ^6.0.0
+  firebase_storage: ^13.0.0
 
   # State management
   provider: ^6.1.2
