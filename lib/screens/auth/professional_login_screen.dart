@@ -20,6 +20,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
   final _pinCtrl = TextEditingController();
   bool _loading = false;
   bool _useAccountNumber = false;
+  bool _obscurePin = true; // Add this for eye button
 
   @override
   void dispose() {
@@ -650,8 +651,19 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                     ),
                     filled: true,
                     fillColor: ModernTheme.bgLight,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePin ? Icons.visibility_off : Icons.visibility,
+                        color: ModernTheme.textSecondary,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePin = !_obscurePin;
+                        });
+                      },
+                    ),
                   ),
-                  obscureText: true,
+                  obscureText: _obscurePin,
                   keyboardType: TextInputType.number,
                   maxLength: 4,
                   onFieldSubmitted: (_) => _login(),
