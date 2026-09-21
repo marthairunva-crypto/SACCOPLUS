@@ -28,7 +28,7 @@ class AppConstants {
   static const String sharesCol        = 'saccoplus-shares';
   static const String dividendsCol     = 'saccoplus-dividends';
   // Wallet & Payments
-  static const String walletCol        = 'wallets';
+  static const String walletCol        = 'saccoplus-wallets';
   static const String walletTxnCol     = 'wallet-transactions';
   static const String airtimeTxnCol    = 'saccoplus-airtime-transactions';
   // Notifications & Audit
