@@ -381,12 +381,18 @@ class _HomeTabState extends State<_HomeTab> {
     final tot = _totalBorrowed + _walletBalance;
     final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
-    final isDesktop = MediaQuery.of(context).size.width > 900;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth > 700; // Lowered from 900
+    
+    print('🖥️ DASHBOARD: Screen width = $screenWidth, isDesktop = $isDesktop');
 
     // DESKTOP: Completely different layout
     if (isDesktop) {
+      print('✅ Using DESKTOP layout');
       return _buildDesktopLayout();
     }
+    
+    print('📱 Using MOBILE layout');
 
     // MOBILE: Original layout
     final content = CustomScrollView(slivers: [
