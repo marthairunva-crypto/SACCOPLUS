@@ -155,6 +155,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
+      ),
       child: Stack(
           fit: StackFit.expand,
           children: [
@@ -272,7 +273,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
             children: [
               // Heading
               Text(
-                _useAccountNumber ? 'Enter your account number to log in' : 'Enter your username to log in',
+                _useAccountNumber ? 'Enter your account number to log in' : 'Enter your phone number to log in',
                 style: const TextStyle(
                   fontSize: 16,
                   color: ModernTheme.textSecondary,
@@ -285,8 +286,8 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               TextFormField(
                 controller: _usernameCtrl,
                 decoration: InputDecoration(
-                  labelText: _useAccountNumber ? 'Account Number' : 'User Name',
-                  hintText: _useAccountNumber ? '60000001' : 'Phone: 0700000000',
+                  labelText: _useAccountNumber ? 'Account Number' : 'Phone Number',
+                  hintText: _useAccountNumber ? '60000001' : '0700000000',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: ModernTheme.borderLight),
