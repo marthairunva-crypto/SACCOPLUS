@@ -201,7 +201,7 @@ class FirebaseService {
       try {
         // Try saccoplus-members first (where your data is!)
         var doc = await _db
-            .collection('saccoplus-members')
+            .collection(AppConstants.usersCol)
             .doc(uid)
             .get(const GetOptions(source: Source.server));
 
@@ -214,7 +214,7 @@ class FirebaseService {
 
         // Try users collection (legacy)
         doc = await _db
-            .collection(AppConstants.usersCol)
+            .collection('users')
             .doc(uid)
             .get(const GetOptions(source: Source.server));
 
@@ -267,7 +267,7 @@ class FirebaseService {
       try {
         // ── 1. Try saccoplus-members collection first (new data) ──────────
         var q = await _db
-            .collection('saccoplus-members')
+            .collection(AppConstants.usersCol)
             .where('phone', isEqualTo: phone)
             .limit(1)
             .get(const GetOptions(source: Source.server));
@@ -283,7 +283,7 @@ class FirebaseService {
 
         // ── 2. Try users collection (legacy data) ──────────────────────────
         q = await _db
-            .collection(AppConstants.usersCol)
+            .collection('users')
             .where('phone', isEqualTo: phone)
             .limit(1)
             .get(const GetOptions(source: Source.server));
@@ -302,7 +302,7 @@ class FirebaseService {
         
         // Try saccoplus-members first
         var doc = await _db
-            .collection('saccoplus-members')
+            .collection(AppConstants.usersCol)
             .doc(docId)
             .get(const GetOptions(source: Source.server));
 
@@ -314,7 +314,7 @@ class FirebaseService {
 
         // Try users collection
         doc = await _db
-            .collection(AppConstants.usersCol)
+            .collection('users')
             .doc(docId)
             .get(const GetOptions(source: Source.server));
 

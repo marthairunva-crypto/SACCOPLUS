@@ -11,14 +11,14 @@ class AppConstants {
   static const String imgbbUploadUrl = 'https://api.imgbb.com/1/upload';
 
   // ── Firestore Collections ─────────────────────────────────────────────────
-  // All collections are now under the saccoplus-* namespace.
+  // All collections use the saccoplus-* namespace.
   // Core
-  static const String usersCol         = 'users';
+  static const String usersCol         = 'saccoplus-members';
   static const String saccoCol         = 'saccos';
   static const String branchCol        = 'saccoplus-branches';
   // Loans
-  static const String loansCol         = 'loans';
-  static const String repaymentsCol    = 'repayments';
+  static const String loansCol         = 'saccoplus-loans';
+  static const String repaymentsCol    = 'saccoplus-repayments';
   static const String guarantorsCol    = 'saccoplus-guarantors';
   // Savings
   static const String savingsCol       = 'saccoplus-savings';
@@ -29,7 +29,7 @@ class AppConstants {
   static const String dividendsCol     = 'saccoplus-dividends';
   // Wallet & Payments
   static const String walletCol        = 'saccoplus-wallets';
-  static const String walletTxnCol     = 'wallet-transactions';
+  static const String walletTxnCol     = 'saccoplus-wallet-transactions';
   static const String airtimeTxnCol    = 'saccoplus-airtime-transactions';
   // Notifications & Audit
   static const String notificationsCol = 'saccoplus-notifications';
