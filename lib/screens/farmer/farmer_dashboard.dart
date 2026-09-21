@@ -1,4 +1,5 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'dart:ui' show FontFeature;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -369,6 +370,7 @@ class _HomeTabState extends State<_HomeTab> {
     return 'Good Evening';
   }
   String get _name => _profile?['name'] ?? 'Member';
+  String get _phone => _profile?['phone'] ?? '';
   String _fmt(int n) => NumberFormat('#,###', 'en_US').format(n);
   String _shortNum(int n) {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
@@ -771,10 +773,11 @@ class _HomeTabState extends State<_HomeTab> {
                         left: 24,
                         child: Text(
                           _walletBalanceHidden ? '•••• •••• •••• ••••' : 'ACC ${_phone.replaceAll('+', '')}',
-                          style: GoogleFonts.spaceGrounded(
+                          style: GoogleFonts.inter(
                             color: Colors.white,
                             fontSize: 16,
                             letterSpacing: 2,
+                            fontFeatures: [const FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
