@@ -601,7 +601,7 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DESKTOP LAYOUT - Proper Grid Design
+  // DESKTOP LAYOUT - FinBank Premium Design
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildDesktopLayout() {
     final tot = _totalBorrowed + _walletBalance;
@@ -609,106 +609,635 @@ class _HomeTabState extends State<_HomeTab> {
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
 
     return Container(
-      color: const Color(0xFFF5F7FA),
+      color: const Color(0xFFF8FAFC),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(32),
-        child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 1400),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Main Content Area (70%)
+            Expanded(
+              flex: 7,
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Welcome Header
+                    Text(
+                      'Welcome to ${AppConstants.appName}',
+                      style: GoogleFonts.inter(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      'Hi, $_name. Welcome Back.',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Account Balance Card (Like FinBank Debit Card)
+                    _buildPremiumBalanceCard(),
+                    const SizedBox(height: 32),
+
+                    // Recent Transactions
+                    _buildRecentTransactionsCard(),
+                    const SizedBox(height: 32),
+
+                    // Services Grid
+                    _buildServicesCard(),
+                  ],
+                ),
+              ),
+            ),
+
+            // Right Sidebar (30%)
+            Container(
+              width: 380,
+              color: Colors.white,
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Total Balance Card
+                    _buildTotalBalanceCard(),
+                    const SizedBox(height: 32),
+
+                    // Expenses/Stats
+                    _buildExpensesCard(depPct, loanPct),
+                    const SizedBox(height: 32),
+
+                    // Quick Actions
+                    _buildQuickActionsCard(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().fadeIn(duration: 600.ms);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FINBANK-STYLE PREMIUM WIDGETS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildPremiumBalanceCard() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Left: Card Design
+          Expanded(
+            flex: 5,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$_greeting, $_name!',
-                          style: GoogleFonts.poppins(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF1A2332),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Balance: UGX ${_fmt(_walletBalance)}',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: const Color(0xFF6B7280),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.notifications_outlined),
-                          onPressed: widget.onNotif,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.refresh),
-                          onPressed: _load,
-                        ),
-                      ],
-                    ),
-                  ],
+                Text(
+                  'Savings Account',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
                 ),
-                const SizedBox(height: 32),
-
-                // 2-Column Grid Layout
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Left Column (60%)
-                    Expanded(
-                      flex: 6,
-                      child: Column(
-                        children: [
-                          // Financial Overview Card
-                          _buildFinancialCard(tot, depPct, loanPct),
-                          const SizedBox(height: 32),
-                          
-                          // Services Grid
-                          _buildServicesCard(),
-                          const SizedBox(height: 32),
-                          
-                          // Loan Statistics Chart
-                          _buildLoanStatsChart(),
-                          const SizedBox(height: 32),
-                          
-                          // Recent Activity
-                          _buildRecentActivityCard(),
-                        ],
-                      ),
+                const SizedBox(height: 16),
+                // Virtual Card
+                Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1E40AF), Color(0xFF3B82F6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    const SizedBox(width: 32),
-                    
-                    // Right Column (40%)
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        children: [
-                          // Wallet Card
-                          _buildWalletCard(),
-                          const SizedBox(height: 32),
-                          
-                          // Quick Stats
-                          _buildQuickStatsCard(),
-                        ],
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF3B82F6).withOpacity(0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        top: 24,
+                        left: 24,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              AppConstants.appName,
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Member Account',
+                              style: GoogleFonts.inter(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 60,
+                        left: 24,
+                        child: Text(
+                          _walletBalanceHidden ? '•••• •••• •••• ••••' : 'ACC ${_phone.replaceAll('+', '')}',
+                          style: GoogleFonts.spaceGrounded(
+                            color: Colors.white,
+                            fontSize: 16,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 24,
+                        left: 24,
+                        right: 24,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Valid Thru: ${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().add(const Duration(days: 365)).year.toString().substring(2)}',
+                              style: GoogleFonts.inter(
+                                color: Colors.white70,
+                                fontSize: 10,
+                              ),
+                            ),
+                            Text(
+                              'VISA',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 40),
+          // Right: Add Card Button
+          Expanded(
+            flex: 2,
+            child: Column(
+              children: [
+                Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 2, style: BorderStyle.solid),
+                  ),
+                  child: Center(
+                    child: Icon(Icons.add_circle_outline, size: 40, color: Colors.grey[400]),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Add Debit Card',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentTransactionsCard() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recent Transactions',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.search, size: 20),
+                    onPressed: () {},
+                  ),
+                  TextButton.icon(
+                    onPressed: widget.onStatus,
+                    icon: const Icon(Icons.filter_list, size: 16),
+                    label: Text(
+                      'Last 7 Days',
+                      style: GoogleFonts.inter(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          if (_loading)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(),
+            ))
+          else if (_recent.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  children: [
+                    Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No recent transactions',
+                      style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._recent.take(5).map((tx) {
+              final isPositive = tx['status'] == 'approved';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: isPositive ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isPositive ? Icons.arrow_downward : Icons.arrow_upward,
+                        color: isPositive ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tx['purpose'] ?? 'Transaction',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            tx['date'] ?? '',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${isPositive ? '+' : '-'}UGX ${_fmt(tx['amount'] ?? 0)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isPositive ? const Color(0xFF16A34A) : const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalBalanceCard() {
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E40AF), Color(0xFF3B82F6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF3B82F6).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Your Total Balance',
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  _walletBalanceHidden ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                onPressed: () => setState(() => _walletBalanceHidden = !_walletBalanceHidden),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _walletBalanceHidden ? '\$••••••' : '\$ ${(_walletBalance / 3700).toStringAsFixed(2)}',
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _walletBalanceHidden ? '••••••' : 'UGX ${_fmt(_walletBalance)}',
+            style: GoogleFonts.inter(
+              color: Colors.white70,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              _balanceAction(Icons.send, 'Send'),
+              const SizedBox(width: 16),
+              _balanceAction(Icons.account_balance_wallet, 'Receive'),
+              const SizedBox(width: 16),
+              _balanceAction(Icons.swap_horiz, 'Transfer'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _balanceAction(IconData icon, String label) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
-    ).animate().fadeIn(duration: 600.ms);
+    );
+  }
+
+  Widget _buildExpensesCard(int depPct, int loanPct) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Financial Split',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.more_horiz, size: 20),
+                onPressed: () {},
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: SizedBox(
+              width: 160,
+              height: 160,
+              child: Stack(
+                children: [
+                  PieChart(
+                    PieChartData(
+                      sectionsSpace: 4,
+                      centerSpaceRadius: 50,
+                      sections: [
+                        PieChartSectionData(
+                          value: depPct.toDouble(),
+                          color: const Color(0xFF10B981),
+                          radius: 40,
+                          showTitle: false,
+                        ),
+                        PieChartSectionData(
+                          value: loanPct.toDouble(),
+                          color: const Color(0xFF3B82F6),
+                          radius: 40,
+                          showTitle: false,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Center(
+                    child: Text(
+                      '$depPct%',
+                      style: GoogleFonts.inter(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Savings Level',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total Exp:',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              Text(
+                'UGX ${_fmt(_totalBorrowed)}',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionsCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Actions',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 20),
+          _quickActionItem(Icons.add_card, 'Apply for Loan', widget.onApply),
+          _quickActionItem(Icons.receipt, 'My Loans', widget.onStatus),
+          _quickActionItem(Icons.payment, 'Repay Loan', widget.onRepay),
+          _quickActionItem(Icons.savings, 'View Savings', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsScreen()))),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickActionItem(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 20, color: const Color(0xFF3B82F6)),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF94A3B8)),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildFinancialCard(int tot, int depPct, int loanPct) {
