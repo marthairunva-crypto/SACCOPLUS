@@ -1243,17 +1243,9 @@ class _HomeTabState extends State<_HomeTab> {
     );
   }
 
-  // Override the old _buildServicesCard with new FinBank style for desktop
-  @override
+  // Services card for DESKTOP ONLY (mobile has inline services)
   Widget _buildServicesCard() {
-    // Check if we're on desktop
-    final isDesktop = MediaQuery.of(context).size.width > 600;
-    if (!isDesktop) {
-      // Use old mobile services card
-      return _buildOldMobileServicesCard();
-    }
-
-    // New FinBank desktop services
+    // This is only called from desktop layout, but add safety check
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
