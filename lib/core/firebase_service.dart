@@ -253,8 +253,24 @@ class FirebaseService {
 
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        // ── 1. Query by phone field ──────────────────────────────────────
-        final q = await _db
+        // ── 1. Try saccoplus-members collection first (new data) ──────────
+        var q = await _db
+            .collection('saccoplus-members')
+            .where('phone', isEqualTo: phone)
+            .limit(1)
+            .get(const GetOptions(source: Source.server));
+
+        if (q.docs.isNotEmpty) {
+          final data = q.docs.first.data();
+          // Ensure uid is always populated — fall back to doc ID
+          if (data['uid'] == null || (data['uid'] as String).isEmpty) {
+            data['uid'] = q.docs.first.id;
+          }
+          return data;
+        }
+
+        // ── 2. Try users collection (legacy data) ──────────────────────────
+        q = await _db
             .collection(AppConstants.usersCol)
             .where('phone', isEqualTo: phone)
             .limit(1)
@@ -269,9 +285,23 @@ class FirebaseService {
           return data;
         }
 
-        // ── 2. Fall back: direct doc-ID lookup (phone_256XXXXXXXXX) ─────
+        // ── 3. Fall back: direct doc-ID lookup (phone_256XXXXXXXXX) ─────
         final docId = 'phone_$phone';
-        final doc = await _db
+        
+        // Try saccoplus-members first
+        var doc = await _db
+            .collection('saccoplus-members')
+            .doc(docId)
+            .get(const GetOptions(source: Source.server));
+
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          data['uid'] = docId;
+          return data;
+        }
+
+        // Try users collection
+        doc = await _db
             .collection(AppConstants.usersCol)
             .doc(docId)
             .get(const GetOptions(source: Source.server));

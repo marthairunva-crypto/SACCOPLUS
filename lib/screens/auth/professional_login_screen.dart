@@ -4,6 +4,7 @@ import '../../core/firebase_service.dart';
 import '../../core/account_number_service.dart';
 import '../farmer/farmer_dashboard.dart';
 import '../admin/admin_dashboard.dart';
+import 'register_screen.dart';
 
 /// Professional split-screen login (like dfcu QuickBanking)
 /// Responsive: Side-by-side on desktop/web, stacked on mobile
@@ -120,6 +121,92 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _showResetPINDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ModernTheme.primaryBlue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.lock_reset, color: ModernTheme.primaryBlue),
+            ),
+            const SizedBox(width: 12),
+            const Text('Reset PIN'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'To reset your PIN, please contact our support team:',
+              style: TextStyle(fontSize: 15),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F9FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE3F2FD)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ModernTheme.primaryBlue,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.phone, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Support Line',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: ModernTheme.textSecondary,
+                        ),
+                      ),
+                      const Text(
+                        '+256 778474686',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: ModernTheme.primaryBlue,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Our team will verify your identity and help you reset your PIN securely.',
+              style: TextStyle(fontSize: 13, color: ModernTheme.textHint),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }
@@ -602,13 +689,14 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               // Password reset link
               TextButton(
                 onPressed: () {
-                  // TODO: Password reset
+                  _showResetPINDialog();
                 },
                 child: const Text(
-                  'Password reset',
+                  'Forgot PIN?',
                   style: TextStyle(
                     color: ModernTheme.primaryBlue,
                     fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -639,7 +727,10 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                       height: 50,
                       child: OutlinedButton(
                         onPressed: () {
-                          _showSnack('Registration coming soon! Contact +256 778474686', ModernTheme.primaryBlue);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                          );
                         },
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: ModernTheme.primaryBlue, width: 2),
