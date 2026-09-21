@@ -603,7 +603,7 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DESKTOP LAYOUT - FinBank Premium Design with LEFT SIDEBAR
+  // DESKTOP LAYOUT - Full Width (No Sidebars)
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildDesktopLayout() {
     final tot = _totalBorrowed + _walletBalance;
@@ -612,246 +612,138 @@ class _HomeTabState extends State<_HomeTab> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F8FA),
-      body: Row(
+      body: Column(
         children: [
-          // LEFT SIDEBAR (Fixed)
+          // TOP BAR
           Container(
-            width: 260,
+            height: 70,
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withOpacity(0.03),
                   blurRadius: 10,
-                  offset: const Offset(2, 0),
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
-            child: Column(
+            child: Row(
               children: [
-                // Logo Header
+                // Logo
                 Container(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1E40AF), Color(0xFF3B82F6)],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.account_balance, color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  AppConstants.appName,
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(width: 40),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF1E40AF), Color(0xFF3B82F6)],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.account_balance, color: Colors.white, size: 24),
-                      ),
-                      const SizedBox(width: 12),
                       Text(
-                        AppConstants.appName,
+                        'Welcome back, $_name!',
                         style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
                           color: const Color(0xFF0F172A),
                         ),
                       ),
+                      Text(
+                        'Here\'s what\'s happening with your account today.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const Divider(height: 1),
-                
-                // Navigation Menu
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    children: [
-                      _sidebarItem(Icons.dashboard, 'Dashboard', true),
-                      _sidebarItem(Icons.account_balance_wallet, 'My Wallet', false),
-                      _sidebarItem(Icons.savings, 'My Savings', false),
-                      _sidebarItem(Icons.pie_chart, 'My Shares', false),
-                      _sidebarItem(Icons.lock_clock, 'Fixed Deposits', false),
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                        child: Text(
-                          'LOANS',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF94A3B8),
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ),
-                      _sidebarItem(Icons.add_card, 'Apply for Loan', false),
-                      _sidebarItem(Icons.receipt_long, 'My Loans', false),
-                      _sidebarItem(Icons.payment, 'Repayments', false),
-                    ],
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.notifications_outlined, size: 24),
+                  onPressed: widget.onNotif,
                 ),
-                
-                // User Profile at Bottom
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 24),
+                  onPressed: _load,
+                ),
+                const SizedBox(width: 16),
+                // User Avatar
+                PopupMenuButton(
+                  offset: const Offset(0, 50),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: const Color(0xFF3B82F6),
+                    child: Text(
+                      _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: const Color(0xFF3B82F6),
-                        child: Text(
-                          _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.settings, size: 20),
+                          const SizedBox(width: 12),
+                          Text('Settings', style: GoogleFonts.inter()),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _name,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF0F172A),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              'Member',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
-                        ),
+                    ),
+                    PopupMenuItem(
+                      onTap: () => _confirmLogout(context),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.logout, size: 20, color: Colors.red),
+                          const SizedBox(width: 12),
+                          Text('Sign Out', style: GoogleFonts.inter(color: Colors.red)),
+                        ],
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.logout, size: 20),
-                        onPressed: () => _confirmLogout(context),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           
-          // MAIN CONTENT AREA
+          // SCROLLABLE CONTENT
           Expanded(
-            child: Column(
-              children: [
-                // TOP BAR
-                Container(
-                  height: 70,
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Welcome back, $_name!',
-                              style: GoogleFonts.inter(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF0F172A),
-                              ),
-                            ),
-                            Text(
-                              'Here\'s what\'s happening with your account today.',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.notifications_outlined, size: 24),
-                        onPressed: widget.onNotif,
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.refresh, size: 24),
-                        onPressed: _load,
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // SCROLLABLE CONTENT
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildBalanceCards(),
-                        const SizedBox(height: 24),
-                        _buildRecentTransactionsCard(),
-                        const SizedBox(height: 24),
-                        _buildServicesCard(),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildBalanceCards(),
+                  const SizedBox(height: 24),
+                  _buildRecentTransactionsCard(),
+                  const SizedBox(height: 24),
+                  _buildServicesCard(),
+                ],
+              ),
             ),
           ),
         ],
       ),
     ).animate().fadeIn(duration: 400.ms);
-  }
-
-  Widget _sidebarItem(IconData icon, String label, bool isActive) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      decoration: BoxDecoration(
-        color: isActive ? const Color(0xFF3B82F6).withOpacity(0.1) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ListTile(
-        leading: Icon(
-          icon,
-          size: 20,
-          color: isActive ? const Color(0xFF3B82F6) : const Color(0xFF64748B),
-        ),
-        title: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-            color: isActive ? const Color(0xFF3B82F6) : const Color(0xFF475569),
-          ),
-        ),
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-        onTap: () {},
-      ),
-    );
   }
 
   Widget _buildBalanceCards() {
