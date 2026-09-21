@@ -146,24 +146,16 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
 
   Widget _buildImageSection() {
     return Container(
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/images/login.jpg'),
-          fit: BoxFit.cover,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            ModernTheme.primaryBlue,
+            ModernTheme.primaryBlueLight,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              ModernTheme.primaryBlue.withOpacity(0.85),
-              ModernTheme.primaryBlueLight.withOpacity(0.75),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
+      child: Stack(
           fit: StackFit.expand,
           children: [
             // Professional background pattern
