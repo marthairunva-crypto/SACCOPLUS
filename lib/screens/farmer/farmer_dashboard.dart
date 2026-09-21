@@ -806,35 +806,14 @@ class _HomeTabState extends State<_HomeTab> {
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(32),
-                    child: Row(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // LEFT COLUMN (65%)
-                        Expanded(
-                          flex: 65,
-                          child: Column(
-                            children: [
-                              _buildBalanceCards(),
-                              const SizedBox(height: 24),
-                              _buildRecentTransactionsCard(),
-                              const SizedBox(height: 24),
-                              _buildServicesCard(),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        
-                        // RIGHT COLUMN (35%)
-                        Expanded(
-                          flex: 35,
-                          child: Column(
-                            children: [
-                              _buildExpensesCard(depPct, loanPct),
-                              const SizedBox(height: 24),
-                              _buildQuickActionsCard(),
-                            ],
-                          ),
-                        ),
+                        _buildBalanceCards(),
+                        const SizedBox(height: 24),
+                        _buildRecentTransactionsCard(),
+                        const SizedBox(height: 24),
+                        _buildServicesCard(),
                       ],
                     ),
                   ),
