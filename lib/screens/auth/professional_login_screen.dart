@@ -35,7 +35,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       _showSnack(
         _useAccountNumber
             ? 'Enter your account number and 4-digit PIN'
-            : 'Enter your username and 4-digit PIN',
+            : 'Enter your phone number and 4-digit PIN',
         ModernTheme.error,
       );
       return;
@@ -49,7 +49,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       if (_useAccountNumber) {
         profile = await AccountNumberService.getMemberByAccountNumber(username);
         if (profile == null) {
-          _showSnack('Account number not found', ModernTheme.error);
+          _showSnack('Account number not found. Please check and try again.', ModernTheme.error);
           return;
         }
         uid = profile['uid'] as String? ?? profile['phone'] as String? ?? '';
@@ -57,7 +57,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         final phone = FirebaseService.formatPhone(username);
         profile = await FirebaseService.getProfileByPhone(phone);
         if (profile == null) {
-          _showSnack('No account found. Please register.', ModernTheme.error);
+          _showSnack('No account found for $phone. Contact +256 778474686 for help.', ModernTheme.error);
           return;
         }
         uid = profile['uid'] as String? ?? 'phone_$phone';
@@ -65,13 +65,26 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
 
       final pinOk = await FirebaseService.verifyPin(uid, pin);
       if (!pinOk) {
-        _showSnack('Incorrect PIN', ModernTheme.error);
+        _showSnack('Incorrect PIN. Please try again.', ModernTheme.error);
         return;
       }
+
+      // Store session
+      FirebaseService.setSession(uid, profile);
       
       if (!mounted) return;
       
       final role = profile['role'] as String? ?? '';
+      final name = profile['name'] as String? ?? 'User';
+      
+      // Show success message
+      _showSnack('Welcome back, $name!', ModernTheme.success);
+      
+      // Small delay to show the success message
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      if (!mounted) return;
+      
       if (role == 'admin' || role == 'super_admin') {
         Navigator.pushReplacement(
           context,
@@ -94,10 +107,19 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg),
+        content: Text(
+          msg,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        ),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 150,
+          left: 20,
+          right: 20,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
