@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../core/theme.dart';
+import '../../theme/modern_theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/interest_service.dart';
@@ -45,7 +45,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ];
 
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor: ModernTheme.surface,
       drawer: _AdminDrawer(
         onNavigate: (i) {
           Navigator.pop(context);
@@ -105,7 +105,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onTap: (i) => setState(() => _selectedIndex = i),
           type: BottomNavigationBarType.fixed,
           backgroundColor: Colors.white,
-          selectedItemColor: AppTheme.primary,
+          selectedItemColor: ModernTheme.primary,
           unselectedItemColor: Colors.grey.shade400,
           selectedLabelStyle:
               GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600),
@@ -150,7 +150,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
             child: const Text('Sign Out'),
           ),
         ],
@@ -198,7 +198,7 @@ class _AdminDrawer extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 52, 20, 24),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.primaryDark, AppTheme.primaryLight],
+                colors: [ModernTheme.primaryDark, ModernTheme.primaryLight],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -232,7 +232,7 @@ class _AdminDrawer extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: AppTheme.accent.withOpacity(0.3),
+                    color: ModernTheme.accent.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text('Admin',
@@ -275,7 +275,7 @@ class _AdminDrawer extends StatelessWidget {
                 const Divider(indent: 16, endIndent: 16),
                 _drawerItem(Icons.notifications_rounded, 'Send Notifications',
                     onNotif,
-                    color: AppTheme.primary),
+                    color: ModernTheme.primary),
                 const Divider(indent: 16, endIndent: 16),
                 _drawerItem(Icons.settings_outlined, 'Settings', onSettings),
                 _drawerItem(Icons.info_outline_rounded, 'About App', onAbout),
@@ -285,13 +285,13 @@ class _AdminDrawer extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: onLogout,
                     icon: const Icon(Icons.logout_rounded,
-                        color: AppTheme.error),
+                        color: ModernTheme.error),
                     label: Text('Sign Out',
                         style: GoogleFonts.poppins(
-                            color: AppTheme.error,
+                            color: ModernTheme.error,
                             fontWeight: FontWeight.w600)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppTheme.error),
+                      side: const BorderSide(color: ModernTheme.error),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -309,11 +309,11 @@ class _AdminDrawer extends StatelessWidget {
   Widget _drawerItem(IconData icon, String label, VoidCallback onTap,
       {Color? color}) {
     return ListTile(
-      leading: Icon(icon, color: color ?? AppTheme.textSecondary, size: 22),
+      leading: Icon(icon, color: color ?? ModernTheme.textSecondary, size: 22),
       title: Text(label,
           style: GoogleFonts.poppins(
               fontSize: 14,
-              color: color ?? AppTheme.textPrimary,
+              color: color ?? ModernTheme.textPrimary,
               fontWeight: FontWeight.w500)),
       onTap: onTap,
       horizontalTitleGap: 8,
@@ -397,7 +397,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.primary),
             child: const Text('Calculate'),
           ),
         ],
@@ -428,7 +428,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Monthly interest calculated and applied successfully!', 
             style: GoogleFonts.poppins()),
-        backgroundColor: AppTheme.success,
+        backgroundColor: ModernTheme.success,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
@@ -438,7 +438,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Error calculating interest: ${e.toString()}', 
             style: GoogleFonts.poppins()),
-        backgroundColor: AppTheme.error,
+        backgroundColor: ModernTheme.error,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
@@ -457,7 +457,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         SliverAppBar(
           expandedHeight: 160,
           pinned: true,
-          backgroundColor: AppTheme.primary,
+          backgroundColor: ModernTheme.primary,
           leading: Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.menu_rounded, color: Colors.white),
@@ -481,7 +481,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             background: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppTheme.primaryDark, AppTheme.primaryLight],
+                  colors: [ModernTheme.primaryDark, ModernTheme.primaryLight],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -520,14 +520,14 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                           title: 'Total Members',
                           value: '${stats['totalFarmers'] ?? 0}',
                           icon: Icons.people_rounded,
-                          color: AppTheme.info,
+                          color: ModernTheme.info,
                         )),
                         const SizedBox(width: 12),
                         Expanded(child: StatCard(
                           title: 'Verified IDs',
                           value: '${stats['verifiedIds'] ?? 0}',
                           icon: Icons.verified_rounded,
-                          color: AppTheme.success,
+                          color: ModernTheme.success,
                         )),
                       ],
                     ),
@@ -538,14 +538,14 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                           title: 'Loan Applications',
                           value: '${stats['totalLoans'] ?? 0}',
                           icon: Icons.account_balance_rounded,
-                          color: AppTheme.primary,
+                          color: ModernTheme.primary,
                         )),
                         const SizedBox(width: 12),
                         Expanded(child: StatCard(
                           title: 'Pending Review',
                           value: '${stats['pendingLoans'] ?? 0}',
                           icon: Icons.pending_actions_rounded,
-                          color: AppTheme.warning,
+                          color: ModernTheme.warning,
                         )),
                       ],
                     ),
@@ -565,7 +565,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.fact_check_rounded,
                     title: 'Review Loan Applications',
                     subtitle: '${stats['pendingLoans'] ?? 0} pending',
-                    color: AppTheme.warning,
+                    color: ModernTheme.warning,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(
                             builder: (_) => const LoanApprovalScreen())),
@@ -574,7 +574,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.people_rounded,
                     title: 'Manage Members',
                     subtitle: '${stats['pendingIds'] ?? 0} KYC(s) pending review',
-                    color: AppTheme.info,
+                    color: ModernTheme.info,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(
                             builder: (_) => const FarmerManagementScreen())),
@@ -583,7 +583,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.account_balance_rounded,
                     title: 'Fixed Deposits',
                     subtitle: 'Manage member fixed deposit accounts',
-                    color: AppTheme.primaryDark,
+                    color: ModernTheme.primaryDark,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(
                             builder: (_) => const FixedDepositsAdminScreen())),
@@ -592,7 +592,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.bar_chart_rounded,
                     title: 'View Reports',
                     subtitle: 'Loans & repayments analytics',
-                    color: AppTheme.primary,
+                    color: ModernTheme.primary,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const ReportsScreen())),
                   ),
@@ -600,7 +600,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.history_rounded,
                     title: 'Audit Trail',
                     subtitle: 'Full log of all system actions',
-                    color: AppTheme.primaryDark,
+                    color: ModernTheme.primaryDark,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const AuditLogScreen())),
                   ),
@@ -608,7 +608,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.savings_rounded,
                     title: 'Savings Management',
                     subtitle: 'Approve deposits, view all savings',
-                    color: AppTheme.accent,
+                    color: ModernTheme.accent,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const SavingsAdminScreen())),
                   ),
@@ -616,7 +616,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.pie_chart_rounded,
                     title: 'Shares Management',
                     subtitle: 'Approve purchases, process dividends',
-                    color: AppTheme.primaryLight,
+                    color: ModernTheme.primaryLight,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const SharesAdminScreen())),
                   ),
@@ -624,7 +624,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.manage_accounts_rounded,
                     title: 'Staff & Roles',
                     subtitle: 'Manage staff permissions and roles',
-                    color: AppTheme.success,
+                    color: ModernTheme.success,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const StaffManagementScreen())),
                   ),
@@ -632,7 +632,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.settings_rounded,
                     title: 'SACCO Settings',
                     subtitle: 'Interest rates, fees, SACCO info',
-                    color: AppTheme.textSecondary,
+                    color: ModernTheme.textSecondary,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const SaccoSettingsScreen())),
                   ),
@@ -640,7 +640,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.rocket_launch_rounded,
                     title: '🚀 Multi-Tenant Migration',
                     subtitle: 'ONE-TIME: Add tenantId to all records',
-                    color: AppTheme.warning,
+                    color: ModernTheme.warning,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const MigrationScreen())),
                   ),
@@ -648,7 +648,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.announcement_rounded,
                     title: 'Send Notification',
                     subtitle: 'Broadcast to all members',
-                    color: AppTheme.success,
+                    color: ModernTheme.success,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(
                             builder: (_) => const AdminNotificationsScreen())),
@@ -657,7 +657,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.share_rounded,
                     title: 'Distribute Dividends',
                     subtitle: 'Pay dividends to all shareholders',
-                    color: AppTheme.accent,
+                    color: ModernTheme.accent,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(
                             builder: (_) => const DividendDistributionScreen())),
@@ -666,7 +666,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     icon: Icons.calculate_rounded,
                     title: 'Calculate Interest',
                     subtitle: 'Apply monthly interest to savings',
-                    color: AppTheme.primaryLight,
+                    color: ModernTheme.primaryLight,
                     onTap: () => _calculateInterest(context),
                   ),
                 ]
@@ -745,10 +745,10 @@ class _ActionItem extends StatelessWidget {
                       style: GoogleFonts.poppins(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
-                          color: AppTheme.textPrimary)),
+                          color: ModernTheme.textPrimary)),
                   Text(subtitle,
                       style: GoogleFonts.poppins(
-                          fontSize: 12, color: AppTheme.textSecondary)),
+                          fontSize: 12, color: ModernTheme.textSecondary)),
                 ],
               ),
             ),
