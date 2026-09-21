@@ -657,38 +657,38 @@ class _HomeTabState extends State<_HomeTab> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Left Column (70%)
+                    // Left Column (60%)
                     Expanded(
-                      flex: 7,
+                      flex: 6,
                       child: Column(
                         children: [
                           // Financial Overview Card
                           _buildFinancialCard(tot, depPct, loanPct),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 32),
                           
                           // Services Grid
                           _buildServicesCard(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 32),
                           
                           // Loan Statistics Chart
                           _buildLoanStatsChart(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 32),
                           
                           // Recent Activity
                           _buildRecentActivityCard(),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 24),
+                    const SizedBox(width: 32),
                     
-                    // Right Column (30%)
+                    // Right Column (40%)
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: Column(
                         children: [
                           // Wallet Card
                           _buildWalletCard(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 32),
                           
                           // Quick Stats
                           _buildQuickStatsCard(),
@@ -707,7 +707,7 @@ class _HomeTabState extends State<_HomeTab> {
 
   Widget _buildFinancialCard(int tot, int depPct, int loanPct) {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -725,18 +725,18 @@ class _HomeTabState extends State<_HomeTab> {
           Text(
             'FINANCIAL OVERVIEW',
             style: GoogleFonts.poppins(
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
               color: AppTheme.accent,
-              letterSpacing: 1.6,
+              letterSpacing: 1.8,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             _loading ? '...' : 'UGX ${_fmt(tot)}',
             style: GoogleFonts.poppins(
-              fontSize: 32,
-              fontWeight: FontWeight.w600,
+              fontSize: 36,
+              fontWeight: FontWeight.w700,
               color: const Color(0xFF1A2332),
             ),
           ),
@@ -855,7 +855,7 @@ class _HomeTabState extends State<_HomeTab> {
 
   Widget _buildServicesCard() {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -873,7 +873,7 @@ class _HomeTabState extends State<_HomeTab> {
           Text(
             'Services',
             style: GoogleFonts.poppins(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               color: const Color(0xFF1A2332),
             ),
@@ -916,8 +916,59 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   Widget _buildLoanStatsChart() {
+    // Don't show chart if still loading or no data
+    if (_loading || (_active == 0 && _pending == 0 && _overdue == 0 && _paid == 0)) {
+      return Container(
+        padding: const EdgeInsets.all(40),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Loan Statistics',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1A2332),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  children: [
+                    if (_loading)
+                      const CircularProgressIndicator()
+                    else ...[
+                      Icon(Icons.bar_chart, size: 48, color: Colors.grey[300]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No loan data available',
+                        style: GoogleFonts.poppins(color: const Color(0xFF9CA3AF)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -935,18 +986,18 @@ class _HomeTabState extends State<_HomeTab> {
           Text(
             'Loan Statistics',
             style: GoogleFonts.poppins(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               color: const Color(0xFF1A2332),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
           SizedBox(
             height: 250,
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: (_active + _pending + _overdue + _paid).toDouble() + 2,
+                maxY: ((_active > 0 ? _active : 0) + (_pending > 0 ? _pending : 0) + (_overdue > 0 ? _overdue : 0) + (_paid > 0 ? _paid : 0)).toDouble() + 2,
                 barTouchData: BarTouchData(
                   touchTooltipData: BarTouchTooltipData(
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
@@ -1048,7 +1099,7 @@ class _HomeTabState extends State<_HomeTab> {
                     x: 0,
                     barRods: [
                       BarChartRodData(
-                        toY: _active.toDouble(),
+                        toY: (_active > 0 ? _active : 0).toDouble(),
                         color: const Color(0xFF10B981), // Green
                         width: 40,
                         borderRadius: const BorderRadius.only(
@@ -1062,7 +1113,7 @@ class _HomeTabState extends State<_HomeTab> {
                     x: 1,
                     barRods: [
                       BarChartRodData(
-                        toY: _pending.toDouble(),
+                        toY: (_pending > 0 ? _pending : 0).toDouble(),
                         color: const Color(0xFFF59E0B), // Orange
                         width: 40,
                         borderRadius: const BorderRadius.only(
@@ -1076,7 +1127,7 @@ class _HomeTabState extends State<_HomeTab> {
                     x: 2,
                     barRods: [
                       BarChartRodData(
-                        toY: _overdue.toDouble(),
+                        toY: (_overdue > 0 ? _overdue : 0).toDouble(),
                         color: const Color(0xFFEF4444), // Red
                         width: 40,
                         borderRadius: const BorderRadius.only(
@@ -1090,7 +1141,7 @@ class _HomeTabState extends State<_HomeTab> {
                     x: 3,
                     barRods: [
                       BarChartRodData(
-                        toY: _paid.toDouble(),
+                        toY: (_paid > 0 ? _paid : 0).toDouble(),
                         color: const Color(0xFF6366F1), // Purple
                         width: 40,
                         borderRadius: const BorderRadius.only(
@@ -1147,7 +1198,7 @@ class _HomeTabState extends State<_HomeTab> {
 
   Widget _buildRecentActivityCard() {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -1168,7 +1219,7 @@ class _HomeTabState extends State<_HomeTab> {
               Text(
                 'Recent Activity',
                 style: GoogleFonts.poppins(
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF1A2332),
                 ),
@@ -1180,13 +1231,13 @@ class _HomeTabState extends State<_HomeTab> {
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     color: AppTheme.accent,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_recent.isEmpty)
@@ -1229,7 +1280,7 @@ class _HomeTabState extends State<_HomeTab> {
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [Color(0xFF0D2B6B), Color(0xFF1A3F8F)],
@@ -1255,38 +1306,40 @@ class _HomeTabState extends State<_HomeTab> {
                   'Wallet Balance',
                   style: GoogleFonts.poppins(
                     color: Colors.white70,
-                    fontSize: 14,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 IconButton(
                   icon: Icon(
                     _walletBalanceHidden ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                     color: Colors.white70,
-                    size: 20,
+                    size: 22,
                   ),
                   onPressed: () => setState(() => _walletBalanceHidden = !_walletBalanceHidden),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               _walletBalanceHidden ? '••••••' : 'UGX ${_fmt(_walletBalance)}',
               style: GoogleFonts.poppins(
                 color: Colors.white,
-                fontSize: 28,
+                fontSize: 32,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Row(
               children: [
-                const Icon(Icons.arrow_forward, color: Colors.white70, size: 16),
+                const Icon(Icons.arrow_forward, color: Colors.white70, size: 18),
                 const SizedBox(width: 8),
                 Text(
                   'View Details',
                   style: GoogleFonts.poppins(
                     color: Colors.white70,
-                    fontSize: 12,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -1299,7 +1352,7 @@ class _HomeTabState extends State<_HomeTab> {
 
   Widget _buildQuickStatsCard() {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -1317,14 +1370,14 @@ class _HomeTabState extends State<_HomeTab> {
           Text(
             'Quick Stats',
             style: GoogleFonts.poppins(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               color: const Color(0xFF1A2332),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
           _statRow('Active Loans', '$_active', Icons.receipt_long, const Color(0xFF6A1B9A)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           _statRow('Pending', '$_pending', Icons.hourglass_empty, const Color(0xFFF59E0B)),
           const SizedBox(height: 16),
           _statRow('Total Repaid', 'UGX ${_shortNum(_totalRepaid)}', Icons.check_circle, const Color(0xFF10B981)),
