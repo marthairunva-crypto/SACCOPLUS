@@ -148,13 +148,13 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     return Container(
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: AssetImage('assets/images/login.png'),
+          image: AssetImage('assets/images/login.JPG'),
           fit: BoxFit.cover,
         ),
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1), // Very light overlay
+          color: Colors.white.withOpacity(0.15),
         ),
         child: Center(
           child: Padding(
@@ -186,20 +186,12 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 
                 const SizedBox(height: 32),
                 
-                // Welcome text
                 const Text(
                   'Welcome to',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black54,
-                        offset: Offset(0, 2),
-                        blurRadius: 8,
-                      ),
-                    ],
                   ),
                 ),
                 
@@ -212,13 +204,6 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                     fontSize: 42,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.2,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black54,
-                        offset: Offset(0, 3),
-                        blurRadius: 10,
-                      ),
-                    ],
                   ),
                 ),
                 
@@ -229,13 +214,6 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black54,
-                        offset: Offset(0, 2),
-                        blurRadius: 8,
-                      ),
-                    ],
                   ),
                   textAlign: TextAlign.center,
                 ),
