@@ -10,6 +10,12 @@ class ModernTheme {
   static const accentOrange = Color(0xFFFF9800);
   static const accent = Color(0xFFFF9800); // Orange accent color
   
+  // Aliases for compatibility with old code
+  static const primary = primaryBlue;
+  static const primaryLight = primaryBlueLight;
+  static const primaryDark = Color(0xFF1565C0);
+  static const surface = bgWhite;
+  
   // Background colors
   static const bgWhite = Color(0xFFFFFFFF);
   static const bgLight = Color(0xFFF8F9FA);
