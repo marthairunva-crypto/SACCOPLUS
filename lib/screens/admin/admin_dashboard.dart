@@ -45,7 +45,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ];
 
     return Scaffold(
-      backgroundColor: ModernTheme.surface,
+      backgroundColor: const Color(0xFFF5F7FA), // Light gray background for content area
       drawer: _AdminDrawer(
         onNavigate: (i) {
           Navigator.pop(context);
@@ -190,6 +190,7 @@ class _AdminDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      backgroundColor: const Color(0xFF1A2332), // Dark blue background
       child: Column(
         children: [
           // Header
@@ -198,7 +199,7 @@ class _AdminDrawer extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 52, 20, 24),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [ModernTheme.primaryDark, ModernTheme.primaryLight],
+                colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)], // Aurora Bank dark blue
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -232,7 +233,7 @@ class _AdminDrawer extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: ModernTheme.accent.withOpacity(0.3),
+                    color: const Color(0xFF4A90E2).withOpacity(0.3),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text('Admin',
@@ -263,7 +264,7 @@ class _AdminDrawer extends StatelessWidget {
                     () => onNavigate(3)),
                 _drawerItem(Icons.history_rounded, 'Audit Trail',
                     () => onNavigateAudit()),
-                const Divider(indent: 16, endIndent: 16),
+                Divider(color: Colors.white.withOpacity(0.1), indent: 16, endIndent: 16),
                 _drawerItem(Icons.savings_rounded, 'Savings Management',
                     () => onNavigateSavings()),
                 _drawerItem(Icons.pie_chart_rounded, 'Shares Management',
@@ -272,26 +273,26 @@ class _AdminDrawer extends StatelessWidget {
                     () => onNavigateStaff()),
                 _drawerItem(Icons.settings_rounded, 'SACCO Settings',
                     () => onNavigateSaccoSettings()),
-                const Divider(indent: 16, endIndent: 16),
+                Divider(color: Colors.white.withOpacity(0.1), indent: 16, endIndent: 16),
                 _drawerItem(Icons.notifications_rounded, 'Send Notifications',
                     onNotif,
-                    color: ModernTheme.primary),
-                const Divider(indent: 16, endIndent: 16),
+                    color: const Color(0xFF4A90E2)),
+                Divider(color: Colors.white.withOpacity(0.1), indent: 16, endIndent: 16),
                 _drawerItem(Icons.settings_outlined, 'Settings', onSettings),
                 _drawerItem(Icons.info_outline_rounded, 'About App', onAbout),
-                const Divider(indent: 16, endIndent: 16),
+                Divider(color: Colors.white.withOpacity(0.1), indent: 16, endIndent: 16),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: OutlinedButton.icon(
                     onPressed: onLogout,
                     icon: const Icon(Icons.logout_rounded,
-                        color: ModernTheme.error),
+                        color: Color(0xFFEF4444)),
                     label: Text('Sign Out',
                         style: GoogleFonts.poppins(
-                            color: ModernTheme.error,
+                            color: const Color(0xFFEF4444),
                             fontWeight: FontWeight.w600)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: ModernTheme.error),
+                      side: const BorderSide(color: Color(0xFFEF4444)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -309,15 +310,16 @@ class _AdminDrawer extends StatelessWidget {
   Widget _drawerItem(IconData icon, String label, VoidCallback onTap,
       {Color? color}) {
     return ListTile(
-      leading: Icon(icon, color: color ?? ModernTheme.textSecondary, size: 22),
+      leading: Icon(icon, color: color ?? Colors.white70, size: 22),
       title: Text(label,
           style: GoogleFonts.poppins(
               fontSize: 14,
-              color: color ?? ModernTheme.textPrimary,
+              color: color ?? Colors.white,
               fontWeight: FontWeight.w500)),
       onTap: onTap,
       horizontalTitleGap: 8,
       dense: true,
+      hoverColor: Colors.white.withOpacity(0.05),
     );
   }
 }
@@ -457,7 +459,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         SliverAppBar(
           expandedHeight: 160,
           pinned: true,
-          backgroundColor: ModernTheme.primary,
+          backgroundColor: const Color(0xFF1E3A5F), // Dark blue
           leading: Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.menu_rounded, color: Colors.white),
@@ -481,7 +483,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             background: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [ModernTheme.primaryDark, ModernTheme.primaryLight],
+                  colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)], // Aurora Bank colors
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
