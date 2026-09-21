@@ -384,17 +384,17 @@ class _HomeTabState extends State<_HomeTab> {
     final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 700; // Lowered from 900
+    final isDesktop = screenWidth > 600; // Even more aggressive - 600px breakpoint
     
-    print('🖥️ DASHBOARD: Screen width = $screenWidth, isDesktop = $isDesktop');
+    print('🖥️ DASHBOARD BUILD: Screen width = $screenWidth, isDesktop = $isDesktop');
 
     // DESKTOP: Completely different layout
     if (isDesktop) {
-      print('✅ Using DESKTOP layout');
+      print('✅ Rendering FINBANK DESKTOP layout');
       return _buildDesktopLayout();
     }
     
-    print('📱 Using MOBILE layout');
+    print('📱 Rendering MOBILE layout');
 
     // MOBILE: Original layout
     final content = CustomScrollView(slivers: [
@@ -1243,7 +1243,107 @@ class _HomeTabState extends State<_HomeTab> {
     );
   }
 
-  Widget _buildFinancialCard(int tot, int depPct, int loanPct) {
+  // Override the old _buildServicesCard with new FinBank style for desktop
+  @override
+  Widget _buildServicesCard() {
+    // Check if we're on desktop
+    final isDesktop = MediaQuery.of(context).size.width > 600;
+    if (!isDesktop) {
+      // Use old mobile services card
+      return _buildOldMobileServicesCard();
+    }
+
+    // New FinBank desktop services
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Services',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 24),
+          GridView.count(
+            crossAxisCount: 4,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.1,
+            children: [
+              _serviceButton(Icons.add_card, 'Apply Loan', const Color(0xFF3B82F6), widget.onApply),
+              _serviceButton(Icons.receipt_long, 'My Loans', const Color(0xFF8B5CF6), widget.onStatus),
+              _serviceButton(Icons.payment, 'Repay', const Color(0xFF10B981), widget.onRepay),
+              _serviceButton(Icons.account_balance, 'Wallet', const Color(0xFF3B82F6), () {}), // No navigation on desktop
+              _serviceButton(Icons.savings, 'Savings', const Color(0xFF059669), () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsScreen()))),
+              _serviceButton(Icons.pie_chart, 'Shares', const Color(0xFF8B5CF6), () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SharesScreen()))),
+              _serviceButton(Icons.lock_clock, 'Fixed Deposit', const Color(0xFF0EA5E9), () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FixedDepositScreen()))),
+              _serviceButton(Icons.receipt, 'Pay Bills', const Color(0xFFF59E0B), () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BillPaymentScreen()))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceButton(IconData icon, String label, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFAFAFA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF0F172A),
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOldMobileServicesCard() {
     return Container(
       padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
