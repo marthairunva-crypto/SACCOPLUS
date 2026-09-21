@@ -158,8 +158,8 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              ModernTheme.primaryBlue.withOpacity(0.7),
-              ModernTheme.primaryBlue.withOpacity(0.5),
+              ModernTheme.primaryBlue.withOpacity(0.75),
+              ModernTheme.primaryBlue.withOpacity(0.6),
             ],
           ),
         ),
@@ -171,72 +171,75 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               children: [
                 // Your logo
                 Container(
-                  width: 120,
-                  height: 120,
+                  width: 140,
+                  height: 140,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.3),
-                        blurRadius: 30,
+                        blurRadius: 40,
                         spreadRadius: 5,
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   child: Image.asset(
                     'assets/images/logo2.png',
                     fit: BoxFit.contain,
                   ),
                 ),
                 
-                const SizedBox(height: 32),
+                const SizedBox(height: 40),
                 
                 const Text(
                   'Welcome to',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 24,
                     fontWeight: FontWeight.w500,
+                    letterSpacing: 0.5,
                     shadows: [
                       Shadow(
-                        color: Colors.black26,
-                        blurRadius: 10,
+                        color: Colors.black38,
+                        blurRadius: 12,
                       ),
                     ],
                   ),
                 ),
                 
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 
                 const Text(
                   'SACCOPLUS',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 42,
+                    fontSize: 56,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
+                    letterSpacing: 2,
                     shadows: [
                       Shadow(
-                        color: Colors.black26,
-                        blurRadius: 10,
+                        color: Colors.black38,
+                        blurRadius: 12,
                       ),
                     ],
                   ),
                 ),
                 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 
                 const Text(
                   'Your trusted SACCO management system',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.3,
                     shadows: [
                       Shadow(
-                        color: Colors.black26,
-                        blurRadius: 10,
+                        color: Colors.black38,
+                        blurRadius: 12,
                       ),
                     ],
                   ),
@@ -265,8 +268,9 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               Text(
                 _useAccountNumber ? 'Enter your account number to log in' : 'Enter your phone number to log in',
                 style: const TextStyle(
-                  fontSize: 16,
-                  color: ModernTheme.textSecondary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  color: ModernTheme.textPrimary,
                 ),
               ),
               
@@ -275,20 +279,27 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               // Username/Account Number field
               TextFormField(
                 controller: _usernameCtrl,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
                 decoration: InputDecoration(
                   labelText: _useAccountNumber ? 'Account Number' : 'Phone Number',
+                  labelStyle: const TextStyle(fontSize: 16),
                   hintText: _useAccountNumber ? '60000001' : '0700000000',
+                  hintStyle: const TextStyle(fontSize: 16),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: ModernTheme.borderLight),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: ModernTheme.borderLight, width: 1.5),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: ModernTheme.borderLight),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: ModernTheme.borderLight, width: 1.5),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: ModernTheme.primaryBlue, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: ModernTheme.primaryBlue, width: 2.5),
                   ),
                   filled: true,
                   fillColor: ModernTheme.bgLight,
@@ -302,7 +313,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               
               // NEXT button
               SizedBox(
-                height: 50,
+                height: 56,
                 child: ElevatedButton(
                   onPressed: _loading ? null : () {
                     // First step: validate username, then show PIN field
@@ -315,26 +326,27 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ModernTheme.primaryBlue,
                     foregroundColor: Colors.white,
-                    elevation: 0,
+                    elevation: 2,
+                    shadowColor: ModernTheme.primaryBlue.withOpacity(0.4),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: _loading
                       ? const SizedBox(
-                          height: 20,
-                          width: 20,
+                          height: 24,
+                          width: 24,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                            strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Text(
                           'NEXT',
                           style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
                           ),
                         ),
                 ),
@@ -346,20 +358,28 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 
                 TextFormField(
                   controller: _pinCtrl,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 8,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Password/PIN',
+                    labelStyle: const TextStyle(fontSize: 16),
                     hintText: '••••',
+                    hintStyle: const TextStyle(fontSize: 20, letterSpacing: 8),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: ModernTheme.borderLight),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: ModernTheme.borderLight, width: 1.5),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: ModernTheme.borderLight),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: ModernTheme.borderLight, width: 1.5),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: ModernTheme.primaryBlue, width: 2),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: ModernTheme.primaryBlue, width: 2.5),
                     ),
                     filled: true,
                     fillColor: ModernTheme.bgLight,
@@ -373,23 +393,24 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 const SizedBox(height: 24),
                 
                 SizedBox(
-                  height: 50,
+                  height: 56,
                   child: ElevatedButton(
                     onPressed: _loading ? null : _login,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ModernTheme.success,
                       foregroundColor: Colors.white,
-                      elevation: 0,
+                      elevation: 2,
+                      shadowColor: ModernTheme.success.withOpacity(0.4),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child: const Text(
                       'LOG IN',
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
                       ),
                     ),
                   ),
@@ -479,13 +500,49 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               
               // Footer
               const Text(
-                'SECURITY ALERT\nSACCOPLUS does not send emails requesting for confidential information such as account codes, PINs, passwords, or PIN codes. Consider all email requests for such personal information to be suspicious and contact us immediately.',
+                'SECURITY ALERT',
                 style: TextStyle(
-                  color: ModernTheme.textHint,
-                  fontSize: 11,
-                  height: 1.4,
+                  color: ModernTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  height: 1.6,
                 ),
                 textAlign: TextAlign.center,
+              ),
+              
+              const SizedBox(height: 8),
+              
+              const Text(
+                'SACCOPLUS does not send emails requesting for confidential information such as account codes, PINs, passwords, or PIN codes. Consider all email requests for such personal information to be suspicious and contact us immediately.',
+                style: TextStyle(
+                  color: ModernTheme.textHint,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Support contact
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.phone,
+                    size: 16,
+                    color: ModernTheme.primaryBlue,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Support: +256 778474686',
+                    style: TextStyle(
+                      color: ModernTheme.primaryBlue,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
