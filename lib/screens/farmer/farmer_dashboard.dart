@@ -296,7 +296,7 @@ class _HomeTabState extends State<_HomeTab> {
   Map<String, dynamic>? _profile;
   late final String _memberId;
   int _totalBorrowed = 0, _totalRepaid = 0, _outstanding = 0;
-  int _active = 0, _pending = 0, _walletBalance = 0;
+  int _active = 0, _pending = 0, _overdue = 0, _paid = 0, _walletBalance = 0;
   bool _walletBalanceHidden = false;
   List<Map<String, dynamic>> _recent = [];
   bool _loading = true;
@@ -324,13 +324,15 @@ class _HomeTabState extends State<_HomeTab> {
       final wallet     = results[3] as Map<String, dynamic>;
       final fmtLocal   = NumberFormat('#,###', 'en_US');
 
-      int active = 0, pending = 0, totalBorrowed = 0;
+      int active = 0, pending = 0, overdue = 0, paid = 0, totalBorrowed = 0;
       for (final d in loans) {
         final status = d['status'] as String? ?? '';
         final amount = (d['amount'] as num?)?.toInt() ?? 0;
         totalBorrowed += amount;
         if (status == AppConstants.statusApproved || status == AppConstants.statusActive) active++;
         else if (status == AppConstants.statusPending) pending++;
+        else if (status == AppConstants.statusOverdue) overdue++;
+        else if (status == AppConstants.statusPaid) paid++;
       }
       final totalRepaidAmount = repayments.fold<int>(0, (s, r) => s + ((r['amount'] as num?)?.toInt() ?? 0));
       final totalActive = loans.where((l) => l['status'] == AppConstants.statusApproved || l['status'] == AppConstants.statusActive)
@@ -348,7 +350,11 @@ class _HomeTabState extends State<_HomeTab> {
       setState(() {
         _profile = profile ?? _profile;
         _totalBorrowed = totalBorrowed; _totalRepaid = totalRepaidAmount;
-        _outstanding = outstanding; _active = active; _pending = pending;
+        _outstanding = outstanding; 
+        _active = active; 
+        _pending = pending;
+        _overdue = overdue;
+        _paid = paid;
         _walletBalance = (wallet['balance'] as num?)?.toInt() ?? 0;
         _recent = recent; _loading = false;
       });
@@ -663,6 +669,10 @@ class _HomeTabState extends State<_HomeTab> {
                           _buildServicesCard(),
                           const SizedBox(height: 24),
                           
+                          // Loan Statistics Chart
+                          _buildLoanStatsChart(),
+                          const SizedBox(height: 24),
+                          
                           // Recent Activity
                           _buildRecentActivityCard(),
                         ],
@@ -901,6 +911,236 @@ class _HomeTabState extends State<_HomeTab> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLoanStatsChart() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Loan Statistics',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1A2332),
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 250,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: (_active + _pending + _overdue + _paid).toDouble() + 2,
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      String status;
+                      switch (group.x.toInt()) {
+                        case 0:
+                          status = 'Active';
+                          break;
+                        case 1:
+                          status = 'Pending';
+                          break;
+                        case 2:
+                          status = 'Overdue';
+                          break;
+                        case 3:
+                          status = 'Paid';
+                          break;
+                        default:
+                          status = '';
+                      }
+                      return BarTooltipItem(
+                        '$status\n${rod.toY.toInt()} loans',
+                        GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (value, meta) {
+                        String text;
+                        switch (value.toInt()) {
+                          case 0:
+                            text = 'Active';
+                            break;
+                          case 1:
+                            text = 'Pending';
+                            break;
+                          case 2:
+                            text = 'Overdue';
+                            break;
+                          case 3:
+                            text = 'Paid';
+                            break;
+                          default:
+                            text = '';
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            text,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: const Color(0xFF6B7280),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      getTitlesWidget: (value, meta) {
+                        return Text(
+                          value.toInt().toString(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: 1,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: const Color(0xFFF3F4F6),
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                borderData: FlBorderData(show: false),
+                barGroups: [
+                  BarChartGroupData(
+                    x: 0,
+                    barRods: [
+                      BarChartRodData(
+                        toY: _active.toDouble(),
+                        color: const Color(0xFF10B981), // Green
+                        width: 40,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          topRight: Radius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  BarChartGroupData(
+                    x: 1,
+                    barRods: [
+                      BarChartRodData(
+                        toY: _pending.toDouble(),
+                        color: const Color(0xFFF59E0B), // Orange
+                        width: 40,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          topRight: Radius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  BarChartGroupData(
+                    x: 2,
+                    barRods: [
+                      BarChartRodData(
+                        toY: _overdue.toDouble(),
+                        color: const Color(0xFFEF4444), // Red
+                        width: 40,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          topRight: Radius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  BarChartGroupData(
+                    x: 3,
+                    barRods: [
+                      BarChartRodData(
+                        toY: _paid.toDouble(),
+                        color: const Color(0xFF6366F1), // Purple
+                        width: 40,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          topRight: Radius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Legend
+          Wrap(
+            spacing: 24,
+            runSpacing: 12,
+            children: [
+              _legendItem('Active', const Color(0xFF10B981), _active),
+              _legendItem('Pending', const Color(0xFFF59E0B), _pending),
+              _legendItem('Overdue', const Color(0xFFEF4444), _overdue),
+              _legendItem('Paid', const Color(0xFF6366F1), _paid),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _legendItem(String label, Color color, int count) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$label: $count',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            color: const Color(0xFF6B7280),
+          ),
+        ),
+      ],
     );
   }
 

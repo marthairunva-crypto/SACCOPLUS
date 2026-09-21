@@ -1,6 +1,6 @@
 @echo off
 cd /d c:\SACCOPLUS
 git add -A
-git commit -m "feat: proper desktop card layout"
-echo Done! Restart PC to push.
+git commit -m "add: loan statistics bar chart"
+echo Done! Charts added with real data.
 pause
