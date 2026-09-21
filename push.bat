@@ -1,9 +1,9 @@
 @echo off
 cd /d c:\SACCOPLUS
 echo Adding files...
-git add .
+git add -A
 echo Committing...
-git commit -m "fix: use saccoplus- prefix for all Firebase collections"
+git commit -m "feat: modern responsive dashboard"
 echo Pushing to GitHub...
 git push origin main
 if %errorlevel% equ 0 (

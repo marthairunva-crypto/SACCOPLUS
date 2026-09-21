@@ -26,6 +26,7 @@ import 'savings_screen.dart';
 import 'shares_screen.dart';
 import 'fixed_deposit_screen.dart';
 import 'create_fixed_deposit_screen.dart';
+import 'modern_dashboard.dart';
 
 class FarmerDashboard extends StatefulWidget {
   const FarmerDashboard({super.key});
@@ -68,6 +69,14 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 900;
+    
+    // Use modern dashboard for desktop/web, keep existing for mobile
+    if (isDesktop) {
+      return const ModernDashboard();
+    }
+    
+    // Mobile view - keep existing bottom nav layout
     final pages = [
       _HomeTab(
         onApply: () => _navigate(const ApplyLoanScreen()),
