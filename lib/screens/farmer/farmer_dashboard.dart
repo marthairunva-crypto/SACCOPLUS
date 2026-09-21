@@ -376,6 +376,12 @@ class _HomeTabState extends State<_HomeTab> {
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
     final isDesktop = MediaQuery.of(context).size.width > 900;
 
+    // DESKTOP: Completely different layout
+    if (isDesktop) {
+      return _buildDesktopLayout();
+    }
+
+    // MOBILE: Original layout
     final content = CustomScrollView(slivers: [
       SliverAppBar(
         expandedHeight: 160, pinned: true, backgroundColor: AppTheme.primary,
@@ -578,20 +584,551 @@ class _HomeTabState extends State<_HomeTab> {
       ])),
     ]);
     
-    // Wrap in container with background and max-width for desktop
-    if (isDesktop) {
-      return Container(
-        color: const Color(0xFFF5F7FA), // Light gray background
+    return content;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DESKTOP LAYOUT - Proper Grid Design
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildDesktopLayout() {
+    final tot = _totalBorrowed + _walletBalance;
+    final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
+    final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
+
+    return Container(
+      color: const Color(0xFFF5F7FA),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
         child: Center(
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 1400), // Max width for readability
-            child: content,
+            constraints: const BoxConstraints(maxWidth: 1400),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$_greeting, $_name!',
+                          style: GoogleFonts.poppins(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1A2332),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Balance: UGX ${_fmt(_walletBalance)}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.notifications_outlined),
+                          onPressed: widget.onNotif,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: _load,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+
+                // 2-Column Grid Layout
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Left Column (70%)
+                    Expanded(
+                      flex: 7,
+                      child: Column(
+                        children: [
+                          // Financial Overview Card
+                          _buildFinancialCard(tot, depPct, loanPct),
+                          const SizedBox(height: 24),
+                          
+                          // Services Grid
+                          _buildServicesCard(),
+                          const SizedBox(height: 24),
+                          
+                          // Recent Activity
+                          _buildRecentActivityCard(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    
+                    // Right Column (30%)
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        children: [
+                          // Wallet Card
+                          _buildWalletCard(),
+                          const SizedBox(height: 24),
+                          
+                          // Quick Stats
+                          _buildQuickStatsCard(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      );
-    }
-    
-    return content;
+      ),
+    ).animate().fadeIn(duration: 600.ms);
+  }
+
+  Widget _buildFinancialCard(int tot, int depPct, int loanPct) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'FINANCIAL OVERVIEW',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.accent,
+              letterSpacing: 1.6,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _loading ? '...' : 'UGX ${_fmt(tot)}',
+            style: GoogleFonts.poppins(
+              fontSize: 32,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1A2332),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              // Deposits
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.accent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'MY DEPOSITS',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$depPct%',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: const Color(0xFF9CA3AF),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _loading ? '...' : 'UGX ${_fmt(_walletBalance)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF1A2332),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Donut Chart
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: _DonutRing(
+                  depositFraction: tot > 0 ? _walletBalance / tot : 0,
+                  loanFraction: tot > 0 ? _totalBorrowed / tot : 0,
+                  loading: _loading,
+                ),
+              ),
+              // Loans
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'MY LOANS',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$loanPct%',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: const Color(0xFF9CA3AF),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _loading ? '...' : 'UGX ${_fmt(_outstanding)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServicesCard() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Services',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1A2332),
+            ),
+          ),
+          const SizedBox(height: 24),
+          GridView.count(
+            crossAxisCount: 6,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1,
+            children: [
+              _ServiceTile(icon: Icons.add_card_rounded, label: 'Apply\nLoan', color: const Color(0xFF1565C0), onTap: widget.onApply),
+              _ServiceTile(icon: Icons.folder_copy_rounded, label: 'My\nLoans', color: const Color(0xFF6A1B9A), onTap: widget.onStatus),
+              _ServiceTile(icon: Icons.currency_exchange_rounded, label: 'Repay\nLoan', color: const Color(0xFF00796B), onTap: widget.onRepay),
+              _ServiceTile(icon: Icons.account_balance_wallet_rounded, label: 'Wallet', color: const Color(0xFF1565C0),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()))),
+              _ServiceTile(icon: Icons.savings_rounded, label: 'Savings', color: const Color(0xFF2E7D32),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsScreen()))),
+              _ServiceTile(icon: Icons.donut_large_rounded, label: 'Shares', color: const Color(0xFF6A1B9A),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SharesScreen()))),
+              _ServiceTile(icon: Icons.lock_clock_rounded, label: 'Fixed\nDeposit', color: const Color(0xFF0277BD),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FixedDepositScreen()))),
+              _ServiceTile(icon: Icons.receipt_rounded, label: 'Pay\nBills', color: const Color(0xFFF57C00),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BillPaymentScreen()))),
+              _ServiceTile(icon: Icons.sim_card_rounded, label: 'Airtime', color: const Color(0xFF00838F), isNew: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AirtimeDataScreen()))),
+              _ServiceTile(icon: Icons.account_balance_rounded, label: 'Transfer', color: const Color(0xFF37474F),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BankTransferScreen()))),
+              _ServiceTile(icon: Icons.psychology_rounded, label: 'AI Chat', color: const Color(0xFF6A1B9A), isNew: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AiChatScreen()))),
+              _ServiceTile(icon: Icons.receipt_long_rounded, label: 'History', color: const Color(0xFF455A64),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TransactionHistoryScreen()))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivityCard() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recent Activity',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1A2332),
+                ),
+              ),
+              TextButton(
+                onPressed: widget.onStatus,
+                child: Text(
+                  'See All',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: AppTheme.accent,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_recent.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  children: [
+                    Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No recent activities',
+                      style: GoogleFonts.poppins(color: const Color(0xFF9CA3AF)),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Column(
+              children: _recent.map((l) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: LoanListTile(
+                    loanId: '',
+                    amount: l['amount']!,
+                    purpose: l['purpose']!,
+                    date: l['date']!,
+                    status: l['status']!,
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWalletCard() {
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF0D2B6B), Color(0xFF1A3F8F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0D2B6B).withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Wallet Balance',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _walletBalanceHidden ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: Colors.white70,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _walletBalanceHidden = !_walletBalanceHidden),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _walletBalanceHidden ? '••••••' : 'UGX ${_fmt(_walletBalance)}',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Icon(Icons.arrow_forward, color: Colors.white70, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'View Details',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickStatsCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Stats',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1A2332),
+            ),
+          ),
+          const SizedBox(height: 24),
+          _statRow('Active Loans', '$_active', Icons.receipt_long, const Color(0xFF6A1B9A)),
+          const SizedBox(height: 16),
+          _statRow('Pending', '$_pending', Icons.hourglass_empty, const Color(0xFFF59E0B)),
+          const SizedBox(height: 16),
+          _statRow('Total Repaid', 'UGX ${_shortNum(_totalRepaid)}', Icons.check_circle, const Color(0xFF10B981)),
+        ],
+      ),
+    );
+  }
+
+  Widget _statRow(String label, String value, IconData icon, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF6B7280),
+                ),
+              ),
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1A2332),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
