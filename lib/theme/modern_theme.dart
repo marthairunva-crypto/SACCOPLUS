@@ -8,6 +8,7 @@ class ModernTheme {
   static const primaryBlueLight = Color(0xFF42A5F5);
   static const accentGreen = Color(0xFF4CAF50);
   static const accentOrange = Color(0xFFFF9800);
+  static const accent = Color(0xFFFF9800); // Orange accent color
   
   // Background colors
   static const bgWhite = Color(0xFFFFFFFF);

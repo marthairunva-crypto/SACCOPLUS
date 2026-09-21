@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
 import '../../core/account_number_service.dart';
-import '../farmer/farmer_scaffold.dart';
+import '../farmer/farmer_dashboard.dart';
 import '../admin/admin_dashboard.dart';
 
 /// Modern, clean login screen inspired by professional web designs
@@ -79,7 +79,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
       } else {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const FarmerScaffold()),
+          MaterialPageRoute(builder: (_) => const FarmerDashboard()),
         );
       }
     } catch (e) {
