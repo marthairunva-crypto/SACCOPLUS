@@ -154,7 +154,14 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              ModernTheme.primaryBlue.withOpacity(0.7),
+              ModernTheme.primaryBlue.withOpacity(0.5),
+            ],
+          ),
         ),
         child: Center(
           child: Padding(
@@ -162,25 +169,25 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo
+                // Your logo
                 Container(
-                  width: 100,
-                  height: 100,
+                  width: 120,
+                  height: 120,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withOpacity(0.3),
                         blurRadius: 30,
                         spreadRadius: 5,
                       ),
                     ],
                   ),
-                  child: Icon(
-                    Icons.account_balance,
-                    size: 50,
-                    color: ModernTheme.primaryBlue,
+                  padding: const EdgeInsets.all(12),
+                  child: Image.asset(
+                    'assets/images/logo2.png',
+                    fit: BoxFit.contain,
                   ),
                 ),
                 
@@ -192,6 +199,12 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black26,
+                        blurRadius: 10,
+                      ),
+                    ],
                   ),
                 ),
                 
@@ -204,6 +217,12 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                     fontSize: 42,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.2,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black26,
+                        blurRadius: 10,
+                      ),
+                    ],
                   ),
                 ),
                 
@@ -214,6 +233,12 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black26,
+                        blurRadius: 10,
+                      ),
+                    ],
                   ),
                   textAlign: TextAlign.center,
                 ),
