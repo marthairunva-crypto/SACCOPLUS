@@ -374,8 +374,9 @@ class _HomeTabState extends State<_HomeTab> {
     final tot = _totalBorrowed + _walletBalance;
     final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
+    final isDesktop = MediaQuery.of(context).size.width > 900;
 
-    return CustomScrollView(slivers: [
+    final content = CustomScrollView(slivers: [
       SliverAppBar(
         expandedHeight: 160, pinned: true, backgroundColor: AppTheme.primary,
         leading: Builder(builder: (ctx) => IconButton(
@@ -506,32 +507,42 @@ class _HomeTabState extends State<_HomeTab> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Services', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
             const SizedBox(height: 12),
-            GridView.count(
-              crossAxisCount: 4, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 10, mainAxisSpacing: 14, childAspectRatio: 0.82,
-              children: [
-                _ServiceTile(icon: Icons.add_card_rounded,          label: 'Apply\nLoan',      color: const Color(0xFF1565C0), onTap: widget.onApply),
-                _ServiceTile(icon: Icons.folder_copy_rounded,        label: 'My\nLoans',        color: const Color(0xFF6A1B9A), onTap: widget.onStatus),
-                _ServiceTile(icon: Icons.currency_exchange_rounded,  label: 'Repay\nLoan',      color: const Color(0xFF00796B), onTap: widget.onRepay),
-                _ServiceTile(icon: Icons.account_balance_wallet_rounded, label: 'Wallet',        color: const Color(0xFF1565C0),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()))),
-                _ServiceTile(icon: Icons.savings_rounded,            label: 'Savings',          color: const Color(0xFF2E7D32),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsScreen()))),
-                _ServiceTile(icon: Icons.donut_large_rounded,        label: 'Shares',           color: const Color(0xFF6A1B9A),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SharesScreen()))),
-                _ServiceTile(icon: Icons.lock_clock_rounded,         label: 'Fixed\nDeposit',   color: const Color(0xFF0277BD),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FixedDepositScreen()))),
-                _ServiceTile(icon: Icons.receipt_rounded,            label: 'Pay\nBills',       color: const Color(0xFFF57C00),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BillPaymentScreen()))),
-                _ServiceTile(icon: Icons.sim_card_rounded,           label: 'Airtime\n& Data',  color: const Color(0xFF00838F),
-                    isNew: true,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AirtimeDataScreen()))),
-                _ServiceTile(icon: Icons.account_balance_rounded,    label: 'Bank\nTransfer',   color: const Color(0xFF37474F),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BankTransferScreen()))),
-                _ServiceTile(icon: Icons.psychology_rounded,         label: 'AI\nAssistant',    color: const Color(0xFF6A1B9A),
-                    isNew: true,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AiChatScreen()))),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Responsive column count
+                final crossAxisCount = constraints.maxWidth > 900 ? 6 : 4;
+                return GridView.count(
+                  crossAxisCount: crossAxisCount, 
+                  shrinkWrap: true, 
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 10, 
+                  mainAxisSpacing: 14, 
+                  childAspectRatio: 0.82,
+                  children: [
+                    _ServiceTile(icon: Icons.add_card_rounded,          label: 'Apply\nLoan',      color: const Color(0xFF1565C0), onTap: widget.onApply),
+                    _ServiceTile(icon: Icons.folder_copy_rounded,        label: 'My\nLoans',        color: const Color(0xFF6A1B9A), onTap: widget.onStatus),
+                    _ServiceTile(icon: Icons.currency_exchange_rounded,  label: 'Repay\nLoan',      color: const Color(0xFF00796B), onTap: widget.onRepay),
+                    _ServiceTile(icon: Icons.account_balance_wallet_rounded, label: 'Wallet',        color: const Color(0xFF1565C0),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()))),
+                    _ServiceTile(icon: Icons.savings_rounded,            label: 'Savings',          color: const Color(0xFF2E7D32),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsScreen()))),
+                    _ServiceTile(icon: Icons.donut_large_rounded,        label: 'Shares',           color: const Color(0xFF6A1B9A),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SharesScreen()))),
+                    _ServiceTile(icon: Icons.lock_clock_rounded,         label: 'Fixed\nDeposit',   color: const Color(0xFF0277BD),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FixedDepositScreen()))),
+                    _ServiceTile(icon: Icons.receipt_rounded,            label: 'Pay\nBills',       color: const Color(0xFFF57C00),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BillPaymentScreen()))),
+                    _ServiceTile(icon: Icons.sim_card_rounded,           label: 'Airtime\n& Data',  color: const Color(0xFF00838F),
+                        isNew: true,
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AirtimeDataScreen()))),
+                    _ServiceTile(icon: Icons.account_balance_rounded,    label: 'Bank\nTransfer',   color: const Color(0xFF37474F),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BankTransferScreen()))),
+                    _ServiceTile(icon: Icons.psychology_rounded,         label: 'AI\nAssistant',    color: const Color(0xFF6A1B9A),
+                        isNew: true,
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AiChatScreen()))),
+                  ],
+                );
+              },
             ),
           ]),
         ).animate().fadeIn(delay: 150.ms, duration: 500.ms),
@@ -566,6 +577,21 @@ class _HomeTabState extends State<_HomeTab> {
         const SizedBox(height: 90),
       ])),
     ]);
+    
+    // Wrap in container with background and max-width for desktop
+    if (isDesktop) {
+      return Container(
+        color: const Color(0xFFF5F7FA), // Light gray background
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1400), // Max width for readability
+            child: content,
+          ),
+        ),
+      );
+    }
+    
+    return content;
   }
 }
 
