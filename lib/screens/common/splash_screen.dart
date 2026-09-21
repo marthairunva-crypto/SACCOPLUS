@@ -59,28 +59,46 @@ class _SplashScreenState extends State<SplashScreen>
     return Scaffold(
       body: Stack(
         children: [
-          // Modern gradient background
+          // Background image
           Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  ModernTheme.primaryBlue,
-                  ModernTheme.primaryBlueLight,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+              image: DecorationImage(
+                image: AssetImage('assets/images/login.JPG'),
+                fit: BoxFit.cover,
               ),
             ),
           ),
 
-          // Decorative circles
+          // Premium gradient overlay
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF0D2B6B).withOpacity(0.92),
+                  const Color(0xFF1565C0).withOpacity(0.88),
+                  ModernTheme.primaryBlue.withOpacity(0.90),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+
+          // Decorative circles with blur
           Positioned(
             top: -80, right: -60,
             child: Container(
               width: 260, height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withOpacity(0.08),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.1),
+                    blurRadius: 60,
+                    spreadRadius: 20,
+                  ),
+                ],
               ),
             ),
           ),
@@ -90,7 +108,7 @@ class _SplashScreenState extends State<SplashScreen>
               width: 120, height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.04),
+                color: Colors.white.withOpacity(0.06),
               ),
             ),
           ),
@@ -100,7 +118,14 @@ class _SplashScreenState extends State<SplashScreen>
               width: 300, height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withOpacity(0.08),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.08),
+                    blurRadius: 60,
+                    spreadRadius: 20,
+                  ),
+                ],
               ),
             ),
           ),
@@ -112,7 +137,16 @@ class _SplashScreenState extends State<SplashScreen>
               clipper: _WaveClipper(),
               child: Container(
                 height: 180,
-                color: Colors.white.withOpacity(0.06),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withOpacity(0.08),
+                      Colors.white.withOpacity(0.04),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
               ),
             ),
           ),
@@ -123,16 +157,44 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 const Spacer(flex: 2),
 
-                // Logo
+                // Logo with premium glow
                 Center(
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
+                      // Outer glow ring
+                      Container(
+                        width: 168, height: 168,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.2),
+                              blurRadius: 50,
+                              spreadRadius: 10,
+                            ),
+                          ],
+                        ),
+                      )
+                          .animate(onPlay: (c) => c.repeat(reverse: true))
+                          .scale(
+                              begin: const Offset(1, 1),
+                              end: const Offset(1.1, 1.1),
+                              duration: 2000.ms,
+                              curve: Curves.easeInOut),
+                      
                       Container(
                         width: 148, height: 148,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.06),
+                          color: Colors.white.withOpacity(0.12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: ModernTheme.accent.withOpacity(0.3),
+                              blurRadius: 40,
+                              spreadRadius: 5,
+                            ),
+                          ],
                         ),
                       )
                           .animate(onPlay: (c) => c.repeat(reverse: true))
@@ -141,27 +203,41 @@ class _SplashScreenState extends State<SplashScreen>
                               end: const Offset(1.08, 1.08),
                               duration: 1800.ms,
                               curve: Curves.easeInOut),
+                      
                       Container(
                         width: 124, height: 124,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.08),
+                          color: Colors.white.withOpacity(0.15),
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.2), width: 1.5),
+                              color: Colors.white.withOpacity(0.3), width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.2),
+                              blurRadius: 30,
+                              spreadRadius: 3,
+                            ),
+                          ],
                         ),
                       ),
+                      
                       Container(
                         width: 100, height: 100,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.white,
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.4), width: 2),
+                              color: Colors.white.withOpacity(0.5), width: 3),
                           boxShadow: [
                             BoxShadow(
-                              color: ModernTheme.accent.withOpacity(0.3),
-                              blurRadius: 30,
-                              spreadRadius: 4,
+                              color: ModernTheme.accent.withOpacity(0.5),
+                              blurRadius: 40,
+                              spreadRadius: 5,
+                            ),
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.8),
+                              blurRadius: 20,
+                              spreadRadius: 2,
                             ),
                           ],
                         ),
@@ -184,29 +260,49 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 40),
 
                 Text(
                   AppConstants.appName,
                   style: GoogleFonts.poppins(
                     color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.4),
+                        blurRadius: 20,
+                        offset: const Offset(0, 4),
+                      ),
+                      Shadow(
+                        color: ModernTheme.accent.withOpacity(0.3),
+                        blurRadius: 30,
+                        offset: const Offset(0, 0),
+                      ),
+                    ],
                   ),
                 )
                     .animate()
                     .fadeIn(delay: 400.ms, duration: 600.ms)
                     .slideY(begin: 0.3, end: 0, curve: Curves.easeOut),
 
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
 
                 Text(
                   AppConstants.appTagline,
                   style: GoogleFonts.poppins(
-                    color: Colors.white60,
-                    fontSize: 12,
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.5,
                     height: 1.4,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 15,
+                      ),
+                    ],
                   ),
                   textAlign: TextAlign.center,
                 )
@@ -214,13 +310,27 @@ class _SplashScreenState extends State<SplashScreen>
                     .fadeIn(delay: 600.ms, duration: 600.ms)
                     .slideY(begin: 0.2, end: 0),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 Container(
-                  width: 48, height: 3,
+                  width: 60, height: 4,
                   decoration: BoxDecoration(
-                    color: ModernTheme.accent,  // orange brand line
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        ModernTheme.accent,
+                        ModernTheme.accent,
+                        Colors.transparent,
+                      ],
+                    ),
                     borderRadius: BorderRadius.circular(2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: ModernTheme.accent.withOpacity(0.5),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
                 )
                     .animate()
