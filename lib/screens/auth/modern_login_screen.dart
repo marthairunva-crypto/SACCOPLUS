@@ -3,7 +3,7 @@ import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
 import '../../core/account_number_service.dart';
 import '../farmer/farmer_scaffold.dart';
-import '../admin/admin_home.dart';
+import '../admin/admin_dashboard.dart';
 
 /// Modern, clean login screen inspired by professional web designs
 class ModernLoginScreen extends StatefulWidget {
@@ -67,8 +67,6 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
         _showSnack('Incorrect PIN', ModernTheme.error);
         return;
       }
-
-      await FirebaseService.saveSession(uid, profile);
       
       if (!mounted) return;
       
@@ -76,7 +74,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
       if (role == 'admin' || role == 'super_admin') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const AdminHome()),
+          MaterialPageRoute(builder: (_) => const AdminDashboard()),
         );
       } else {
         Navigator.pushReplacement(

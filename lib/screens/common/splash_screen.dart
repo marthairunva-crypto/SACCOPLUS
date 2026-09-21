@@ -159,7 +159,7 @@ class _SplashScreenState extends State<SplashScreen>
                               color: Colors.white.withOpacity(0.4), width: 2),
                           boxShadow: [
                             BoxShadow(
-                              color: AppTheme.accent.withOpacity(0.3),
+                              color: ModernTheme.accent.withOpacity(0.3),
                               blurRadius: 30,
                               spreadRadius: 4,
                             ),
@@ -219,7 +219,7 @@ class _SplashScreenState extends State<SplashScreen>
                 Container(
                   width: 48, height: 3,
                   decoration: BoxDecoration(
-                    color: AppTheme.accent,  // orange brand line
+                    color: ModernTheme.accent,  // orange brand line
                     borderRadius: BorderRadius.circular(2),
                   ),
                 )
@@ -247,7 +247,7 @@ class _SplashScreenState extends State<SplashScreen>
                         value: _progressCtrl.value,
                         backgroundColor: Colors.white12,
                         valueColor:
-                            const AlwaysStoppedAnimation<Color>(AppTheme.accent),
+                            AlwaysStoppedAnimation<Color>(ModernTheme.accent),
                         minHeight: 2,
                       ),
                     ),
@@ -325,11 +325,11 @@ class _DotsLoader extends StatelessWidget {
                 height: size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppTheme.accent.withOpacity(opacity),
+                  color: ModernTheme.accent.withOpacity(opacity),
                   boxShadow: t > 0.5
                       ? [
                           BoxShadow(
-                            color: AppTheme.accent.withOpacity(0.4 * t),
+                            color: ModernTheme.accent.withOpacity(0.4 * t),
                             blurRadius: 8,
                             spreadRadius: 1,
                           )

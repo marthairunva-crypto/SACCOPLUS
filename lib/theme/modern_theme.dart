@@ -171,7 +171,7 @@ class ModernTheme {
     ),
     
     // Modern cards
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: bgCard,
       shape: RoundedRectangleBorder(
