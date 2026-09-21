@@ -27,6 +27,18 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       
+      - name: Patch Firebase CMake for compatibility
+        run: |
+          flutter build windows --release
+        continue-on-error: true
+      
+      - name: Fix Firebase CMakeLists.txt
+        run: |
+          $cmakeFile = "build/windows/x64/extracted/firebase_cpp_sdk_windows/CMakeLists.txt"
+          if (Test-Path $cmakeFile) {
+            (Get-Content $cmakeFile) -replace 'cmake_minimum_required\(VERSION 3\.1\)', 'cmake_minimum_required(VERSION 3.5)' | Set-Content $cmakeFile
+          }
+      
       - name: Build Windows Release
         run: flutter build windows --release
       
