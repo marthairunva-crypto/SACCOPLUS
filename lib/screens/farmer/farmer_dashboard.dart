@@ -384,7 +384,7 @@ class _HomeTabState extends State<_HomeTab> {
     final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 600; // Even more aggressive - 600px breakpoint
+    final isDesktop = screenWidth > 1; // FORCE DESKTOP ALWAYS for testing
     
     print('🖥️ DASHBOARD BUILD: Screen width = $screenWidth, isDesktop = $isDesktop');
 
