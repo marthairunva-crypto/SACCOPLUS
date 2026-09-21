@@ -603,140 +603,447 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DESKTOP LAYOUT - Full Width (No Sidebars)
+  // DESKTOP LAYOUT - Paymen Style (Minimal Sidebar + Card Grid)
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildDesktopLayout() {
-    final tot = _totalBorrowed + _walletBalance;
-    final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
-    final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F8FA),
-      body: Column(
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: Row(
         children: [
-          // TOP BAR
+          // MINIMAL LEFT SIDEBAR
           Container(
-            height: 70,
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+            width: 220,
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.03),
                   blurRadius: 10,
-                  offset: const Offset(0, 2),
+                  offset: const Offset(2, 0),
                 ),
               ],
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Logo
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1E40AF), Color(0xFF3B82F6)],
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.account_balance, color: Colors.white, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  AppConstants.appName,
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(width: 40),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
                     children: [
-                      Text(
-                        'Welcome back, $_name!',
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0F172A),
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
                         ),
+                        child: const Icon(Icons.account_balance, color: Colors.white, size: 18),
                       ),
+                      const SizedBox(width: 12),
                       Text(
-                        'Here\'s what\'s happening with your account today.',
+                        'SACCOPLUS',
                         style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: const Color(0xFF64748B),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1F2937),
                         ),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined, size: 24),
-                  onPressed: widget.onNotif,
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.refresh, size: 24),
-                  onPressed: _load,
-                ),
-                const SizedBox(width: 16),
-                // User Avatar
-                PopupMenuButton(
-                  offset: const Offset(0, 50),
-                  child: CircleAvatar(
-                    radius: 20,
-                    backgroundColor: const Color(0xFF3B82F6),
-                    child: Text(
-                      _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+                
+                const SizedBox(height: 24),
+                
+                // Navigation
+                _navItem(Icons.dashboard_rounded, 'Dashboard', true),
+                _navItem(Icons.account_balance_wallet, 'Wallet', false),
+                _navItem(Icons.savings, 'Savings', false),
+                _navItem(Icons.pie_chart, 'Shares', false),
+                _navItem(Icons.receipt_long, 'Loans', false),
+                _navItem(Icons.analytics_outlined, 'Analytics', false),
+                _navItem(Icons.support_agent, 'Support', false),
+                
+                const Spacer(),
+                
+                // Premium Card at Bottom
+                Container(
+                  margin: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      child: Row(
-                        children: [
-                          const Icon(Icons.settings, size: 20),
-                          const SizedBox(width: 12),
-                          Text('Settings', style: GoogleFonts.inter()),
-                        ],
+                  child: Column(
+                    children: [
+                      Text(
+                        'Get Premium',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    PopupMenuItem(
-                      onTap: () => _confirmLogout(context),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.logout, size: 20, color: Colors.red),
-                          const SizedBox(width: 12),
-                          Text('Sign Out', style: GoogleFonts.inter(color: Colors.red)),
-                        ],
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF6366F1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text('Upgrade', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                
+                const SizedBox(height: 20),
               ],
             ),
           ),
           
-          // SCROLLABLE CONTENT
+          // MAIN CONTENT
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildBalanceCards(),
+                  // Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hi $_name',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: const Color(0xFF6B7280),
+                            ),
+                          ),
+                          Text(
+                            'Welcome to SACCOPLUS',
+                            style: GoogleFonts.inter(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1F2937),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.notifications_outlined),
+                            onPressed: widget.onNotif,
+                          ),
+                          const SizedBox(width: 8),
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: const Color(0xFF6366F1),
+                            child: Text(
+                              _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 32),
+                  
+                  // Top 3 Stats Cards + Savings Chart
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Left: 3 small cards
+                      Expanded(
+                        flex: 3,
+                        child: Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: [
+                            _smallStatCard('Total Balance', 'UGX ${_fmt(_walletBalance)}', Icons.account_balance_wallet, const Color(0xFF6366F1)),
+                            _smallStatCard('Active Loans', '$_active', Icons.receipt_long, const Color(0xFFEC4899)),
+                            _smallStatCard('Total Savings', 'UGX ${_fmt(_walletBalance)}', Icons.savings, const Color(0xFF10B981)),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(width: 20),
+                      
+                      // Right: Savings Chart
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Saved This Month',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: const Color(0xFF6B7280),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'UGX ${_fmt(_walletBalance)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF1F2937),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              // Placeholder for chart
+                              Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3F4F6),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '📈 Chart',
+                                    style: GoogleFonts.inter(color: const Color(0xFF9CA3AF)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
                   const SizedBox(height: 24),
-                  _buildRecentTransactionsCard(),
+                  
+                  // Feature Card + Completion Card
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Feature Card
+                      Expanded(
+                        flex: 3,
+                        child: Container(
+                          padding: const EdgeInsets.all(32),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Reach financial\ngoals faster',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF1F2937),
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Use your SACCOPLUS account with no hidden fees',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        color: const Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    ElevatedButton(
+                                      onPressed: widget.onApply,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF6366F1),
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      child: Text('Apply for Loan', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 24),
+                              // Virtual Card
+                              Container(
+                                width: 200,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF6366F1).withOpacity(0.4),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Member Card',
+                                        style: GoogleFonts.inter(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        '•••• ${_phone.length > 4 ? _phone.substring(_phone.length - 4) : "****"}',
+                                        style: GoogleFonts.inter(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(width: 20),
+                      
+                      // Completion Card
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          padding: const EdgeInsets.all(32),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF3B82F6).withOpacity(0.3),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Profile Completion',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: 100,
+                                height: 100,
+                                child: Stack(
+                                  children: [
+                                    Center(
+                                      child: SizedBox(
+                                        width: 100,
+                                        height: 100,
+                                        child: CircularProgressIndicator(
+                                          value: 0.85,
+                                          strokeWidth: 8,
+                                          backgroundColor: Colors.white.withOpacity(0.2),
+                                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      ),
+                                    ),
+                                    Center(
+                                      child: Text(
+                                        '85%',
+                                        style: GoogleFonts.inter(
+                                          color: Colors.white,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Almost there!',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
                   const SizedBox(height: 24),
-                  _buildServicesCard(),
+                  
+                  // Transaction Lists Row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _buildRecentTransactionsCard()),
+                      const SizedBox(width: 20),
+                      Expanded(child: _buildServicesCard()),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -744,6 +1051,82 @@ class _HomeTabState extends State<_HomeTab> {
         ],
       ),
     ).animate().fadeIn(duration: 400.ms);
+  }
+
+  Widget _navItem(IconData icon, String label, bool isActive) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFF6366F1).withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          size: 20,
+          color: isActive ? const Color(0xFF6366F1) : const Color(0xFF9CA3AF),
+        ),
+        title: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+            color: isActive ? const Color(0xFF6366F1) : const Color(0xFF6B7280),
+          ),
+        ),
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: () {},
+      ),
+    );
+  }
+
+  Widget _smallStatCard(String label, String value, IconData icon, Color color) {
+    return Container(
+      width: 200,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: const Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1F2937),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildBalanceCards() {
