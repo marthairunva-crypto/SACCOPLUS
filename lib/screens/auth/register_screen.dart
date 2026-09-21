@@ -10,7 +10,7 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/account_number_service.dart';
 import '../../widgets/app_widgets.dart';
-import 'login_screen.dart';
+import 'professional_login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -46,45 +46,100 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    
     return Scaffold(
-      backgroundColor: AppTheme.surface,
-      appBar: AppBar(
-        title: const Text('Create Account'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () {
-            if (_step == 0) {
-              Navigator.pop(context);
-            } else {
-              setState(() => _step--);
-            }
-          },
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/login.JPG'),
+            fit: BoxFit.cover,
+          ),
         ),
-      ),
-      body: Column(
-        children: [
-          // Step indicator
-          _StepIndicator(current: _step),
-
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: AnimatedSwitcher(
-                duration: 350.ms,
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                            begin: const Offset(0.1, 0), end: Offset.zero)
-                        .animate(anim),
-                    child: child,
-                  ),
-                ),
-                child: _buildStep(),
-              ),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0xFF0D2B6B).withOpacity(0.92),
+                const Color(0xFF1565C0).withOpacity(0.88),
+              ],
             ),
           ),
-        ],
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Custom AppBar
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+                        onPressed: () {
+                          if (_step == 0) {
+                            Navigator.pop(context);
+                          } else {
+                            setState(() => _step--);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Create Account',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Step indicator
+                _StepIndicator(current: _step),
+
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Container(
+                        constraints: BoxConstraints(maxWidth: isDesktop ? 500 : double.infinity),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 30,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.all(32),
+                        child: AnimatedSwitcher(
+                          duration: 350.ms,
+                          transitionBuilder: (child, anim) => FadeTransition(
+                            opacity: anim,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                      begin: const Offset(0.1, 0), end: Offset.zero)
+                                  .animate(anim),
+                              child: child,
+                            ),
+                          ),
+                          child: _buildStep(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -129,7 +184,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           onDone: () {
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen()),
               (r) => false,
             );
           },
