@@ -199,12 +199,26 @@ class FirebaseService {
 
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        final doc = await _db
+        // Try saccoplus-members first (where your data is!)
+        var doc = await _db
+            .collection('saccoplus-members')
+            .doc(uid)
+            .get(const GetOptions(source: Source.server));
+
+        var stored = doc.data()?['pinHash'] as String?;
+
+        // pinHash found — verify it
+        if (stored != null && stored.isNotEmpty) {
+          return stored == hash;
+        }
+
+        // Try users collection (legacy)
+        doc = await _db
             .collection(AppConstants.usersCol)
             .doc(uid)
             .get(const GetOptions(source: Source.server));
 
-        final stored = doc.data()?['pinHash'] as String?;
+        stored = doc.data()?['pinHash'] as String?;
 
         // pinHash found in the primary doc — use it
         if (stored != null && stored.isNotEmpty) {
@@ -217,20 +231,18 @@ class FirebaseService {
         final phone = doc.data()?['phone'] as String? ?? '';
         if (phone.isNotEmpty) {
           final formatted = formatPhone(phone);
-          // Try both possible doc ID patterns
-          for (final docId in ['phone_$formatted', formatted]) {
-            if (docId == uid) continue;
-            final altDoc = await _db
-                .collection(AppConstants.usersCol)
-                .doc(docId)
-                .get(const GetOptions(source: Source.server));
-            final altHash = altDoc.data()?['pinHash'] as String?;
-            if (altHash != null && altHash.isNotEmpty) {
-              // Patch the hash into the primary doc so future logins are fast
-              _db.collection(AppConstants.usersCol).doc(uid).update({
-                'pinHash': altHash,
-              }).catchError((_) {});
-              return altHash == hash;
+          // Try both possible doc ID patterns in both collections
+          for (final collection in ['saccoplus-members', AppConstants.usersCol]) {
+            for (final docId in ['phone_$formatted', formatted]) {
+              if (docId == uid) continue;
+              final altDoc = await _db
+                  .collection(collection)
+                  .doc(docId)
+                  .get(const GetOptions(source: Source.server));
+              final altHash = altDoc.data()?['pinHash'] as String?;
+              if (altHash != null && altHash.isNotEmpty) {
+                return altHash == hash;
+              }
             }
           }
         }
