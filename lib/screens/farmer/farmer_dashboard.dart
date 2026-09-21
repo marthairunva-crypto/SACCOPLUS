@@ -26,7 +26,6 @@ import 'savings_screen.dart';
 import 'shares_screen.dart';
 import 'fixed_deposit_screen.dart';
 import 'create_fixed_deposit_screen.dart';
-import 'modern_dashboard.dart';
 
 class FarmerDashboard extends StatefulWidget {
   const FarmerDashboard({super.key});
@@ -71,12 +70,6 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 900;
     
-    // Use modern dashboard for desktop/web, keep existing for mobile
-    if (isDesktop) {
-      return const ModernDashboard();
-    }
-    
-    // Mobile view - keep existing bottom nav layout
     final pages = [
       _HomeTab(
         onApply: () => _navigate(const ApplyLoanScreen()),
@@ -88,6 +81,32 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
       const RepaymentScreen(embedded: true),
       const ProfileScreen(),
     ];
+    
+    // DESKTOP LAYOUT: Side nav + content
+    if (isDesktop) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F7FA),
+        body: Row(
+          children: [
+            // Side Navigation (220px fixed width)
+            _SharedDashboardDrawer(
+              name: _farmerName,
+              phone: _profile?['phone'] ?? '',
+              imageUrl: _profile?['profileImage'] ?? '',
+              onNavigate: (i) => setState(() => _selectedIndex = i),
+              onNavigatePage: (page) => _navigate(page),
+              onLogout: () => _confirmLogout(context),
+            ),
+            // Main Content
+            Expanded(
+              child: pages[_selectedIndex],
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // MOBILE LAYOUT: Drawer + Bottom nav (existing)
     return Scaffold(
       backgroundColor: AppTheme.surface,
       drawer: _SharedDashboardDrawer(
@@ -143,80 +162,99 @@ class _SharedDashboardDrawer extends StatelessWidget {
   const _SharedDashboardDrawer({required this.name, required this.phone, required this.imageUrl,
       required this.onNavigate, required this.onNavigatePage, required this.onLogout});
 
-  static const _bg   = Color(0xFF071A45); // SACCOPLUS navy dark
-  static const _bg2  = Color(0xFF0D2B6B); // SACCOPLUS navy primary
+  static const _bg   = Color(0xFF1A2332); // Modern dark navy
+  static const _bg2  = Color(0xFF242D3C); // Slightly lighter
   static const _white = Colors.white;
-  static const _muted = Color(0xFF8A9BB0);
-  static const _blue  = Color(0xFFF47920); // orange accent
+  static const _muted = Color(0xFF8B92A0);
+  static const _blue  = Color(0xFF4A90E2); // Modern blue accent
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 900;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    
+    final content = Column(children: [
+      Container(
+        width: double.infinity, color: _bg2,
+        padding: EdgeInsets.fromLTRB(20, isDesktop ? 32 : MediaQuery.of(context).padding.top + 20, 20, 20),
+        child: Row(children: [
+          CircleAvatar(
+            radius: 26, backgroundColor: _blue.withOpacity(0.2),
+            backgroundImage: imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+            child: imageUrl.isEmpty ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'M',
+                style: GoogleFonts.poppins(color: _blue, fontSize: 20, fontWeight: FontWeight.w700)) : null,
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: GoogleFonts.poppins(color: _white, fontSize: 15, fontWeight: FontWeight.w700),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text(phone.isNotEmpty ? phone : 'SACCO Member',
+                style: GoogleFonts.poppins(color: _muted, fontSize: 12)),
+          ])),
+        ]),
+      ),
+      Expanded(child: ListView(primary: false, padding: const EdgeInsets.symmetric(vertical: 12), children: [
+        _item(Icons.home_outlined, 'Dashboard', () => onNavigate(0)),
+        _divider(),
+        _section('MONEY'),
+        _item(Icons.account_balance_wallet_outlined, 'My Wallet', () => onNavigatePage(const WalletScreen())),
+        _item(Icons.savings_outlined, 'My Savings', () => onNavigatePage(const SavingsScreen())),
+        _item(Icons.pie_chart_outline_rounded, 'My Shares', () => onNavigatePage(const SharesScreen())),
+        _item(Icons.account_balance_rounded, 'Fixed Deposits', () => onNavigatePage(const FixedDepositScreen())),
+        _item(Icons.account_balance_outlined, 'Bank Transfer', () => onNavigatePage(const BankTransferScreen())),
+        _item(Icons.receipt_outlined, 'Pay Bills', () => onNavigatePage(const BillPaymentScreen())),
+        _item(Icons.phone_android_rounded, 'Airtime & Data', () => onNavigatePage(const AirtimeDataScreen())),
+        _item(Icons.auto_awesome_rounded, 'AI Assistant', () => onNavigatePage(const AiChatScreen()), isNew: true),
+        _item(Icons.receipt_long_rounded, 'Transactions', () => onNavigatePage(const TransactionHistoryScreen())),
+        _item(Icons.credit_score_outlined, 'Apply for Loan', () => onNavigatePage(const ApplyLoanScreen())),
+        _divider(),
+        _section('LOANS'),
+        _item(Icons.receipt_long_outlined, 'My Loans', () => onNavigate(1)),
+        _item(Icons.payments_outlined, 'Repayments', () => onNavigate(2)),
+        _divider(),
+        _section('ACCOUNT'),
+        _item(Icons.person_outlined, 'Profile', () => onNavigate(3)),
+        _item(Icons.notifications_none_rounded, 'Notifications', () => onNavigatePage(const NotificationsScreen())),
+        _item(Icons.settings_outlined, 'Settings', () => onNavigatePage(const SettingsScreen())),
+        _item(Icons.info_outline_rounded, 'About', () => onNavigatePage(const AboutScreen())),
+      ])),
+      Container(
+        color: _bg2,
+        child: Material(color: Colors.transparent, child: InkWell(
+          onTap: onLogout,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomPadding),
+            child: Row(children: [
+              const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 20),
+              const SizedBox(width: 14),
+              Text('Sign Out', style: GoogleFonts.poppins(color: const Color(0xFFEF4444), fontSize: 14, fontWeight: FontWeight.w600)),
+            ])),
+        )),
+      ),
+    ]);
+    
+    // Desktop: Container (no Drawer widget)
+    if (isDesktop) {
+      return Container(
+        width: 220,
+        color: _bg,
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: content,
+        ),
+      );
+    }
+    
+    // Mobile: Drawer widget
     return Drawer(
-      backgroundColor: _bg, width: 280,
+      backgroundColor: _bg, 
+      width: 280,
       child: SafeArea(
         top: false,
         bottom: false,
-        child: Column(children: [
-          Container(
-            width: double.infinity, color: _bg2,
-            padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 20, 20, 20),
-            child: Row(children: [
-              CircleAvatar(
-                radius: 26, backgroundColor: _blue.withOpacity(0.2),
-                backgroundImage: imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
-                child: imageUrl.isEmpty ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'F',
-                    style: GoogleFonts.poppins(color: _blue, fontSize: 20, fontWeight: FontWeight.w700)) : null,
-              ),
-              const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(name, style: GoogleFonts.poppins(color: _white, fontSize: 15, fontWeight: FontWeight.w700),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text(phone.isNotEmpty ? phone : 'SACCO Member',
-                    style: GoogleFonts.poppins(color: _muted, fontSize: 12)),
-              ])),
-            ]),
-          ),
-          Expanded(child: ListView(primary: false, padding: const EdgeInsets.symmetric(vertical: 12), children: [
-            _item(Icons.home_outlined, 'Home', () => onNavigate(0)),
-            _divider(),
-            _section('MONEY'),
-            _item(Icons.account_balance_wallet_outlined, 'My Wallet', () => onNavigatePage(const WalletScreen())),
-            _item(Icons.savings_outlined, 'My Savings', () => onNavigatePage(const SavingsScreen())),
-            _item(Icons.pie_chart_outline_rounded, 'My Shares', () => onNavigatePage(const SharesScreen())),
-            _item(Icons.account_balance_rounded, 'Fixed Deposits', () => onNavigatePage(const FixedDepositScreen())),
-            _item(Icons.account_balance_outlined, 'Bank Transfer', () => onNavigatePage(const BankTransferScreen())),
-            _item(Icons.receipt_outlined, 'Pay Bills', () => onNavigatePage(const BillPaymentScreen())),
-            _item(Icons.phone_android_rounded, 'Airtime & Data', () => onNavigatePage(const AirtimeDataScreen())),
-            _item(Icons.auto_awesome_rounded, 'AI Assistant', () => onNavigatePage(const AiChatScreen()), isNew: true),
-            _item(Icons.receipt_long_rounded, 'Transactions', () => onNavigatePage(const TransactionHistoryScreen())),
-            _item(Icons.credit_score_outlined, 'Apply for Loan', () => onNavigatePage(const ApplyLoanScreen())),
-            _divider(),
-            _section('LOANS'),
-            _item(Icons.receipt_long_outlined, 'My Loans', () => onNavigate(1)),
-            _item(Icons.payments_outlined, 'Repayments', () => onNavigate(2)),
-            _divider(),
-            _section('ACCOUNT'),
-            _item(Icons.person_outlined, 'Profile', () => onNavigate(3)),
-            _item(Icons.notifications_none_rounded, 'Notifications', () => onNavigatePage(const NotificationsScreen())),
-            _item(Icons.settings_outlined, 'Settings', () => onNavigatePage(const SettingsScreen())),
-            _item(Icons.info_outline_rounded, 'About', () => onNavigatePage(const AboutScreen())),
-          ])),
-          Container(
-            color: _bg2,
-            child: Material(color: Colors.transparent, child: InkWell(
-              onTap: onLogout,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomPadding),
-                child: Row(children: [
-                  const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 20),
-                  const SizedBox(width: 14),
-                  Text('Sign Out', style: GoogleFonts.poppins(color: const Color(0xFFEF4444), fontSize: 14, fontWeight: FontWeight.w600)),
-                ])),
-            )),
-          ),
-        ]),
+        child: content,
       ),
     );
   }
