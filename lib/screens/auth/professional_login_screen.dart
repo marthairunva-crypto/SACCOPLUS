@@ -146,79 +146,101 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
 
   Widget _buildImageSection() {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            ModernTheme.primaryBlue,
-            ModernTheme.primaryBlueLight,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/login.png'),
+          fit: BoxFit.cover,
         ),
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(48),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 30,
-                      spreadRadius: 5,
-                    ),
-                  ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.1), // Very light overlay
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(48),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Logo
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 30,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.account_balance,
+                    size: 50,
+                    color: ModernTheme.primaryBlue,
+                  ),
                 ),
-                child: Icon(
-                  Icons.account_balance,
-                  size: 50,
-                  color: ModernTheme.primaryBlue,
+                
+                const SizedBox(height: 32),
+                
+                // Welcome text
+                const Text(
+                  'Welcome to',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(0, 2),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              
-              const SizedBox(height: 32),
-              
-              // Welcome text
-              const Text(
-                'Welcome to',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
+                
+                const SizedBox(height: 8),
+                
+                const Text(
+                  'SACCOPLUS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 42,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(0, 3),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              
-              const SizedBox(height: 8),
-              
-              const Text(
-                'SACCOPLUS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 42,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
+                
+                const SizedBox(height: 16),
+                
+                const Text(
+                  'Your trusted SACCO management system',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(0, 2),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              const Text(
-                'Your trusted SACCO management system',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
