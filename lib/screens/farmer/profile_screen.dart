@@ -7,7 +7,7 @@ import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../widgets/app_widgets.dart';
-import '../auth/login_screen.dart';
+import '../auth/professional_login_screen.dart';
 import '../common/about_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -759,7 +759,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (context.mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen()),
                   (r) => false,
                 );
               }

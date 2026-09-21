@@ -354,7 +354,7 @@ class _PhoneStepState extends State<_PhoneStep> {
         Center(
           child: GestureDetector(
             onTap: () => Navigator.pushReplacement(context,
-                MaterialPageRoute(builder: (_) => const LoginScreen())),
+                MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen())),
             child: RichText(
               text: TextSpan(
                 text: 'Already have an account? ',

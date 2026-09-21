@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
-import '../auth/login_screen.dart';
+import '../auth/professional_login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -442,7 +442,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (context.mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen()),
                   (_) => false,
                 );
               }

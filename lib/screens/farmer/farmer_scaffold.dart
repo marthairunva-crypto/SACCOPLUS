@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
-import '../auth/login_screen.dart';
+import '../auth/professional_login_screen.dart';
 import '../common/about_screen.dart';
 import '../common/settings_screen.dart';
 import 'ai_chat_screen.dart';
@@ -86,7 +86,7 @@ class _FarmerScaffoldState extends State<FarmerScaffold> {
               if (context.mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen()),
                   (_) => false,
                 );
               }

@@ -15,7 +15,7 @@ import '../../core/firebase_service.dart';
 import '../../core/sacco_profile.dart';
 import '../../core/sacco_service.dart';
 import '../../core/theme.dart';
-import '../auth/login_screen.dart';
+import '../auth/professional_login_screen.dart';
 import 'admin_dashboard.dart';
 
 class PlatformAdminScreen extends StatefulWidget {
@@ -106,7 +106,7 @@ class _PlatformAdminScreenState extends State<PlatformAdminScreen> {
               if (mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen()),
                   (r) => false,
                 );
               }

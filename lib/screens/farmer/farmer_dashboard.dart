@@ -8,7 +8,7 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/birthday_service.dart';
 import '../../widgets/app_widgets.dart';
-import '../auth/login_screen.dart';
+import '../auth/professional_login_screen.dart';
 import '../common/about_screen.dart';
 import '../common/settings_screen.dart';
 import 'ai_chat_screen.dart';
@@ -113,7 +113,7 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
               await FirebaseService.signOut();
               if (context.mounted) {
                 Navigator.pushAndRemoveUntil(context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()), (r) => false);
+                    MaterialPageRoute(builder: (_) => const ProfessionalLoginScreen()), (r) => false);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
