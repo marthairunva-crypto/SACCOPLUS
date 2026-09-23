@@ -331,10 +331,25 @@ class _RepaymentScreenState extends State<RepaymentScreen> {
   Widget build(BuildContext context) {
     Widget _appBar({required Widget body}) => widget.embedded
         ? Scaffold(
-            backgroundColor: AppTheme.surface,
+            backgroundColor: const Color(0xFFF5F7FA),
             appBar: AppBar(
-              title: const Text('Repayments'),
+              backgroundColor: AppTheme.primary,
+              elevation: 0,
               automaticallyImplyLeading: false,
+              title: Text(
+                'Repayments',
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                  onPressed: () => setState(() => _load()),
+                ),
+              ],
             ),
             body: body,
           )

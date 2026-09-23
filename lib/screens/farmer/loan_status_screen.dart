@@ -97,10 +97,25 @@ class _LoanStatusScreenState extends State<LoanStatusScreen>
 
     if (widget.embedded) {
       return Scaffold(
-        backgroundColor: AppTheme.surface,
+        backgroundColor: const Color(0xFFF5F7FA),
         appBar: AppBar(
-          title: const Text('My Loans'),
+          backgroundColor: AppTheme.primary,
+          elevation: 0,
           automaticallyImplyLeading: false,
+          title: Text(
+            'My Loans',
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+              onPressed: () => setState(() => _load()),
+            ),
+          ],
           bottom: tabBar,
         ),
         body: body,

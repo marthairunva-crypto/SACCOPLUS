@@ -7,7 +7,6 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/theme.dart';
 import '../../widgets/app_widgets.dart';
-import 'farmer_scaffold.dart';
 
 class SharesScreen extends StatefulWidget {
   const SharesScreen({super.key});
@@ -91,26 +90,42 @@ class _SharesScreenState extends State<SharesScreen>
 
   @override
   Widget build(BuildContext context) {
-    return FarmerScaffold(
-      title: 'My Shares',
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-          onPressed: _load,
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: AppBar(
+        backgroundColor: AppTheme.primary,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
-      ],
-      bottom: TabBar(
-        controller: _tabs,
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.white60,
-        indicatorColor: AppTheme.accent,
-        indicatorWeight: 3,
-        labelStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
-        tabs: const [
-          Tab(text: 'Overview'),
-          Tab(text: 'History'),
-          Tab(text: 'Buy Shares'),
+        title: Text(
+          'My Shares',
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            onPressed: _load,
+          ),
         ],
+        bottom: TabBar(
+          controller: _tabs,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          indicatorColor: AppTheme.accent,
+          indicatorWeight: 3,
+          labelStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
+          tabs: const [
+            Tab(text: 'Overview'),
+            Tab(text: 'History'),
+            Tab(text: 'Buy Shares'),
+          ],
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))

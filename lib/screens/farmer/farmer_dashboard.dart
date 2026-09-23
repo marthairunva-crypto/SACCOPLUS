@@ -384,7 +384,7 @@ class _HomeTabState extends State<_HomeTab> {
     final depPct = tot > 0 ? (_walletBalance / tot * 100).round() : 0;
     final loanPct = tot > 0 ? (_totalBorrowed / tot * 100).round() : 0;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 1; // FORCE DESKTOP ALWAYS for testing
+    final isDesktop = screenWidth > 900;
     
     print('🖥️ DASHBOARD BUILD: Screen width = $screenWidth, isDesktop = $isDesktop');
 
@@ -608,449 +608,379 @@ class _HomeTabState extends State<_HomeTab> {
   Widget _buildDesktopLayout() {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      body: Row(
-        children: [
-          // MINIMAL LEFT SIDEBAR
-          Container(
-            width: 220,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 10,
-                  offset: const Offset(2, 0),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: AppBar(
+        backgroundColor: AppTheme.primary,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        title: Text(
+          'Dashboard',
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            onPressed: () => _load(),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Logo
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.account_balance, color: Colors.white, size: 18),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Good ${_getGreeting()}, ${_name.split(' ').first}',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        color: const Color(0xFF6B7280),
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'SACCOPLUS',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1F2937),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Navigation
-                _navItem(Icons.dashboard_rounded, 'Dashboard', true),
-                _navItem(Icons.account_balance_wallet, 'Wallet', false),
-                _navItem(Icons.savings, 'Savings', false),
-                _navItem(Icons.pie_chart, 'Shares', false),
-                _navItem(Icons.receipt_long, 'Loans', false),
-                _navItem(Icons.analytics_outlined, 'Analytics', false),
-                _navItem(Icons.support_agent, 'Support', false),
-                
-                const Spacer(),
-                
-                // Premium Card at Bottom
-                Container(
-                  margin: const EdgeInsets.all(20),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Get Premium',
+                    const SizedBox(height: 4),
+                    Text(
+                      'Welcome back to SACCOPLUS',
+                      style: GoogleFonts.inter(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF111827),
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.notifications_outlined, color: const Color(0xFF6B7280), size: 24),
+                      onPressed: widget.onNotif,
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: AppTheme.primary,
+                      child: Text(
+                        _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
                         style: GoogleFonts.inter(
                           color: Colors.white,
-                          fontSize: 16,
                           fontWeight: FontWeight.w600,
+                          fontSize: 16,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF6366F1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: Text('Upgrade', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                
-                const SizedBox(height: 20),
               ],
             ),
-          ),
-          
-          // MAIN CONTENT
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            
+            const SizedBox(height: 32),
+            
+            // Main Content Grid
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left Column - Stats + Feature
+                Expanded(
+                  flex: 2,
+                  child: Column(
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Hi $_name',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: const Color(0xFF6B7280),
-                            ),
-                          ),
-                          Text(
-                            'Welcome to SACCOPLUS',
-                            style: GoogleFonts.inter(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF1F2937),
-                            ),
-                          ),
-                        ],
-                      ),
+                      // 3 Stat Cards in Row
                       Row(
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.notifications_outlined),
-                            onPressed: widget.onNotif,
-                          ),
-                          const SizedBox(width: 8),
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: const Color(0xFF6366F1),
-                            child: Text(
-                              _name.isNotEmpty ? _name[0].toUpperCase() : 'U',
-                              style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
+                          Expanded(child: _modernStatCard('Total Balance', 'UGX ${_fmt(_walletBalance)}', Icons.account_balance_wallet_outlined, AppTheme.primary)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _modernStatCard('Active Loans', '$_active', Icons.receipt_long_outlined, AppTheme.accent)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _modernStatCard('Total Savings', 'UGX ${_fmt(_walletBalance)}', Icons.savings_outlined, const Color(0xFF059669))),
                         ],
                       ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 32),
-                  
-                  // Top 3 Stats Cards + Savings Chart
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Left: 3 small cards
-                      Expanded(
-                        flex: 3,
-                        child: Wrap(
-                          spacing: 16,
-                          runSpacing: 16,
-                          children: [
-                            _smallStatCard('Total Balance', 'UGX ${_fmt(_walletBalance)}', Icons.account_balance_wallet, const Color(0xFF6366F1)),
-                            _smallStatCard('Active Loans', '$_active', Icons.receipt_long, const Color(0xFFEC4899)),
-                            _smallStatCard('Total Savings', 'UGX ${_fmt(_walletBalance)}', Icons.savings, const Color(0xFF10B981)),
-                          ],
-                        ),
-                      ),
                       
-                      const SizedBox(width: 20),
+                      const SizedBox(height: 24),
                       
-                      // Right: Savings Chart
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Saved This Month',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  color: const Color(0xFF6B7280),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'UGX ${_fmt(_walletBalance)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF1F2937),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              // Placeholder for chart
-                              Container(
-                                height: 100,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF3F4F6),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '📈 Chart',
-                                    style: GoogleFonts.inter(color: const Color(0xFF9CA3AF)),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Feature Card + Completion Card
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
                       // Feature Card
-                      Expanded(
-                        flex: 3,
-                        child: Container(
-                          padding: const EdgeInsets.all(32),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Reach financial\ngoals faster',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF1F2937),
-                                        height: 1.3,
-                                      ),
+                      Container(
+                        padding: const EdgeInsets.all(32),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Reach your financial goals faster',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF111827),
+                                      height: 1.2,
                                     ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Use your SACCOPLUS account with no hidden fees',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        color: const Color(0xFF6B7280),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    ElevatedButton(
-                                      onPressed: widget.onApply,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF6366F1),
-                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                      ),
-                                      child: Text('Apply for Loan', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 24),
-                              // Virtual Card
-                              Container(
-                                width: 200,
-                                height: 120,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
                                   ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF6366F1).withOpacity(0.4),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 10),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Apply for a loan and get approved within 24 hours',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      color: const Color(0xFF6B7280),
+                                      height: 1.5,
                                     ),
-                                  ],
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Member Card',
-                                        style: GoogleFonts.inter(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                        ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  ElevatedButton(
+                                    onPressed: widget.onApply,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.primary,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
+                                      elevation: 0,
+                                    ),
+                                    child: Text(
+                                      'Apply for Loan',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 32),
+                            Container(
+                              width: 180,
+                              height: 110,
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Icon(Icons.credit_card, color: Colors.white, size: 16),
+                                      ),
+                                      const Spacer(),
                                       Text(
-                                        '•••• ${_phone.length > 4 ? _phone.substring(_phone.length - 4) : "****"}',
+                                        'Member',
                                         style: GoogleFonts.inter(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          letterSpacing: 2,
+                                          color: Colors.white70,
+                                          fontSize: 11,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      
-                      const SizedBox(width: 20),
-                      
-                      // Completion Card
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          padding: const EdgeInsets.all(32),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF3B82F6).withOpacity(0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            children: [
-                              Text(
-                                'Profile Completion',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              SizedBox(
-                                width: 100,
-                                height: 100,
-                                child: Stack(
-                                  children: [
-                                    Center(
-                                      child: SizedBox(
-                                        width: 100,
-                                        height: 100,
-                                        child: CircularProgressIndicator(
-                                          value: 0.85,
-                                          strokeWidth: 8,
-                                          backgroundColor: Colors.white.withOpacity(0.2),
-                                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '•••• ${_phone.length > 4 ? _phone.substring(_phone.length - 4) : "****"}',
+                                        style: GoogleFonts.robotoMono(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: 2,
                                         ),
                                       ),
-                                    ),
-                                    Center(
-                                      child: Text(
-                                        '85%',
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _name,
                                         style: GoogleFonts.inter(
                                           color: Colors.white,
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                  ],
-                                ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Almost there!',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Transaction Lists Row
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                
+                const SizedBox(width: 24),
+                
+                // Right Column - Balance + Quick Actions
+                Expanded(
+                  flex: 1,
+                  child: Column(
                     children: [
-                      Expanded(child: _buildRecentTransactionsCard()),
-                      const SizedBox(width: 20),
-                      Expanded(child: _buildServicesCard()),
+                      // Balance Card
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Your Total Balance',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: const Color(0xFF6B7280),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                Icon(Icons.more_horiz, size: 20, color: const Color(0xFF9CA3AF)),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'UGX ${_fmt(_walletBalance)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'As of ${DateTime.now().day} ${_getMonthName(DateTime.now().month)} ${DateTime.now().year}',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: const Color(0xFF9CA3AF),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _quickAction(Icons.arrow_upward_rounded, 'Send', AppTheme.primary),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _quickAction(Icons.arrow_downward_rounded, 'Receive', const Color(0xFF059669)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      // Profile Completion
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Complete Your Profile',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: Stack(
+                                children: [
+                                  Center(
+                                    child: SizedBox(
+                                      width: 80,
+                                      height: 80,
+                                      child: CircularProgressIndicator(
+                                        value: 0.85,
+                                        strokeWidth: 6,
+                                        backgroundColor: Colors.white.withOpacity(0.2),
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                  Center(
+                                    child: Text(
+                                      '85%',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Almost done!',
+                              style: GoogleFonts.inter(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+            
+            const SizedBox(height: 32),
+            
+            // Bottom Row - Transactions + Services
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildRecentTransactionsCard()),
+                const SizedBox(width: 24),
+                Expanded(child: _buildServicesCard()),
+              ],
+            ),
+                ],
           ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 400.ms);
+        ),
+      );
   }
 
   Widget _navItem(IconData icon, String label, bool isActive) {
@@ -1122,6 +1052,115 @@ class _HomeTabState extends State<_HomeTab> {
               fontSize: 20,
               fontWeight: FontWeight.w700,
               color: const Color(0xFF1F2937),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionButton(IconData icon, String label) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 20, color: AppTheme.primary),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: const Color(0xFF6B7280),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'morning';
+    if (hour < 17) return 'afternoon';
+    return 'evening';
+  }
+
+  String _getMonthName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
+  Widget _modernStatCard(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: const Color(0xFF6B7280),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF111827),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickAction(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: color,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

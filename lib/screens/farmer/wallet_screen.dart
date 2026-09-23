@@ -11,7 +11,6 @@ import 'transaction_history_screen.dart';
 import 'modern_deposit_modal.dart';
 import 'modern_send_money_modal.dart';
 import 'modern_withdraw_modal.dart';
-import 'farmer_scaffold.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -61,15 +60,31 @@ class _WalletScreenState extends State<WalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FarmerScaffold(
-      title: 'My Wallet',
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-          onPressed: _load,
-          tooltip: 'Refresh',
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: AppBar(
+        backgroundColor: AppTheme.primary,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
-      ],
+        title: Text(
+          'My Wallet',
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            onPressed: _load,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
           : SingleChildScrollView(

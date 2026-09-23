@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
 import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
+import 'member_360_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MEMBER MANAGEMENT + KYC VERIFICATION
@@ -169,7 +170,7 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen>
 
   void _open(String docId, Map<String, dynamic> data) {
     Navigator.push(context,
-        MaterialPageRoute(builder: (_) => MemberDetailScreen(docId: docId, initialData: data)));
+        MaterialPageRoute(builder: (_) => Member360Screen(memberId: docId)));
   }
 }
 
@@ -315,9 +316,23 @@ class MemberDetailScreen extends StatefulWidget {
   State<MemberDetailScreen> createState() => _MemberDetailScreenState();
 }
 
-class _MemberDetailScreenState extends State<MemberDetailScreen> {
+class _MemberDetailScreenState extends State<MemberDetailScreen>
+    with SingleTickerProviderStateMixin {
   bool _updating = false;
   final fmt = NumberFormat('#,###', 'en_US');
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 5, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Future<void> _updateKyc(String status, {String? note}) async {
     setState(() => _updating = true);

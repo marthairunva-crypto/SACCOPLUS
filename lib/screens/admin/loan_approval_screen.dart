@@ -137,8 +137,8 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
   }
 }
 
-// ─── Loan List (StreamBuilder) ────────────────────────────────────────────────
-class _LoanList extends StatelessWidget {
+// ─── Loan List (StreamBuilder with Keep Alive) ────────────────────────────────
+class _LoanList extends StatefulWidget {
   final String filter;
   final NumberFormat fmt;
   final void Function(String loanId, String action, String farmerName) onAction;
@@ -146,9 +146,17 @@ class _LoanList extends StatelessWidget {
   const _LoanList(
       {required this.filter, required this.fmt, required this.onAction});
 
+  @override
+  State<_LoanList> createState() => _LoanListState();
+}
+
+class _LoanListState extends State<_LoanList> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true; // Keep this tab alive!
+
   bool _include(String status) {
-    if (filter == 'All') return true;
-    if (filter == AppConstants.statusPending) {
+    if (widget.filter == 'All') return true;
+    if (widget.filter == AppConstants.statusPending) {
       return status == AppConstants.statusPending;
     }
     return status != AppConstants.statusPending;
@@ -156,20 +164,31 @@ class _LoanList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // MUST call super.build when using AutomaticKeepAliveClientMixin
+    
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseService.getAllLoans(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        
+        if (!snap.hasData) {
+          return const EmptyState(
+              message: 'No loan applications here.',
+              icon: Icons.inbox_rounded);
+        }
+        
         final docs = (snap.data?.docs ?? [])
             .where((d) => _include((d['status'] as String? ?? '')))
             .toList();
+            
         if (docs.isEmpty) {
           return const EmptyState(
               message: 'No loan applications here.',
               icon: Icons.inbox_rounded);
         }
+        
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
@@ -186,13 +205,13 @@ class _LoanList extends StatelessWidget {
             return _LoanApprovalCard(
               loan: data,
               loanId: loanId,
-              fmt: fmt,
+              fmt: widget.fmt,
               onApprove: isPending
-                  ? () => onAction(
+                  ? () => widget.onAction(
                       loanId, AppConstants.statusApproved, farmerName)
                   : null,
               onReject: isPending
-                  ? () => onAction(
+                  ? () => widget.onAction(
                       loanId, AppConstants.statusRejected, farmerName)
                   : null,
             );

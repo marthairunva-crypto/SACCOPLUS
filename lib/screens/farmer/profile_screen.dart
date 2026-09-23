@@ -430,7 +430,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final idType = profile['idType'] as String?;
 
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor: const Color(0xFFF5F7FA),
       body: CustomScrollView(
         slivers: [
           SliverAppBar(

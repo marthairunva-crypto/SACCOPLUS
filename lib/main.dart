@@ -23,7 +23,7 @@ void main() async {
 
   runApp(
     DevicePreview(
-      enabled: false,
+      enabled: !kReleaseMode,  // Only enable in debug/profile mode
       builder: (context) => const SaccoPlusApp(),
     ),
   );

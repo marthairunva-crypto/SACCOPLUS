@@ -1,7 +1,7 @@
 class AppConstants {
   // ── Branding ──────────────────────────────────────────────────────────────
   static const String appName     = 'SACCOPLUS Pro';
-  static const String appSubtitle = 'Modern SACCO & Cooperative Platform';
+  static const String appSubtitle = 'Kikole mu ngeri ennyangu';
   static const String appTagline  = 'Banking Made Simple for Every SACCO';
   static const String appVersion  = '2.0.0';
   static const String logoPath    = 'assets/images/logo2.png';
@@ -31,6 +31,7 @@ class AppConstants {
   static const String walletCol        = 'saccoplus-wallets';
   static const String walletTxnCol     = 'saccoplus-wallet-transactions';
   static const String airtimeTxnCol    = 'saccoplus-airtime-transactions';
+  static const String tellerTxnCol     = 'saccoplus-teller-transactions';
   // Notifications & Audit
   static const String notificationsCol = 'saccoplus-notifications';
   static const String auditLogCol      = 'saccoplus-audit-logs';

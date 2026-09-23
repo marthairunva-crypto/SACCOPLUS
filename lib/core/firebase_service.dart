@@ -35,9 +35,9 @@ class FirebaseService {
   static Map<String, dynamic>? get sessionProfile => _loggedInProfile;
 
   /// tenantId for the current session — used to scope every Firestore query.
-  /// Falls back to 'sacco_001' so existing single-SACCO data is never orphaned.
+  /// Falls back to 'saccoplus' to match existing Firebase data.
   static String get sessionTenantId =>
-      _loggedInProfile?['tenantId'] as String? ?? 'sacco_001';
+      _loggedInProfile?['tenantId'] as String? ?? 'saccoplus';
 
   /// Call this after successful PIN verification to cache the session.
   static void setSession(String uid, Map<String, dynamic> profile) {
@@ -478,14 +478,16 @@ class FirebaseService {
   static Stream<QuerySnapshot> getAllLoans() => _db
       .collection(AppConstants.loansCol)
       .where('tenantId', isEqualTo: sessionTenantId)
-      .orderBy('createdAt', descending: true)
+      // TODO: Add composite index for tenantId + createdAt in Firebase Console
+      // .orderBy('createdAt', descending: true)
       .snapshots();
 
   static Stream<QuerySnapshot> getLoansByStatus(String status) => _db
       .collection(AppConstants.loansCol)
       .where('tenantId', isEqualTo: sessionTenantId)
       .where('status', isEqualTo: status)
-      .orderBy('createdAt', descending: true)
+      // TODO: Add composite index for tenantId + status + createdAt
+      // .orderBy('createdAt', descending: true)
       .snapshots();
 
   static Future<void> updateLoanStatus(String loanId, String status,

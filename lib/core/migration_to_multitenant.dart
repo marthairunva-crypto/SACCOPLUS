@@ -9,7 +9,7 @@ import 'sacco_service.dart';
 
 class MultiTenantMigration {
   static final _db = FirebaseFirestore.instance;
-  static const _defaultTenant = 'sacco_001';
+  static const _defaultTenant = 'saccoplus';
 
   static const _collections = [
     'saccoplus-members',
