@@ -193,7 +193,6 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -203,7 +202,10 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           ),
         ],
       ),
-      child: ExpansionTile(
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: ExpansionTile(
         leading: CircleAvatar(
           backgroundColor: statusColor.withOpacity(0.2),
           child: Text(
@@ -294,6 +296,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           ),
         ],
       ),
+        ),
     );
   }
 
