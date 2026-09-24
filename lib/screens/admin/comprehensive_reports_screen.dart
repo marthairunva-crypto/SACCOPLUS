@@ -303,7 +303,7 @@ class _MonthlyReportTabState extends State<_MonthlyReportTab> {
     }
   }
 
-  void _exportCSV() {
+  Future<void> _exportCSV() async {
     if (_report == null) return;
     
     final csv = StringBuffer();
