@@ -203,12 +203,19 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               return const Iterable<Map<String, dynamic>>.empty();
             }
             final query = textEditingValue.text.toLowerCase();
-            return _members.where((member) {
+            final results = _members.where((member) {
               if (member['id'] == null) return false;
               final name = (member['name'] ?? member['fullName'] ?? '').toString().toLowerCase();
               final phone = (member['phone'] ?? '').toString();
               return name.contains(query) || phone.contains(query);
-            });
+            }).toList();
+            
+            print('🔍 Autocomplete: query="$query", results=${results.length}');
+            if (results.isNotEmpty) {
+              print('🔍 First result: ${results.first['name'] ?? results.first['fullName']}');
+            }
+            
+            return results;
           },
           onSelected: (Map<String, dynamic> member) {
             setState(() {

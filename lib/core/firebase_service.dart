@@ -941,7 +941,7 @@ class FirebaseService {
             .where('role', isEqualTo: AppConstants.roleMember)
             .where('tenantId', isEqualTo: sessionTenantId)
             .get(const GetOptions(source: Source.server));
-        return q.docs.map((d) => d.data()).toList();
+        return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
       } catch (_) {
         await Future.delayed(const Duration(milliseconds: 600));
       }
