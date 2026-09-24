@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
-import 'dart:html' as html;
 import 'dart:convert';
 import '../../theme/modern_theme.dart';
+import '../../utils/file_saver.dart';
 
 class LoanCalculatorScreen extends StatefulWidget {
   const LoanCalculatorScreen({super.key});
@@ -88,30 +88,28 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
     });
   }
 
-  void _exportToPDF() {
+  Future<void> _exportToPDF() async {
     // Create CSV content for download
     final csvContent = _generateCSV();
-    final blob = html.Blob([csvContent], 'text/csv');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute('download', 'loan_amortization_${DateTime.now().millisecondsSinceEpoch}.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    await FileSaver.saveFile(
+      fileName: 'loan_amortization_${DateTime.now().millisecondsSinceEpoch}.csv',
+      content: csvContent,
+      mimeType: 'text/csv',
+    );
     
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Exported as CSV'), backgroundColor: Colors.green),
     );
   }
 
-  void _exportToExcel() {
+  Future<void> _exportToExcel() async {
     // Export as CSV which can be opened in Excel
     final csvContent = _generateCSV();
-    final blob = html.Blob([csvContent], 'text/csv');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute('download', 'loan_schedule_${DateTime.now().millisecondsSinceEpoch}.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    await FileSaver.saveFile(
+      fileName: 'loan_schedule_${DateTime.now().millisecondsSinceEpoch}.csv',
+      content: csvContent,
+      mimeType: 'text/csv',
+    );
     
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Exported for Excel'), backgroundColor: Colors.green),

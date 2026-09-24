@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,11 +7,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-// Web-only import
-import 'dart:html' as html;
 import '../../services/report_service.dart';
 import '../../theme/modern_theme.dart';
 import '../../widgets/app_widgets.dart';
+import '../../utils/file_saver.dart';
 
 class ComprehensiveReportsScreen extends StatefulWidget {
   final bool embedded;
@@ -320,15 +318,12 @@ class _MonthlyReportTabState extends State<_MonthlyReportTab> {
     csv.writeln('');
     csv.writeln('Net Cash Flow,,${_report!['netCashFlow']}');
     
-    if (kIsWeb) {
-      // Web export
-      final blob = html.Blob([csv.toString()]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'monthly_report_${_selectedYear}_${_selectedMonth.toString().padLeft(2, '0')}.csv')
-        ..click();
-      html.Url.revokeObjectUrl(url);
-    }
+    // Save file (works on web and desktop)
+    await FileSaver.saveFile(
+      fileName: 'monthly_report_${_selectedYear}_${_selectedMonth.toString().padLeft(2, '0')}.csv',
+      content: csv.toString(),
+      mimeType: 'text/csv',
+    );
     
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('✅ Report exported successfully'), backgroundColor: Colors.green),
@@ -1012,14 +1007,12 @@ class _BalanceSheetTabState extends State<_BalanceSheetTab> {
     csv.writeln('');
     csv.writeln('Total Liabilities & Equity,${_report!['totalLiabilitiesAndEquity']}');
 
-    if (kIsWeb) {
-      final blob = html.Blob([csv.toString()]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'balance_sheet_${DateFormat('yyyyMMdd').format(_report!['asOfDate'])}.csv')
-        ..click();
-      html.Url.revokeObjectUrl(url);
-    }
+    // Save file (works on web and desktop)
+    await FileSaver.saveFile(
+      fileName: 'balance_sheet_${DateFormat('yyyyMMdd').format(_report!['asOfDate'])}.csv',
+      content: csv.toString(),
+      mimeType: 'text/csv',
+    );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
