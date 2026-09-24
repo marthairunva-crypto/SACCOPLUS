@@ -97,11 +97,7 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
     final cutoffDate = DateTime.now().subtract(Duration(days: _dormancyPeriodMonths * 30));
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('farmers')
-          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .where('status', isEqualTo: 'active')
-          .snapshots(),
+      stream: FirebaseService.getAllFarmers(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
@@ -425,7 +421,7 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('farmers').doc(memberId).update({
+              await FirebaseFirestore.instance.collection('users').doc(memberId).update({
                 'status': 'active',
                 'reactivatedAt': FieldValue.serverTimestamp(),
                 'reactivatedBy': FirebaseService.sessionUid,

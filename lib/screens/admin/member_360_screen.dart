@@ -48,18 +48,15 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     try {
       print('🔍 Loading members for tenantId: ${FirebaseService.sessionTenantId}');
       
-      final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .where('role', isEqualTo: 'member')
-          .get();
+      // Use FirebaseService.getAllFarmersOnce() instead of direct query
+      final members = await FirebaseService.getAllFarmersOnce();
       
-      print('📥 Loaded ${snapshot.docs.length} members from Firebase');
+      print('📥 Loaded ${members.length} members from Firebase');
       
       setState(() {
-        _allMembers = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
-        // Sort in memory instead of Firebase to avoid index requirement
-        _allMembers.sort((a, b) => (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString()));
+        _allMembers = members;
+        // Sort in memory
+        _allMembers.sort((a, b) => (a['name'] ?? a['fullName'] ?? '').toString().compareTo((b['name'] ?? b['fullName'] ?? '').toString()));
         _members = _allMembers;
         _filteredMembers = [];
       });
@@ -79,7 +76,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     final lowerQuery = query.toLowerCase();
     setState(() {
       _filteredMembers = _members.where((member) {
-        final name = (member['name'] ?? '').toString().toLowerCase();
+        final name = (member['name'] ?? member['fullName'] ?? '').toString().toLowerCase();
         final phone = (member['phone'] ?? '').toString();
         final nationalId = (member['nationalId'] ?? '').toString().toLowerCase();
         return name.contains(lowerQuery) || 
@@ -91,7 +88,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
       print('🔍 Total members: ${_members.length}');
       print('🔍 Filtered results: ${_filteredMembers.length}');
       if (_filteredMembers.isNotEmpty) {
-        print('🔍 First result: ${_filteredMembers.first['name']}');
+        print('🔍 First result: ${_filteredMembers.first['name'] ?? _filteredMembers.first['fullName']}');
       }
     });
   }
@@ -280,7 +277,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     ),
                   ),
                   title: Text(
-                    member['name'],
+                    member['name'] ?? member['fullName'] ?? 'Unknown',
                     style: GoogleFonts.poppins(
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                       fontSize: 14,
@@ -294,7 +291,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     setState(() {
                       _selectedMemberId = member['id'];
                       _memberData = null;
-                      _searchController.text = member['name'] ?? '';
+                      _searchController.text = member['name'] ?? member['fullName'] ?? '';
                       _filteredMembers = [];
                     });
                     _loadMemberData();

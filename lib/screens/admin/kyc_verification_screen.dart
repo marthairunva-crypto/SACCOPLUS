@@ -78,10 +78,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
   Widget _buildStatsSection() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('farmers')
-          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .snapshots(),
+      stream: FirebaseService.getAllFarmers(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator()));
@@ -143,10 +140,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
   Widget _buildMembersList(String statusFilter) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('farmers')
-          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .snapshots(),
+      stream: FirebaseService.getAllFarmers(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
@@ -335,7 +329,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
   Future<void> _updateKYCStatus(String memberId, String status) async {
     try {
-      await FirebaseFirestore.instance.collection('farmers').doc(memberId).update({
+      await FirebaseFirestore.instance.collection('users').doc(memberId).update({
         'kycStatus': status,
         'kycVerifiedAt': FieldValue.serverTimestamp(),
         'kycVerifiedBy': FirebaseService.sessionUid,
@@ -392,7 +386,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('farmers').doc(memberId).update({
+              await FirebaseFirestore.instance.collection('users').doc(memberId).update({
                 'kycStatus': 'rejected',
                 'kycNotes': notesController.text,
                 'kycRejectedAt': FieldValue.serverTimestamp(),
