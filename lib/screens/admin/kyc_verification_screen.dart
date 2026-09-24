@@ -329,7 +329,23 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
   Future<void> _updateKYCStatus(String memberId, String status) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(memberId).update({
+      // First check if document exists
+      final docRef = FirebaseFirestore.instance.collection('users').doc(memberId);
+      final docSnapshot = await docRef.get();
+      
+      if (!docSnapshot.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Member document not found. ID: $memberId'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      
+      await docRef.update({
         'kycStatus': status,
         'kycVerifiedAt': FieldValue.serverTimestamp(),
         'kycVerifiedBy': FirebaseService.sessionUid,
@@ -386,7 +402,24 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('users').doc(memberId).update({
+              
+              // First check if document exists
+              final docRef = FirebaseFirestore.instance.collection('users').doc(memberId);
+              final docSnapshot = await docRef.get();
+              
+              if (!docSnapshot.exists) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Member document not found. ID: $memberId'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+                return;
+              }
+              
+              await docRef.update({
                 'kycStatus': 'rejected',
                 'kycNotes': notesController.text,
                 'kycRejectedAt': FieldValue.serverTimestamp(),
