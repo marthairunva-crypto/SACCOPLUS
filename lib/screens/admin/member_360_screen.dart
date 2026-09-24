@@ -209,15 +209,22 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               hint: Text('Select a member...', style: GoogleFonts.poppins(color: Colors.grey.shade600)),
               isExpanded: true,
               icon: const Icon(Icons.arrow_drop_down),
-              items: _members.where((member) => member['id'] != null).map((member) {
-                return DropdownMenuItem<String>(
-                  value: member['id'] as String,
-                  child: Text(
-                    member['name'] ?? member['fullName'] ?? 'Unknown',
-                    style: GoogleFonts.poppins(fontSize: 14),
-                  ),
-                );
-              }).toList(),
+              items: _members
+                  .map((member) {
+                    final id = member['id'];
+                    if (id == null) return null; // Skip members with null IDs
+                    
+                    return DropdownMenuItem<String>(
+                      value: id as String,
+                      child: Text(
+                        member['name'] ?? member['fullName'] ?? 'Unknown',
+                        style: GoogleFonts.poppins(fontSize: 14),
+                      ),
+                    );
+                  })
+                  .where((item) => item != null)
+                  .cast<DropdownMenuItem<String>>()
+                  .toList(),
               onChanged: (String? memberId) {
                 if (memberId != null) {
                   setState(() {
