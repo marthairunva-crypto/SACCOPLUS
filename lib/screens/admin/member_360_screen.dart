@@ -21,7 +21,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   bool _isLoading = false;
   List<Map<String, dynamic>> _members = [];
   List<Map<String, dynamic>> _filteredMembers = [];
-  late TextEditingController _searchController;
+  final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _allMembers = [];
   
   final _currencyFormat = NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0);
@@ -29,7 +29,6 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _searchController = TextEditingController();
     _tabController = TabController(length: 6, vsync: this);
     _selectedMemberId = widget.memberId;
     _loadMembers();
@@ -46,17 +45,27 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Future<void> _loadMembers() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('farmers')
-        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-        .orderBy('name')
-        .get();
-    
-    setState(() {
-      _allMembers = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
-      _members = _allMembers;
-      _filteredMembers = [];
-    });
+    try {
+      print('🔍 Loading members for tenantId: ${FirebaseService.sessionTenantId}');
+      
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .where('role', isEqualTo: 'member')
+          .get();
+      
+      print('📥 Loaded ${snapshot.docs.length} members from Firebase');
+      
+      setState(() {
+        _allMembers = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+        // Sort in memory instead of Firebase to avoid index requirement
+        _allMembers.sort((a, b) => (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString()));
+        _members = _allMembers;
+        _filteredMembers = [];
+      });
+    } catch (e) {
+      print('❌ Error loading members: $e');
+    }
   }
 
   void _filterMembers(String query) {
@@ -77,6 +86,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                phone.contains(lowerQuery) || 
                nationalId.contains(lowerQuery);
       }).toList();
+      
+      print('🔍 Search query: $query');
+      print('🔍 Total members: ${_members.length}');
+      print('🔍 Filtered results: ${_filteredMembers.length}');
+      if (_filteredMembers.isNotEmpty) {
+        print('🔍 First result: ${_filteredMembers.first['name']}');
+      }
     });
   }
 
@@ -88,7 +104,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     try {
       // Load member profile
       final memberDoc = await FirebaseFirestore.instance
-          .collection('farmers')
+          .collection('users')
           .doc(_selectedMemberId)
           .get();
       
@@ -227,7 +243,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           ),
           onChanged: _filterMembers,
         ),
-        if (_filteredMembers.isNotEmpty && _searchController.text.isNotEmpty) ...[
+        if (_filteredMembers.isNotEmpty) ...[
           const SizedBox(height: 8),
           Container(
             constraints: const BoxConstraints(maxHeight: 300),
@@ -278,7 +294,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     setState(() {
                       _selectedMemberId = member['id'];
                       _memberData = null;
-                      _searchController.text = member['name'];
+                      _searchController.text = member['name'] ?? '';
                       _filteredMembers = [];
                     });
                     _loadMemberData();
