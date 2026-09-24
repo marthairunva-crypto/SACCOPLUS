@@ -192,50 +192,82 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Select Member',
+          'Search Member',
           style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F7FA),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedMemberId,
-              hint: Text('Select a member...', style: GoogleFonts.poppins(color: Colors.grey.shade600)),
-              isExpanded: true,
-              icon: const Icon(Icons.arrow_drop_down),
-              items: _members
-                  .map((member) {
-                    final id = member['id'];
-                    if (id == null) return null; // Skip members with null IDs
-                    
-                    return DropdownMenuItem<String>(
-                      value: id as String,
-                      child: Text(
-                        member['name'] ?? member['fullName'] ?? 'Unknown',
-                        style: GoogleFonts.poppins(fontSize: 14),
-                      ),
-                    );
-                  })
-                  .where((item) => item != null)
-                  .cast<DropdownMenuItem<String>>()
-                  .toList(),
-              onChanged: (String? memberId) {
-                if (memberId != null) {
-                  setState(() {
-                    _selectedMemberId = memberId;
-                    _memberData = null;
-                  });
-                  _loadMemberData();
-                }
-              },
-            ),
-          ),
+        Autocomplete<Map<String, dynamic>>(
+          displayStringForOption: (member) => member['name'] ?? member['fullName'] ?? 'Unknown',
+          optionsBuilder: (TextEditingValue textEditingValue) {
+            if (textEditingValue.text.isEmpty) {
+              return const Iterable<Map<String, dynamic>>.empty();
+            }
+            final query = textEditingValue.text.toLowerCase();
+            return _members.where((member) {
+              if (member['id'] == null) return false;
+              final name = (member['name'] ?? member['fullName'] ?? '').toString().toLowerCase();
+              final phone = (member['phone'] ?? '').toString();
+              return name.contains(query) || phone.contains(query);
+            });
+          },
+          onSelected: (Map<String, dynamic> member) {
+            setState(() {
+              _selectedMemberId = member['id'];
+              _memberData = null;
+            });
+            _loadMemberData();
+          },
+          fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+            return TextField(
+              controller: controller,
+              focusNode: focusNode,
+              decoration: InputDecoration(
+                hintText: 'Type member name or phone...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: const Color(0xFFF5F7FA),
+              ),
+              onEditingComplete: onEditingComplete,
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 300, maxWidth: 500),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(8),
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (context, index) {
+                      final member = options.elementAt(index);
+                      return ListTile(
+                        leading: CircleAvatar(
+                          child: Text(
+                            ((member['name'] ?? member['fullName'] ?? 'U').toString()[0]).toUpperCase(),
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        title: Text(
+                          member['name'] ?? member['fullName'] ?? 'Unknown',
+                          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+                        ),
+                        subtitle: Text(
+                          member['phone'] ?? 'No phone',
+                          style: GoogleFonts.poppins(fontSize: 12),
+                        ),
+                        onTap: () => onSelected(member),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ],
     );
