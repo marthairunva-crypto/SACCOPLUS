@@ -20,12 +20,16 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Map<String, dynamic>? _memberData;
   bool _isLoading = false;
   List<Map<String, dynamic>> _members = [];
+  List<Map<String, dynamic>> _filteredMembers = [];
+  late TextEditingController _searchController;
+  List<Map<String, dynamic>> _allMembers = [];
   
   final _currencyFormat = NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0);
 
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController();
     _tabController = TabController(length: 6, vsync: this);
     _selectedMemberId = widget.memberId;
     _loadMembers();
@@ -37,6 +41,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -48,7 +53,30 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         .get();
     
     setState(() {
-      _members = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+      _allMembers = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+      _members = _allMembers;
+      _filteredMembers = [];
+    });
+  }
+
+  void _filterMembers(String query) {
+    if (query.isEmpty) {
+      setState(() {
+        _filteredMembers = [];
+      });
+      return;
+    }
+
+    final lowerQuery = query.toLowerCase();
+    setState(() {
+      _filteredMembers = _members.where((member) {
+        final name = (member['name'] ?? '').toString().toLowerCase();
+        final phone = (member['phone'] ?? '').toString();
+        final nationalId = (member['nationalId'] ?? '').toString().toLowerCase();
+        return name.contains(lowerQuery) || 
+               phone.contains(lowerQuery) || 
+               nationalId.contains(lowerQuery);
+      }).toList();
     });
   }
 
@@ -171,31 +199,96 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildMemberSelector() {
-    return DropdownButtonFormField<String>(
-      value: _selectedMemberId,
-      decoration: InputDecoration(
-        labelText: 'Select Member',
-        prefixIcon: const Icon(Icons.person_rounded),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        filled: true,
-        fillColor: const Color(0xFFF5F7FA),
-      ),
-      items: _members.map((member) {
-        return DropdownMenuItem<String>(
-          value: member['id'],
-          child: Text(
-            '${member['name']} - ${member['nationalId'] ?? member['phone']}',
-            style: GoogleFonts.poppins(fontSize: 14),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Search Member',
+          style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: 'Search by name, phone, or ID...',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () {
+                setState(() {
+                  _searchController.clear();
+                  _filteredMembers = [];
+                });
+              },
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
+            fillColor: const Color(0xFFF5F7FA),
           ),
-        );
-      }).toList(),
-      onChanged: (value) {
-        setState(() {
-          _selectedMemberId = value;
-          _memberData = null;
-        });
-        _loadMemberData();
-      },
+          onChanged: _filterMembers,
+        ),
+        if (_filteredMembers.isNotEmpty && _searchController.text.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 300),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _filteredMembers.length > 10 ? 10 : _filteredMembers.length,
+              itemBuilder: (context, index) {
+                final member = _filteredMembers[index];
+                final isSelected = _selectedMemberId == member['id'];
+                
+                return ListTile(
+                  selected: isSelected,
+                  selectedTileColor: ModernTheme.primary.withOpacity(0.1),
+                  leading: CircleAvatar(
+                    backgroundColor: isSelected ? ModernTheme.primary : Colors.grey.shade300,
+                    child: Text(
+                      member['name'].toString()[0].toUpperCase(),
+                      style: GoogleFonts.poppins(
+                        color: isSelected ? Colors.white : Colors.grey.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    member['name'],
+                    style: GoogleFonts.poppins(
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${member['phone'] ?? 'No phone'} ${member['nationalId'] != null ? '• ${member['nationalId']}' : ''}',
+                    style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  onTap: () {
+                    setState(() {
+                      _selectedMemberId = member['id'];
+                      _memberData = null;
+                      _searchController.text = member['name'];
+                      _filteredMembers = [];
+                    });
+                    _loadMemberData();
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ],
     );
   }
 

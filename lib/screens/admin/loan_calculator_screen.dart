@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
+import 'dart:html' as html;
+import 'dart:convert';
 import '../../theme/modern_theme.dart';
 
 class LoanCalculatorScreen extends StatefulWidget {
@@ -16,6 +18,8 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
   final _interestController = TextEditingController(text: '15');
   final _durationController = TextEditingController(text: '12');
   
+  String _interestType = 'yearly'; // 'yearly' or 'monthly'
+  
   double _monthlyPayment = 0;
   double _totalPayment = 0;
   double _totalInterest = 0;
@@ -25,7 +29,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
 
   void _calculate() {
     final principal = double.tryParse(_amountController.text) ?? 0;
-    final annualRate = double.tryParse(_interestController.text) ?? 0;
+    final interestInput = double.tryParse(_interestController.text) ?? 0;
     final months = int.tryParse(_durationController.text) ?? 0;
 
     if (principal <= 0 || months <= 0) {
@@ -38,8 +42,13 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
       return;
     }
 
-    // Monthly interest rate
-    final monthlyRate = annualRate / 100 / 12;
+    // Calculate monthly interest rate based on type
+    double monthlyRate;
+    if (_interestType == 'monthly') {
+      monthlyRate = interestInput / 100;
+    } else {
+      monthlyRate = interestInput / 100 / 12;
+    }
     
     // Calculate monthly payment using amortization formula
     double monthlyPayment;
@@ -79,6 +88,64 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
     });
   }
 
+  void _exportToPDF() {
+    // Create CSV content for download
+    final csvContent = _generateCSV();
+    final blob = html.Blob([csvContent], 'text/csv');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..setAttribute('download', 'loan_amortization_${DateTime.now().millisecondsSinceEpoch}.csv')
+      ..click();
+    html.Url.revokeObjectUrl(url);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Exported as CSV'), backgroundColor: Colors.green),
+    );
+  }
+
+  void _exportToExcel() {
+    // Export as CSV which can be opened in Excel
+    final csvContent = _generateCSV();
+    final blob = html.Blob([csvContent], 'text/csv');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..setAttribute('download', 'loan_schedule_${DateTime.now().millisecondsSinceEpoch}.csv')
+      ..click();
+    html.Url.revokeObjectUrl(url);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Exported for Excel'), backgroundColor: Colors.green),
+    );
+  }
+
+  String _generateCSV() {
+    final buffer = StringBuffer();
+    
+    // Header
+    buffer.writeln('Loan Amortization Schedule');
+    buffer.writeln('Generated: ${DateFormat('MMM dd, yyyy HH:mm').format(DateTime.now())}');
+    buffer.writeln('');
+    buffer.writeln('Loan Amount,${_amountController.text}');
+    buffer.writeln('Interest Rate,${_interestController.text}% ${_interestType == "monthly" ? "per month" : "per year"}');
+    buffer.writeln('Duration,${_durationController.text} months');
+    buffer.writeln('Monthly Payment,${_monthlyPayment.toStringAsFixed(2)}');
+    buffer.writeln('Total Payment,${_totalPayment.toStringAsFixed(2)}');
+    buffer.writeln('Total Interest,${_totalInterest.toStringAsFixed(2)}');
+    buffer.writeln('');
+    
+    // Schedule table
+    buffer.writeln('Month,Payment,Principal,Interest,Balance');
+    for (var item in _amortizationSchedule) {
+      buffer.writeln('${item['month']},'
+          '${item['payment'].toStringAsFixed(2)},'
+          '${item['principal'].toStringAsFixed(2)},'
+          '${item['interest'].toStringAsFixed(2)},'
+          '${item['balance'].toStringAsFixed(2)}');
+    }
+    
+    return buffer.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -87,6 +154,20 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
         title: Text('Loan Calculator', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         backgroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          if (_amortizationSchedule.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf),
+              onPressed: _exportToPDF,
+              tooltip: 'Export as CSV',
+            ),
+            IconButton(
+              icon: const Icon(Icons.table_chart),
+              onPressed: _exportToExcel,
+              tooltip: 'Export for Excel',
+            ),
+          ],
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -129,15 +210,40 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                     onChanged: (_) => _calculate(),
                   ),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: _interestController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Annual Interest Rate (%)',
-                      prefixIcon: const Icon(Icons.percent),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onChanged: (_) => _calculate(),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _interestController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Interest Rate (%)',
+                            prefixIcon: const Icon(Icons.percent),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onChanged: (_) => _calculate(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _interestType,
+                          decoration: InputDecoration(
+                            labelText: 'Period',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'yearly', child: Text('Per Year')),
+                            DropdownMenuItem(value: 'monthly', child: Text('Per Month')),
+                          ],
+                          onChanged: (value) {
+                            setState(() => _interestType = value!);
+                            _calculate();
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -147,6 +253,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                       labelText: 'Duration (Months)',
                       prefixIcon: const Icon(Icons.calendar_today),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      helperText: 'For short-term loans, use 1-6 months',
                     ),
                     onChanged: (_) => _calculate(),
                   ),
@@ -215,12 +322,39 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
               const SizedBox(height: 24),
 
               // Amortization Schedule
-              Text(
-                'Amortization Schedule',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Amortization Schedule',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _exportToPDF,
+                        icon: const Icon(Icons.download, size: 18),
+                        label: const Text('CSV'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: _exportToExcel,
+                        icon: const Icon(Icons.table_chart, size: 18),
+                        label: const Text('Excel'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
 

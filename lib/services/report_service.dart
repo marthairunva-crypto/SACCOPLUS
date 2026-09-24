@@ -177,7 +177,11 @@ class ReportService {
 
     for (var doc in loansSnapshot.docs) {
       final principal = (doc['amount'] as num?)?.toInt() ?? 0;
-      final repaid = (doc['totalRepaid'] as num?)?.toInt() ?? 0;
+      final repaid = (doc.data() as Map).containsKey('totalRepaid') 
+          ? (doc['totalRepaid'] as num?)?.toInt() ?? 0
+          : (doc.data() as Map).containsKey('amountPaid')
+              ? (doc['amountPaid'] as num?)?.toInt() ?? 0
+              : 0;
       final outstanding = principal - repaid;
       
       if (outstanding > 0) {
@@ -390,7 +394,11 @@ class ReportService {
       final data = doc.data();
       final status = data['status'] as String? ?? '';
       final amount = (data['amount'] as num?)?.toInt() ?? 0;
-      final repaid = (data['totalRepaid'] as num?)?.toInt() ?? 0;
+      final repaid = data.containsKey('totalRepaid') 
+          ? (data['totalRepaid'] as num?)?.toInt() ?? 0
+          : data.containsKey('amountPaid')
+              ? (data['amountPaid'] as num?)?.toInt() ?? 0
+              : 0;
       final dueDate = (data['dueDate'] as Timestamp?)?.toDate();
 
       totalAmountRequested += amount;
@@ -589,9 +597,14 @@ class ReportService {
       int totalRepaid = 0;
 
       for (var loan in loansSnapshot.docs) {
-        final status = loan['status'] as String? ?? '';
-        final amount = (loan['amount'] as num?)?.toInt() ?? 0;
-        final repaid = (loan['totalRepaid'] as num?)?.toInt() ?? 0;
+        final data = loan.data() as Map<String, dynamic>;
+        final status = data['status'] as String? ?? '';
+        final amount = (data['amount'] as num?)?.toInt() ?? 0;
+        final repaid = data.containsKey('totalRepaid') 
+            ? (data['totalRepaid'] as num?)?.toInt() ?? 0
+            : data.containsKey('amountPaid')
+                ? (data['amountPaid'] as num?)?.toInt() ?? 0
+                : 0;
 
         if (status == 'approved' && repaid < amount) {
           activeLoans++;
