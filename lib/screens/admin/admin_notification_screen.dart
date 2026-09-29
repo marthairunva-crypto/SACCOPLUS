@@ -203,10 +203,7 @@ class _AdminNotificationsScreenState
     }
   }
 
-  Future<void> _sendToAll() async {
-    setState(() => _sendToAll = true);
-    await _sendNotification();
-  }
+
 
   @override
   Widget build(BuildContext context) {
