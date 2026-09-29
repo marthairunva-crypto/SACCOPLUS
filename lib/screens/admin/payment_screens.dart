@@ -22,11 +22,32 @@ class PaymentHubScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('payments')
             .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-            // Temporarily removed orderBy to avoid index requirement
-            // .orderBy('createdAt', descending: true)
+            .orderBy('createdAt', descending: true)
             .limit(50)
             .snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            print('');
+            print('🔥🔥🔥 FIRESTORE INDEX ERROR - PAYMENTS 🔥🔥🔥');
+            print('');
+            print(snapshot.error.toString());
+            print('');
+            print('👆 COPY THE URL ABOVE AND PASTE IN YOUR BROWSER 👆');
+            print('');
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Index Required', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  const Text('Check console for index creation URL'),
+                ],
+              ),
+            );
+          }
+          
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -263,11 +284,32 @@ class MobileMoneyScreen extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('mobileMoneyTransactions')
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          // Temporarily removed orderBy to avoid index requirement
-          // .orderBy('createdAt', descending: true)
+          .orderBy('createdAt', descending: true)
           .limit(20)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print('');
+          print('🔥🔥🔥 FIRESTORE INDEX ERROR - MOBILE MONEY 🔥🔥🔥');
+          print('');
+          print(snapshot.error.toString());
+          print('');
+          print('👆 COPY THE URL ABOVE AND PASTE IN YOUR BROWSER 👆');
+          print('');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Index Required', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text('Check console for index creation URL'),
+              ],
+            ),
+          );
+        }
+        
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -353,10 +395,31 @@ class BankTransfersScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('bankTransfers')
             .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-            // Temporarily removed orderBy to avoid index requirement
-            // .orderBy('createdAt', descending: true)
+            .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            print('');
+            print('🔥🔥🔥 FIRESTORE INDEX ERROR - BANK TRANSFERS 🔥🔥🔥');
+            print('');
+            print(snapshot.error.toString());
+            print('');
+            print('👆 COPY THE URL ABOVE AND PASTE IN YOUR BROWSER 👆');
+            print('');
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Index Required', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  const Text('Check console for index creation URL'),
+                ],
+              ),
+            );
+          }
+          
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }

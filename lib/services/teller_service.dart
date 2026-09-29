@@ -548,6 +548,15 @@ class TellerService {
         'netCashFlow': totalDeposits - totalWithdrawals,
       };
     } catch (e) {
+      print('');
+      print('🔥🔥🔥 FIRESTORE INDEX ERROR 🔥🔥🔥');
+      print('');
+      print(e.toString());
+      print('');
+      print('👆 COPY THE URL ABOVE AND PASTE IN YOUR BROWSER 👆');
+      print('👆 IT WILL AUTO-CREATE THE INDEX FOR YOU! 👆');
+      print('');
+      
       return {
         'date': targetDate,
         'totalTransactions': 0,
