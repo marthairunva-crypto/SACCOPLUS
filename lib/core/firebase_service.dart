@@ -368,8 +368,8 @@ class FirebaseService {
 
   static Stream<QuerySnapshot> getAllFarmers() => _db
       .collection(AppConstants.usersCol)
-      .where('role', isEqualTo: AppConstants.roleMember)
       .where('tenantId', isEqualTo: sessionTenantId)
+      .where('role', isEqualTo: AppConstants.roleMember)
       .snapshots();
 
   // ─── Loans ───────────────────────────────────────────────────────────────
