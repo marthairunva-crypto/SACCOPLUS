@@ -246,20 +246,26 @@ class _AdminDepositCard extends StatelessWidget {
     final netInterest  = (data['interestEarned'] as num?)?.toInt() ?? 0;
     final maturityVal  = (data['maturityValue'] as num?)?.toInt() ?? 0;
     final rollover     = data['rollover'] as bool? ?? false;
-    final maturityDate = data['maturityDate'] as String? ?? '—';
+    final maturityDate = data['maturityDate'];
     final createdAt    = data['createdAt'];
 
     String dateStr = '—';
     if (createdAt is Timestamp) {
       dateStr = DateFormat('MMM d, yyyy').format(createdAt.toDate());
+    } else if (createdAt is String) {
+      try {
+        dateStr = DateFormat('MMM d, yyyy').format(DateTime.parse(createdAt));
+      } catch (_) {}
     }
 
-    String maturityStr = maturityDate;
-    try {
-      if (maturityDate != '—') {
+    String maturityStr = '—';
+    if (maturityDate is Timestamp) {
+      maturityStr = DateFormat('MMM d, yyyy').format(maturityDate.toDate());
+    } else if (maturityDate is String && maturityDate != '—') {
+      try {
         maturityStr = DateFormat('MMM d, yyyy').format(DateTime.parse(maturityDate));
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     Color statusColor;
     switch (status) {
