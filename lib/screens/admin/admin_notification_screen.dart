@@ -342,15 +342,34 @@ class _AdminNotificationsScreenState
                   return const Center(child: CircularProgressIndicator());
                 }
                 final docs = snap.data?.docs ?? [];
-                // Deduplicate by title+message to show unique broadcasts
-                final seen = <String>{};
-                final unique = docs.where((d) {
+                
+                // Group by title+message and get the latest one from each group
+                final Map<String, QueryDocumentSnapshot> uniqueNotifs = {};
+                for (final d in docs) {
                   final data = d.data() as Map<String, dynamic>;
-                  final key = '${data['title']}__${data['message']}';
-                  if (seen.contains(key)) return false;
-                  seen.add(key);
-                  return true;
-                }).toList();
+                  final key = '${data['title']}_${data['message']}';
+                  
+                  // Keep the latest notification for each unique title+message combo
+                  if (!uniqueNotifs.containsKey(key)) {
+                    uniqueNotifs[key] = d;
+                  } else {
+                    final existingData = uniqueNotifs[key]!.data() as Map<String, dynamic>;
+                    final existingTime = existingData['createdAt'] as Timestamp?;
+                    final newTime = data['createdAt'] as Timestamp?;
+                    
+                    if (newTime != null && existingTime != null && newTime.compareTo(existingTime) > 0) {
+                      uniqueNotifs[key] = d;
+                    }
+                  }
+                }
+                
+                final unique = uniqueNotifs.values.toList()
+                  ..sort((a, b) {
+                    final aTime = (a.data() as Map)['createdAt'] as Timestamp?;
+                    final bTime = (b.data() as Map)['createdAt'] as Timestamp?;
+                    if (aTime == null || bTime == null) return 0;
+                    return bTime.compareTo(aTime); // Newest first
+                  });
 
                 if (unique.isEmpty) {
                   return const EmptyState(

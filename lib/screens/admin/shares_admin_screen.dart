@@ -390,7 +390,9 @@ class _MemberSharesList extends StatelessWidget {
               );
             }
             final doc = docs[i - 1];
-            final data = doc.data() as Map<String, dynamic>;
+            final data = doc.data() as Map<String, dynamic>?;
+            if (data == null) return const SizedBox.shrink();
+            
             final shares = (data['totalShares'] as num?)?.toInt() ?? 0;
             final pct = totalShares > 0 ? (shares / totalShares * 100) : 0.0;
 
