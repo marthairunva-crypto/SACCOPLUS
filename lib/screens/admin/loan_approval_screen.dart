@@ -7,6 +7,7 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
+import '../../utils/csv_export.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
   final bool embedded;
@@ -46,6 +47,13 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
                 icon: const Icon(Icons.arrow_back_ios_rounded),
                 onPressed: () => Navigator.pop(context),
               ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            tooltip: 'Export Loans',
+            onPressed: _exportLoans,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           labelColor: Colors.white,
@@ -80,6 +88,52 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
       _doUpdate(loanId, AppConstants.statusApproved);
     } else {
       _showRejectDialog(loanId);
+    }
+  }
+
+  Future<void> _exportLoans() async {
+    try {
+      // Show loading
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Exporting loans...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Fetch all loans
+      final loans = await FirebaseService.getAllLoansOnce();
+      
+      if (loans.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No loans to export'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Export to CSV
+      CsvExport.exportLoans(loans);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported ${loans.length} loans successfully!'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: ${e.toString()}'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
     }
   }
 

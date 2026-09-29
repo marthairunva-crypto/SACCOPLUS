@@ -7,6 +7,7 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
+import '../../utils/csv_export.dart';
 import 'member_360_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -72,6 +73,13 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen>
                 icon: const Icon(Icons.arrow_back_ios_rounded),
                 onPressed: () => Navigator.pop(context),
               ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            tooltip: 'Export Members',
+            onPressed: _exportMembers,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           labelColor: Colors.white,
@@ -169,6 +177,52 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen>
       context: context,
       builder: (context) => _AddMemberDialog(),
     );
+  }
+
+  Future<void> _exportMembers() async {
+    try {
+      // Show loading
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Exporting members...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Fetch all members
+      final members = await FirebaseService.getAllFarmersOnce();
+      
+      if (members.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No members to export'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Export to CSV
+      CsvExport.exportMembers(members);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported ${members.length} members successfully!'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: ${e.toString()}'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
   }
 
   Widget _pill(String label, String value, Color color) => Container(
