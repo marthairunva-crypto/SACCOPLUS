@@ -123,8 +123,9 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
-                .collection('saccoplus-members')
+                .collection(AppConstants.usersCol)
                 .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+                .where('role', isEqualTo: AppConstants.roleMember)
                 .snapshots(),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {

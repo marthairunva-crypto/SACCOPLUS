@@ -1185,7 +1185,7 @@ class _AddMemberDialogState extends State<_AddMemberDialog> {
       
       // Check if member already exists
       final existingMember = await FirebaseFirestore.instance
-          .collection('saccoplus-members')
+          .collection(AppConstants.usersCol)
           .doc(memberId)
           .get();
 
@@ -1209,7 +1209,7 @@ class _AddMemberDialogState extends State<_AddMemberDialog> {
         'district': _districtController.text.trim(),
         'nin': _ninController.text.trim(),
         'memberNumber': memberNumber,
-        'role': 'farmer',
+        'role': AppConstants.roleMember,
         'idStatus': 'pending',
         'walletBalance': 0,
         'savingsBalance': 0,
@@ -1222,9 +1222,9 @@ class _AddMemberDialogState extends State<_AddMemberDialog> {
         'addedByAdmin': true,
       };
 
-      // Add to Firestore
+      // Add to Firestore - use AppConstants.usersCol to match getAllFarmers()
       await FirebaseFirestore.instance
-          .collection('saccoplus-members')
+          .collection(AppConstants.usersCol)
           .doc(memberId)
           .set(memberData);
 
@@ -1270,8 +1270,9 @@ class _AddMemberDialogState extends State<_AddMemberDialog> {
 
   Future<String> _generateMemberNumber() async {
     final snapshot = await FirebaseFirestore.instance
-        .collection('saccoplus-members')
+        .collection(AppConstants.usersCol)
         .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+        .where('role', isEqualTo: AppConstants.roleMember)
         .get();
 
     final count = snapshot.docs.length + 1;
