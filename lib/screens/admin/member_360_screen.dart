@@ -281,6 +281,9 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildMemberHeader() {
+    final memberName = _memberData!['name'] ?? _memberData!['fullName'] ?? 'Unknown';
+    final memberPhone = _memberData!['phone'] ?? 'No phone';
+    
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -303,7 +306,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
             radius: 40,
             backgroundColor: Colors.white.withOpacity(0.2),
             child: Text(
-              _memberData!['name'].toString()[0].toUpperCase(),
+              memberName[0].toUpperCase(),
               style: GoogleFonts.poppins(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
@@ -317,7 +320,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _memberData!['name'],
+                  memberName,
                   style: GoogleFonts.poppins(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -335,7 +338,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    _buildHeaderChip(Icons.phone, _memberData!['phone']),
+                    _buildHeaderChip(Icons.phone, memberPhone),
                     const SizedBox(width: 12),
                     _buildHeaderChip(
                       Icons.calendar_today,
