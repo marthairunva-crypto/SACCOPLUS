@@ -22,7 +22,8 @@ class PaymentHubScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('payments')
             .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-            .orderBy('createdAt', descending: true)
+            // Temporarily removed orderBy to avoid index requirement
+            // .orderBy('createdAt', descending: true)
             .limit(50)
             .snapshots(),
         builder: (context, snapshot) {
@@ -262,7 +263,8 @@ class MobileMoneyScreen extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('mobileMoneyTransactions')
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .orderBy('createdAt', descending: true)
+          // Temporarily removed orderBy to avoid index requirement
+          // .orderBy('createdAt', descending: true)
           .limit(20)
           .snapshots(),
       builder: (context, snapshot) {
@@ -351,7 +353,8 @@ class BankTransfersScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('bankTransfers')
             .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-            .orderBy('createdAt', descending: true)
+            // Temporarily removed orderBy to avoid index requirement
+            // .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
