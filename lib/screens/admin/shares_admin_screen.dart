@@ -363,7 +363,16 @@ class _MemberSharesList extends StatelessWidget {
         if (docs.isEmpty) {
           return const EmptyState(message: 'No share records yet.', icon: Icons.pie_chart_outline_rounded);
         }
-        final totalShares = docs.fold<int>(0, (s, d) => s + ((d['totalShares'] as num?)?.toInt() ?? 0));
+        final totalShares = docs.fold<int>(0, (s, d) {
+          try {
+            final data = d.data() as Map<String, dynamic>?;
+            if (data == null) return s;
+            return s + ((data['totalShares'] as num?)?.toInt() ?? 0);
+          } catch (e) {
+            print('Error reading totalShares: $e');
+            return s;
+          }
+        });
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
