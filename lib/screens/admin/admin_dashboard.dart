@@ -16,6 +16,7 @@ import '../common/settings_screen.dart';
 import 'loan_approval_screen.dart';
 import 'farmer_management_screen.dart';
 import 'migration_screen.dart';
+import 'create_loan_screen.dart';
 import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
 import 'teller_screen.dart';
@@ -87,6 +88,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       // LOANS
       'loans': const LoanApprovalScreen(embedded: true),
       'loan_portfolio': const LoanPortfolioScreen(embedded: true),
+      'create_loan': const CreateLoanScreen(),
       'loan_products': const LoanProductsScreen(),
       'loan_calc': const LoanCalculatorScreen(),
       'collections': const CollectionsScreen(),
@@ -397,6 +399,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 'Loans',
                 Icons.account_tree_rounded,
                 [
+                  {'icon': Icons.add_card_rounded, 'label': 'Create & Disburse Loan', 'route': 'create_loan'},
                   {'icon': Icons.fact_check_rounded, 'label': 'Loan Applications', 'route': 'loans'},
                   {'icon': Icons.account_tree_rounded, 'label': 'Loan Portfolio', 'route': 'loan_portfolio'},
                   {'icon': Icons.inventory_2_rounded, 'label': 'Loan Products', 'route': 'loan_products'},

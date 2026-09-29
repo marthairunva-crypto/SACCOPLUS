@@ -154,6 +154,19 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen>
           );
         },
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAddMemberDialog(),
+        icon: const Icon(Icons.person_add),
+        label: const Text('Add Member'),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+  }
+
+  void _showAddMemberDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _AddMemberDialog(),
     );
   }
 
@@ -945,5 +958,323 @@ class _ImageViewerScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADD MEMBER DIALOG
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _AddMemberDialog extends StatefulWidget {
+  @override
+  State<_AddMemberDialog> createState() => _AddMemberDialogState();
+}
+
+class _AddMemberDialogState extends State<_AddMemberDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _villageController = TextEditingController();
+  final _districtController = TextEditingController();
+  final _ninController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _villageController.dispose();
+    _districtController.dispose();
+    _ninController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 500),
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.person_add, color: AppTheme.primary, size: 28),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Add New Member',
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Name is required';
+                    }
+                    return null;
+                  },
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.phone),
+                    hintText: '256XXXXXXXXX',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Phone number is required';
+                    }
+                    if (!RegExp(r'^256\d{9}$').hasMatch(value.trim())) {
+                      return 'Invalid phone (use format: 256XXXXXXXXX)';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (Optional)',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty) {
+                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                        return 'Invalid email address';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _villageController,
+                        decoration: const InputDecoration(
+                          labelText: 'Village',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.location_on),
+                        ),
+                        textCapitalization: TextCapitalization.words,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _districtController,
+                        decoration: const InputDecoration(
+                          labelText: 'District',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.map),
+                        ),
+                        textCapitalization: TextCapitalization.words,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _ninController,
+                  decoration: const InputDecoration(
+                    labelText: 'National ID (NIN) - Optional',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.badge),
+                    hintText: 'CM...',
+                  ),
+                  textCapitalization: TextCapitalization.characters,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isLoading ? null : () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text('Cancel', style: GoogleFonts.poppins()),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _addMember,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                'Add Member',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addMember() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final phone = _phoneController.text.trim();
+      final memberId = 'phone_$phone';
+      
+      // Check if member already exists
+      final existingMember = await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .doc(memberId)
+          .get();
+
+      if (existingMember.exists) {
+        throw Exception('Member with this phone number already exists');
+      }
+
+      // Generate member number
+      final memberNumber = await _generateMemberNumber();
+
+      // Create member data
+      final memberData = {
+        'id': memberId,
+        'tenantId': FirebaseService.sessionTenantId,
+        'name': _nameController.text.trim(),
+        'fullName': _nameController.text.trim(),
+        'phone': phone,
+        'phoneNumber': phone,
+        'email': _emailController.text.trim(),
+        'village': _villageController.text.trim(),
+        'district': _districtController.text.trim(),
+        'nin': _ninController.text.trim(),
+        'memberNumber': memberNumber,
+        'role': 'farmer',
+        'idStatus': 'pending',
+        'walletBalance': 0,
+        'savingsBalance': 0,
+        'sharesBalance': 0,
+        'totalShares': 0,
+        'loanBalance': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+        'createdBy': FirebaseService.sessionUid,
+        'registrationDate': FieldValue.serverTimestamp(),
+        'addedByAdmin': true,
+      };
+
+      // Add to Firestore
+      await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .doc(memberId)
+          .set(memberData);
+
+      // Audit log
+      await AuditService.log(
+        action: 'MEMBER_ADDED',
+        details: 'Admin added new member: ${_nameController.text.trim()}',
+        userId: FirebaseService.sessionUid,
+        affectedUserId: memberId,
+        metadata: {
+          'phone': phone,
+          'memberNumber': memberNumber,
+        },
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Member added successfully! Member #: $memberNumber',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: AppTheme.success,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error: ${e.toString()}',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<String> _generateMemberNumber() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('saccoplus-members')
+        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+        .get();
+
+    final count = snapshot.docs.length + 1;
+    return 'MEM${DateTime.now().year}${count.toString().padLeft(4, '0')}';
   }
 }
