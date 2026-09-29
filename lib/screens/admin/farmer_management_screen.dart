@@ -169,8 +169,20 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen>
   );
 
   void _open(String docId, Map<String, dynamic> data) {
-    Navigator.push(context,
-        MaterialPageRoute(builder: (_) => Member360Screen(memberId: docId)));
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 800),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Member360Screen(memberId: docId),
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -102,12 +102,20 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    // Check if we're in a dialog
+    final isDialog = ModalRoute.of(context)?.settings.name == null;
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: Text('Member 360° View', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         backgroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: !isDialog,
+        leading: isDialog ? IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ) : null,
         actions: [
           if (_memberData != null)
             IconButton(
