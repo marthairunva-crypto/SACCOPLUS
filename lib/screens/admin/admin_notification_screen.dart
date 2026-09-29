@@ -19,6 +19,16 @@ class _AdminNotificationsScreenState
   final _titleCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
   bool _sending = false;
+  bool _sendToAll = true;
+  List<String> _selectedMemberIds = [];
+  List<Map<String, dynamic>> _allMembers = [];
+  bool _loadingMembers = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMembers();
+  }
 
   @override
   void dispose() {
@@ -27,40 +37,160 @@ class _AdminNotificationsScreenState
     super.dispose();
   }
 
-  Future<void> _sendToAll() async {
+  Future<void> _loadMembers() async {
+    setState(() => _loadingMembers = true);
+    try {
+      final members = await FirebaseService.getAllFarmersOnce();
+      if (mounted) {
+        setState(() {
+          _allMembers = members;
+          _loadingMembers = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingMembers = false);
+      }
+    }
+  }
+
+  void _showMemberSelectionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Select Members', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Column(
+              children: [
+                // Select/Deselect all
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('${_selectedMemberIds.length} selected', 
+                        style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          if (_selectedMemberIds.length == _allMembers.length) {
+                            _selectedMemberIds.clear();
+                          } else {
+                            _selectedMemberIds = _allMembers.map((m) => m['id'] as String).toList();
+                          }
+                        });
+                        setState(() {}); // Update parent state too
+                      },
+                      child: Text(_selectedMemberIds.length == _allMembers.length ? 'Deselect All' : 'Select All'),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _allMembers.length,
+                    itemBuilder: (context, index) {
+                      final member = _allMembers[index];
+                      final memberId = member['id'] as String;
+                      final memberName = member['name'] ?? member['fullName'] ?? 'Unknown';
+                      final memberPhone = member['phone'] ?? '';
+                      final isSelected = _selectedMemberIds.contains(memberId);
+                      
+                      return CheckboxListTile(
+                        value: isSelected,
+                        onChanged: (value) {
+                          setDialogState(() {
+                            if (value == true) {
+                              _selectedMemberIds.add(memberId);
+                            } else {
+                              _selectedMemberIds.remove(memberId);
+                            }
+                          });
+                          setState(() {}); // Update parent state too
+                        },
+                        title: Text(memberName, style: GoogleFonts.poppins(fontSize: 13)),
+                        subtitle: Text(memberPhone, style: GoogleFonts.poppins(fontSize: 11)),
+                        dense: true,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendNotification() async {
     final title = _titleCtrl.text.trim();
     final msg = _msgCtrl.text.trim();
+    
     if (title.isEmpty || msg.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please fill in both title and message.'),
           backgroundColor: AppTheme.error));
       return;
     }
+    
+    if (!_sendToAll && _selectedMemberIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please select at least one member.'),
+          backgroundColor: AppTheme.error));
+      return;
+    }
+    
     setState(() => _sending = true);
     try {
-      final snap = await FirebaseService.getAllFarmers().first;
-      final farmers = snap.docs;
-      for (final f in farmers) {
-        final data = f.data() as Map<String, dynamic>;
-        final farmerName = (data['name'] as String? ??
-                data['fullName'] as String? ??
+      List<String> targetMemberIds;
+      
+      if (_sendToAll) {
+        final snap = await FirebaseService.getAllFarmers().first;
+        targetMemberIds = snap.docs.map((doc) => doc.id).toList();
+      } else {
+        targetMemberIds = _selectedMemberIds;
+      }
+      
+      for (final memberId in targetMemberIds) {
+        final member = _allMembers.firstWhere(
+          (m) => m['id'] == memberId,
+          orElse: () => <String, dynamic>{},
+        );
+        
+        final farmerName = (member['name'] as String? ??
+                member['fullName'] as String? ??
                 'Member')
             .trim();
-        final phone = data['phone'] as String? ?? '';
+        final phone = member['phone'] as String? ?? '';
         final personalMsg = 'Dear $farmerName, $msg';
 
         // Save in-app notification
-        await FirebaseService.sendNotification(f.id, title, personalMsg);
+        await FirebaseService.sendNotification(memberId, title, personalMsg);
+        
         // Also send SMS
         if (phone.isNotEmpty) {
           FirebaseService.sendSmsToPhone(phone, '$title: $personalMsg');
         }
       }
+      
       if (mounted) {
         _titleCtrl.clear();
         _msgCtrl.clear();
+        _selectedMemberIds.clear();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Notification sent to ${farmers.length} farmer(s).'),
+            content: Text('Notification sent to ${targetMemberIds.length} member(s).'),
             backgroundColor: AppTheme.success));
       }
     } catch (e) {
@@ -71,6 +201,11 @@ class _AdminNotificationsScreenState
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _sendToAll() async {
+    setState(() => _sendToAll = true);
+    await _sendNotification();
   }
 
   @override
@@ -143,10 +278,55 @@ class _AdminNotificationsScreenState
                     ),
                   ),
                   const SizedBox(height: 14),
+                  
+                  // Recipient selection
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<bool>(
+                          title: Text('All Members', style: GoogleFonts.poppins(fontSize: 13)),
+                          value: true,
+                          groupValue: _sendToAll,
+                          onChanged: (value) => setState(() => _sendToAll = value!),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<bool>(
+                          title: Text('Selected Members', style: GoogleFonts.poppins(fontSize: 13)),
+                          value: false,
+                          groupValue: _sendToAll,
+                          onChanged: (value) => setState(() => _sendToAll = value!),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  if (!_sendToAll) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _loadingMembers ? null : _showMemberSelectionDialog,
+                      icon: const Icon(Icons.people, size: 18),
+                      label: Text(
+                        _selectedMemberIds.isEmpty 
+                            ? 'Select Members' 
+                            : '${_selectedMemberIds.length} member(s) selected',
+                        style: GoogleFonts.poppins(fontSize: 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      ),
+                    ),
+                  ],
+                  
+                  const SizedBox(height: 14),
                   PrimaryButton(
-                    label: 'Send to All Farmers',
+                    label: _sendToAll ? 'Send to All Members' : 'Send to Selected Members',
                     loading: _sending,
-                    onPressed: _sendToAll,
+                    onPressed: _sendNotification,
                     icon: Icons.send_rounded,
                   ),
                 ],
