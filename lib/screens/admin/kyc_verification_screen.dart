@@ -189,6 +189,8 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
         : kycStatus == 'rejected'
             ? Colors.red
             : Colors.orange;
+    
+    final memberName = member['name'] ?? member['fullName'] ?? 'Unknown';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -209,7 +211,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
         leading: CircleAvatar(
           backgroundColor: statusColor.withOpacity(0.2),
           child: Text(
-            member['name'].toString()[0].toUpperCase(),
+            memberName[0].toUpperCase(),
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.bold,
               color: statusColor,
@@ -217,7 +219,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           ),
         ),
         title: Text(
-          member['name'],
+          memberName,
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
