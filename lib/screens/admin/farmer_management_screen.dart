@@ -1231,10 +1231,10 @@ class _AddMemberDialogState extends State<_AddMemberDialog> {
       // Audit log
       await AuditService.log(
         action: 'MEMBER_ADDED',
-        details: 'Admin added new member: ${_nameController.text.trim()}',
-        userId: FirebaseService.sessionUid,
-        affectedUserId: memberId,
-        metadata: {
+        description: 'Admin added new member: ${_nameController.text.trim()}',
+        targetId: memberId,
+        targetName: _nameController.text.trim(),
+        meta: {
           'phone': phone,
           'memberNumber': memberNumber,
         },

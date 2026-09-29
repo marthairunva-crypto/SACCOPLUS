@@ -478,7 +478,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       }
 
       await FirebaseFirestore.instance
-          .collection(AppConstants.loanCol)
+          .collection(AppConstants.loansCol)
           .add(loanData);
 
       if (!mounted) return;
