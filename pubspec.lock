@@ -169,22 +169,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.8"
-  device_frame:
-    dependency: transitive
-    description:
-      name: device_frame
-      sha256: a58796a9a2efc0fd8a7903cee0eed2e2d111f4a7d81fa2319ab89430b020f624
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.3.0"
   device_preview:
     dependency: "direct main"
     description:
       name: device_preview
-      sha256: a694acdd3894b4c7d600f4ee413afc4ff917f76026b97ab06575fe886429ef19
+      sha256: "17904a409957093dd31e0b78fbc49df87645ef9e6809f792ee6e2f52b61590cb"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.0"
+    version: "3.0.0-prerelease3"
   equatable:
     dependency: transitive
     description:
@@ -382,11 +374,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.0.0"
-  flutter_localizations:
-    dependency: transitive
-    description: flutter
-    source: sdk
-    version: "0.0.0"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
@@ -413,14 +400,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  freezed_annotation:
-    dependency: transitive
-    description:
-      name: freezed_annotation
-      sha256: c2e2d632dd9b8a2b7751117abcfc2b4888ecfe181bd9fca7170d9ef02e595fe2
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.4"
   google_fonts:
     dependency: "direct main"
     description:
@@ -1076,4 +1055,4 @@ packages:
     version: "3.1.3"
 sdks:
   dart: ">=3.10.0-0 <4.0.0"
-  flutter: ">=3.29.0"
+  flutter: ">=3.44.0"
