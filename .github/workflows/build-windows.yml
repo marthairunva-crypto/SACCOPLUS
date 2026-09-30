@@ -1,9 +1,10 @@
 name: Build Windows EXE
 
 on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:  # Allows manual trigger
+  # Temporarily disabled - uncomment when ready
+  # push:
+  #   branches: [ main, master ]
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   build-windows:
