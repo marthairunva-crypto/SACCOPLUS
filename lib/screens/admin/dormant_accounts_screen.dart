@@ -106,10 +106,49 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
         final members = snapshot.data!.docs;
 
         return FutureBuilder<List<Map<String, dynamic>>>(
-          future: _findDormantAccounts(members, cutoffDate),
+          future: _findDormantAccounts(members, cutoffDate).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              print('❌ DORMANT: Timeout after 30 seconds');
+              return [];
+            },
+          ),
           builder: (context, dormantSnapshot) {
+            if (dormantSnapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error loading dormant accounts',
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                    Text(
+                      dormantSnapshot.error.toString(),
+                      style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+
             if (!dormantSnapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Analyzing member activity...',
+                      style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              );
             }
 
             final dormantAccounts = dormantSnapshot.data!;
@@ -159,21 +198,31 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
   ) async {
     final List<Map<String, dynamic>> dormantAccounts = [];
 
+    print('🔍 DORMANT: Checking ${members.length} members against cutoff: $cutoffDate');
+
     for (var memberDoc in members) {
-      final memberId = memberDoc.id;
-      final memberData = memberDoc.data() as Map<String, dynamic>;
+      try {
+        final memberId = memberDoc.id;
+        final memberData = memberDoc.data() as Map<String, dynamic>;
 
-      // Check last transaction date across savings, shares, and loans
-      final lastActivity = await _getLastActivityDate(memberId);
+        // Check last transaction date across savings, shares, and loans
+        final lastActivity = await _getLastActivityDate(memberId);
 
-      if (lastActivity == null || lastActivity.isBefore(cutoffDate)) {
-        dormantAccounts.add({
-          'id': memberId,
-          'data': memberData,
-          'lastActivity': lastActivity,
-        });
+        print('   - Member ${memberData['name']}: lastActivity=$lastActivity');
+
+        if (lastActivity == null || lastActivity.isBefore(cutoffDate)) {
+          dormantAccounts.add({
+            'id': memberId,
+            'data': memberData,
+            'lastActivity': lastActivity,
+          });
+        }
+      } catch (e) {
+        print('❌ Error checking member ${memberDoc.id}: $e');
       }
     }
+
+    print('✅ DORMANT: Found ${dormantAccounts.length} dormant accounts');
 
     // Sort by last activity (oldest first)
     dormantAccounts.sort((a, b) {
@@ -191,58 +240,76 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
   Future<DateTime?> _getLastActivityDate(String memberId) async {
     DateTime? lastDate;
 
-    // Check savings
-    final savingsSnap = await FirebaseFirestore.instance
-        .collection('savings')
-        .where('farmerId', isEqualTo: memberId)
-        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
+    try {
+      // Check savings - removed orderBy to avoid index requirement
+      final savingsSnap = await FirebaseFirestore.instance
+          .collection('savings')
+          .where('farmerId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
 
-    if (savingsSnap.docs.isNotEmpty) {
-      final timestamp = savingsSnap.docs.first.data()['createdAt'] as Timestamp?;
-      if (timestamp != null) {
-        lastDate = timestamp.toDate();
-      }
-    }
-
-    // Check shares
-    final sharesSnap = await FirebaseFirestore.instance
-        .collection('shares')
-        .where('farmerId', isEqualTo: memberId)
-        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
-
-    if (sharesSnap.docs.isNotEmpty) {
-      final timestamp = sharesSnap.docs.first.data()['createdAt'] as Timestamp?;
-      if (timestamp != null) {
-        final shareDate = timestamp.toDate();
-        if (lastDate == null || shareDate.isAfter(lastDate)) {
-          lastDate = shareDate;
+      for (var doc in savingsSnap.docs) {
+        final timestamp = doc.data()['createdAt'] as Timestamp?;
+        if (timestamp != null) {
+          final date = timestamp.toDate();
+          if (lastDate == null || date.isAfter(lastDate)) {
+            lastDate = date;
+          }
         }
       }
-    }
 
-    // Check loans
-    final loansSnap = await FirebaseFirestore.instance
-        .collection('loans')
-        .where('farmerId', isEqualTo: memberId)
-        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
+      // Check shares - removed orderBy to avoid index requirement
+      final sharesSnap = await FirebaseFirestore.instance
+          .collection('shares')
+          .where('farmerId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
 
-    if (loansSnap.docs.isNotEmpty) {
-      final timestamp = loansSnap.docs.first.data()['createdAt'] as Timestamp?;
-      if (timestamp != null) {
-        final loanDate = timestamp.toDate();
-        if (lastDate == null || loanDate.isAfter(lastDate)) {
-          lastDate = loanDate;
+      for (var doc in sharesSnap.docs) {
+        final timestamp = doc.data()['createdAt'] as Timestamp?;
+        if (timestamp != null) {
+          final date = timestamp.toDate();
+          if (lastDate == null || date.isAfter(lastDate)) {
+            lastDate = date;
+          }
         }
       }
+
+      // Check loans - removed orderBy to avoid index requirement
+      final loansSnap = await FirebaseFirestore.instance
+          .collection('loans')
+          .where('farmerId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
+
+      for (var doc in loansSnap.docs) {
+        final timestamp = doc.data()['createdAt'] as Timestamp?;
+        if (timestamp != null) {
+          final date = timestamp.toDate();
+          if (lastDate == null || date.isAfter(lastDate)) {
+            lastDate = date;
+          }
+        }
+      }
+
+      // Check wallet transactions for recent activity
+      final transactionsSnap = await FirebaseFirestore.instance
+          .collection('transactions')
+          .where('userId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
+
+      for (var doc in transactionsSnap.docs) {
+        final timestamp = doc.data()['timestamp'] as Timestamp?;
+        if (timestamp != null) {
+          final date = timestamp.toDate();
+          if (lastDate == null || date.isAfter(lastDate)) {
+            lastDate = date;
+          }
+        }
+      }
+    } catch (e) {
+      print('Error getting last activity date for $memberId: $e');
     }
 
     return lastDate;

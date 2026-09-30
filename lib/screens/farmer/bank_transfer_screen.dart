@@ -7,9 +7,8 @@ import '../../core/constants.dart';
 import '../../widgets/app_widgets.dart';
 import 'farmer_scaffold.dart';
 
-// Bank transfer is currently Uganda-primary via MarzPay.
-// When MarzPay expands bank-transfer to additional markets this screen
-// will be extended — for now it operates on the UG wallet only.
+// Bank transfer functionality for Uganda - integrated with bank APIs.
+// This screen operates on the user's wallet balance only.
 
 // ── Module-level cache so banks only load once per app session ────────────────
 List<Map<String, dynamic>>? _cachedBanks;
@@ -169,7 +168,7 @@ class _BankTransferScreenState extends State<BankTransferScreen> {
     }
   }
 
-  /// Convert raw MarzPay error messages into human-friendly text
+  /// Convert raw error messages into human-friendly text
   String _friendlyError(String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('insufficient') || lower.contains('balance')) {

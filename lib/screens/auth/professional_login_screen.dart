@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
 import '../../core/account_number_service.dart';
@@ -71,6 +72,15 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         return;
       }
 
+      // 🔍 DEBUG: Log the profile data
+      print('🔍 LOGIN DEBUG:');
+      print('   UID: $uid');
+      print('   Name: ${profile['name']}');
+      print('   Phone: ${profile['phone']}');
+      print('   Role: ${profile['role']}');
+      print('   TenantID: ${profile['tenantId']}');
+      print('   Full Profile: $profile');
+      
       // Store session
       FirebaseService.setSession(uid, profile);
       
@@ -79,11 +89,89 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       final role = profile['role'] as String? ?? '';
       final name = profile['name'] as String? ?? 'User';
       
-      // Show success message
-      _showSnack('Welcome back, $name!', ModernTheme.success);
+      // Show welcome dialog instead of snackbar
+      if (mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            content: Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: ModernTheme.success.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.check_circle,
+                      size: 60,
+                      color: ModernTheme.success,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Welcome Back!',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: ModernTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    name,
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: ModernTheme.primary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Kikole mu ngeri ennungi',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: ModernTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ModernTheme.success,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Continue',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       
-      // Small delay to show the success message
-      await Future.delayed(const Duration(milliseconds: 800));
+      // Small delay before navigation
+      await Future.delayed(const Duration(milliseconds: 300));
       
       if (!mounted) return;
       

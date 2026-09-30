@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
 import '../core/firebase_service.dart';
 import '../core/sacco_service.dart';
 import '../core/constants.dart';
@@ -103,12 +106,12 @@ class TellerService {
           break;
 
         case 'shares':
-          final currentValue = (memberData['sharesValue'] as num?)?.toInt() ?? 0;
+          final currentBalance = (memberData['sharesBalance'] as num?)?.toDouble() ?? 0.0;
           final sharePrice = SaccoService.current.shareValue;
           final sharesPurchased = (amount / sharePrice).floor();
           final actualAmount = sharesPurchased * sharePrice;
           
-          updateData['sharesValue'] = currentValue + actualAmount;
+          updateData['sharesBalance'] = currentBalance + actualAmount;
           updateData['sharesCount'] = (memberData['sharesCount'] as num?)?.toInt() ?? 0 + sharesPurchased;
           
           // Create shares transaction
@@ -129,6 +132,96 @@ class TellerService {
           
           transaction['sharesCount'] = sharesPurchased;
           transaction['sharePrice'] = sharePrice;
+          break;
+
+        case 'fixed_deposit':
+          final currentBalance = (memberData['fixedDepositBalance'] as num?)?.toInt() ?? 0;
+          updateData['fixedDepositBalance'] = currentBalance + amount;
+          
+          // Create fixed deposit transaction
+          await _db.collection('saccoplus-fixed-deposits').add({
+            'tenantId': _tenantId,
+            'memberId': memberId,
+            'memberName': memberName,
+            'amount': amount,
+            'status': 'active',
+            'depositDate': timestamp,
+            'maturityDate': timestamp.add(const Duration(days: 365)), // 1 year term
+            'interestRate': 10.0, // 10% annual interest
+            'tellerProcessed': true,
+            'tellerId': tellerId,
+            'tellerName': tellerName,
+          });
+          break;
+
+        case 'loan_payment':
+          // Find active loan for this member
+          final loansQuery = await _db.collection('saccoplus-loans')
+              .where('farmerId', isEqualTo: memberId)
+              .where('tenantId', isEqualTo: _tenantId)
+              .where('status', whereIn: ['active', 'overdue', 'approved'])
+              .get();
+          
+          if (loansQuery.docs.isEmpty) {
+            throw Exception('No active loan found for this member');
+          }
+          
+          // Use the first active loan (or most recent)
+          final loanDoc = loansQuery.docs.first;
+          final loanData = loanDoc.data();
+          final loanId = loanDoc.id;
+          
+          final principalOutstanding = (loanData['principalOutstanding'] as num?)?.toDouble() ?? 0.0;
+          final interestOutstanding = (loanData['interestOriginalBalance'] as num?)?.toDouble() ?? 0.0;
+          
+          // Apply payment: first to interest, then to principal
+          double remainingPayment = amount.toDouble();
+          double interestPayment = 0;
+          double principalPayment = 0;
+          
+          if (interestOutstanding > 0) {
+            interestPayment = remainingPayment > interestOutstanding ? interestOutstanding : remainingPayment;
+            remainingPayment -= interestPayment;
+          }
+          
+          if (remainingPayment > 0 && principalOutstanding > 0) {
+            principalPayment = remainingPayment > principalOutstanding ? principalOutstanding : remainingPayment;
+          }
+          
+          final newPrincipalOutstanding = principalOutstanding - principalPayment;
+          final newInterestOutstanding = interestOutstanding - interestPayment;
+          final newTotalOutstanding = newPrincipalOutstanding + newInterestOutstanding;
+          
+          // Update loan
+          await _db.collection('saccoplus-loans').doc(loanId).update({
+            'principalOutstanding': newPrincipalOutstanding,
+            'interestOriginalBalance': newInterestOutstanding,
+            'totalOutstanding': newTotalOutstanding,
+            'status': newTotalOutstanding <= 0 ? 'paid' : loanData['status'],
+            'lastPaymentDate': timestamp,
+            'lastPaymentAmount': amount,
+          });
+          
+          // Create loan repayment record
+          await _db.collection('saccoplus-loan-repayments').add({
+            'tenantId': _tenantId,
+            'loanId': loanId,
+            'memberId': memberId,
+            'memberName': memberName,
+            'amount': amount,
+            'principalPayment': principalPayment,
+            'interestPayment': interestPayment,
+            'timestamp': timestamp,
+            'tellerProcessed': true,
+            'tellerId': tellerId,
+            'tellerName': tellerName,
+            'loanReference': loanData['referenceNumber'] ?? '',
+          });
+          
+          transaction['loanId'] = loanId;
+          transaction['loanReference'] = loanData['referenceNumber'] ?? '';
+          transaction['principalPayment'] = principalPayment;
+          transaction['interestPayment'] = interestPayment;
           break;
       }
 
@@ -166,7 +259,7 @@ class TellerService {
       await AuditService.log(
         action: 'TELLER_DEPOSIT',
         details: 'Teller $tellerName processed deposit of UGX $amount to $memberName ($accountType)',
-        userId: tellerId,
+        userId: FirebaseService.currentUser!.uid,
         affectedUserId: memberId,
         metadata: {
           'amount': amount,
@@ -315,7 +408,7 @@ class TellerService {
       await AuditService.log(
         action: 'TELLER_WITHDRAWAL',
         details: 'Teller $tellerName processed withdrawal of UGX $amount from $memberName ($accountType)',
-        userId: tellerId,
+        userId: FirebaseService.currentUser!.uid,
         affectedUserId: memberId,
         metadata: {
           'amount': amount,
@@ -466,7 +559,7 @@ class TellerService {
 
   // ─── Get Daily Summary ────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getDailySummary({
-    String? tellerId, // Made optional
+    String? tellerId,
     DateTime? date,
   }) async {
     final targetDate = date ?? DateTime.now();
@@ -474,54 +567,40 @@ class TellerService {
     final endOfDay = DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59);
 
     try {
-      Query query = _db
+      // Simplified query - just get all transactions for the day for this tenant
+      // Filter the rest in memory to avoid complex index requirements
+      final snapshot = await _db
           .collection(AppConstants.tellerTxnCol)
           .where('tenantId', isEqualTo: _tenantId)
-          .where('timestamp', isGreaterThanOrEqualTo: startOfDay)
-          .where('timestamp', isLessThanOrEqualTo: endOfDay);
-      
-      // Only filter by teller if provided
-      if (tellerId != null) {
-        query = query.where('tellerId', isEqualTo: tellerId);
-      }
+          .get();
 
-      final snapshot = await query.get();
+      print('🔍 TellerService.getDailySummary: Found ${snapshot.docs.length} total transactions');
+      
+      // Filter by date and teller in memory
+      final filteredDocs = snapshot.docs.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final timestamp = (data['timestamp'] as Timestamp?)?.toDate();
+        
+        if (timestamp == null) return false;
+        
+        // Check if transaction is within the target day
+        final isInDateRange = timestamp.isAfter(startOfDay) && timestamp.isBefore(endOfDay);
+        if (!isInDateRange) return false;
+        
+        // If tellerId is provided, filter by it
+        if (tellerId != null && data['tellerId'] != tellerId) return false;
+        
+        return true;
+      }).toList();
 
-      print('🔍 TellerService.getDailySummary: Found ${snapshot.docs.length} transactions for date $targetDate');
-      print('🔍   - startOfDay: $startOfDay');
-      print('🔍   - endOfDay: $endOfDay');
-      
-      if (snapshot.docs.isEmpty) {
-        print('');
-        print('❌ ═══════════════════════════════════════════════════════════════════');
-        print('❌ NO TRANSACTIONS FOUND - FIRESTORE INDEX REQUIRED!');
-        print('❌ ═══════════════════════════════════════════════════════════════════');
-        print('❌');
-        print('❌ Copy this link and paste in your browser:');
-        print('❌');
-        print('https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
-        print('');
-        print('❌ Then create this index:');
-        print('❌   Collection: saccoplus-teller-transactions');
-        print('❌   Field 1: tenantId (Ascending)');
-        print('❌   Field 2: timestamp (Ascending)');
-        print('❌');
-        print('❌ ═══════════════════════════════════════════════════════════════════');
-        print('');
-      }
-      
-      if (snapshot.docs.isNotEmpty) {
-        final firstDoc = snapshot.docs.first.data() as Map<String, dynamic>;
-        final txnTimestamp = (firstDoc['timestamp'] as Timestamp).toDate();
-        print('🔍   - First transaction timestamp: $txnTimestamp');
-      }
+      print('🔍   - Filtered to ${filteredDocs.length} transactions for date $targetDate');
 
       int totalDeposits = 0;
       int totalWithdrawals = 0;
       int depositCount = 0;
       int withdrawalCount = 0;
 
-      for (var doc in snapshot.docs) {
+      for (var doc in filteredDocs) {
         final data = doc.data() as Map<String, dynamic>;
         final amount = (data['amount'] as num?)?.toInt() ?? 0;
         
@@ -536,7 +615,7 @@ class TellerService {
 
       return {
         'date': targetDate,
-        'totalTransactions': snapshot.docs.length,
+        'totalTransactions': filteredDocs.length,
         'deposits': {
           'count': depositCount,
           'amount': totalDeposits,
@@ -549,12 +628,7 @@ class TellerService {
       };
     } catch (e) {
       print('');
-      print('🔥🔥🔥 FIRESTORE INDEX ERROR 🔥🔥🔥');
-      print('');
-      print(e.toString());
-      print('');
-      print('👆 COPY THE URL ABOVE AND PASTE IN YOUR BROWSER 👆');
-      print('👆 IT WILL AUTO-CREATE THE INDEX FOR YOU! 👆');
+      print('❌ TELLER SUMMARY ERROR: $e');
       print('');
       
       return {
@@ -564,6 +638,221 @@ class TellerService {
         'withdrawals': {'count': 0, 'amount': 0},
         'netCashFlow': 0,
       };
+    }
+  }
+
+  // ─── Bank Transfer Methods ────────────────────────────────────────────────
+  
+  /// Get list of available banks from MarzPay
+  static Future<Map<String, dynamic>> getBankList() async {
+    try {
+      final url = '${AppConstants.renderProxyUrl}/bank-transfer/banks';
+      print('🏦 GET $url');
+      
+      // Retry up to 3 times (Render free tier may be sleeping)
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          final response = await http.get(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Proxy-Key': AppConstants.marzPayProxyKey,
+            },
+          ).timeout(const Duration(seconds: 30));
+          
+          print('🏦 Response status: ${response.statusCode}');
+          
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            print('🏦 Success! Banks loaded');
+            return data;
+          } else {
+            print('🏦 HTTP ${response.statusCode}: ${response.body}');
+            if (attempt < 3) {
+              print('🏦 Retrying... (attempt $attempt/3)');
+              await Future.delayed(Duration(seconds: attempt * 2));
+              continue;
+            }
+            return {
+              'status': 'error',
+              'message': 'HTTP ${response.statusCode}: ${response.body}',
+            };
+          }
+        } on TimeoutException {
+          print('🏦 Timeout on attempt $attempt/3');
+          if (attempt < 3) {
+            await Future.delayed(Duration(seconds: attempt * 2));
+            continue;
+          }
+          return {
+            'status': 'error',
+            'message': 'Connection timeout. Proxy server may be starting up. Please try again in 30 seconds.',
+          };
+        }
+      }
+      
+      return {'status': 'error', 'message': 'Failed after 3 attempts'};
+    } catch (e) {
+      print('❌ Error getting bank list: $e');
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  /// Verify bank account using MarzPay
+  static Future<Map<String, dynamic>> verifyBankAccount({
+    required String bankCode,
+    required String accountNumber,
+  }) async {
+    try {
+      final url = '${AppConstants.renderProxyUrl}/bank-transfer/validate';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Proxy-Key': AppConstants.marzPayProxyKey,
+        },
+        body: jsonEncode({
+          'bank_code': bankCode,
+          'account_number': accountNumber,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      print('❌ Error verifying bank account: $e');
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  /// Process bank transfer from SACCOPLUS to member's bank account
+  static Future<Map<String, dynamic>> processBankTransfer({
+    required int amount,
+    required String bankCode,
+    required String bankName,
+    required String accountNumber,
+    required String accountName,
+    required String narration,
+  }) async {
+    try {
+      final reference = 'BT-${DateTime.now().millisecondsSinceEpoch}';
+      final timestamp = DateTime.now();
+      final tellerId = FirebaseService.sessionUid;
+      final tellerName = 'Teller';
+
+      // Call MarzPay to process the transfer
+      final url = '${AppConstants.renderProxyUrl}/bank-transfer';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Proxy-Key': AppConstants.marzPayProxyKey,
+        },
+        body: jsonEncode({
+          'amount': amount,
+          'bank_code': bankCode,
+          'account_number': accountNumber,
+          'reference': reference,
+          'description': narration,
+        }),
+      );
+      
+      final responseData = jsonDecode(response.body);
+
+      // Log the transaction in Firestore regardless of MarzPay status
+      final transactionRef = _db.collection(AppConstants.tellerTxnCol).doc();
+      final transactionId = transactionRef.id;
+
+      final transaction = {
+        'id': transactionId,
+        'tenantId': _tenantId,
+        'type': 'bank_transfer',
+        'amount': amount,
+        'bankCode': bankCode,
+        'bankName': bankName,
+        'accountNumber': accountNumber,
+        'accountName': accountName,
+        'reference': reference,
+        'narration': narration,
+        'tellerName': tellerName,
+        'tellerId': tellerId,
+        'status': responseData['status'] == 'success' ? 'completed' : 'failed',
+        'marzpayResponse': responseData,
+        'timestamp': timestamp,
+        'receiptNumber': _generateReceiptNumber(timestamp),
+      };
+
+      await transactionRef.set(transaction);
+
+      // Audit log
+      await AuditService.log(
+        action: 'BANK_TRANSFER',
+        details: 'Bank transfer of $amount to $accountName ($accountNumber) at $bankName',
+        userId: tellerId,
+        metadata: {
+          'amount': amount,
+          'bankName': bankName,
+          'accountNumber': accountNumber,
+          'accountName': accountName,
+          'reference': reference,
+          'status': transaction['status'],
+        },
+      );
+
+      if (responseData['status'] == 'success') {
+        return {
+          'success': true,
+          'reference': reference,
+          'transactionId': transactionId,
+          'message': 'Transfer successful',
+        };
+      } else {
+        throw Exception(responseData['message'] ?? 'Transfer failed');
+      }
+    } catch (e) {
+      print('❌ Error processing bank transfer: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  /// Get bank transfer history
+  static Future<List<Map<String, dynamic>>> getBankTransferHistory({
+    int limit = 50,
+  }) async {
+    try {
+      final snapshot = await _db
+          .collection(AppConstants.tellerTxnCol)
+          .where('tenantId', isEqualTo: _tenantId)
+          .where('type', isEqualTo: 'bank_transfer')
+          .orderBy('timestamp', descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList();
+    } catch (e) {
+      print('❌ Error getting bank transfer history: $e');
+      return [];
+    }
+  }
+
+  /// Check bank transfer status from MarzPay
+  static Future<Map<String, dynamic>> checkBankTransferStatus(String reference) async {
+    try {
+      final url = '${AppConstants.renderProxyUrl}/bank-transfer/$reference';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Proxy-Key': AppConstants.marzPayProxyKey,
+        },
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      print('❌ Error checking bank transfer status: $e');
+      return {'status': 'error', 'message': e.toString()};
     }
   }
 

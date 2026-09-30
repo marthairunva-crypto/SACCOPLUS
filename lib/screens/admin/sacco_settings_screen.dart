@@ -41,6 +41,12 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
   final _shareValueCtrl  = TextEditingController();
   final _minSharesCtrl   = TextEditingController();
 
+  // Bank Account Settings
+  final _bankNameCtrl = TextEditingController();
+  final _bankAccountNameCtrl = TextEditingController();
+  final _bankAccountNumberCtrl = TextEditingController();
+  final _bankBranchCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +59,7 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
       _nameCtrl, _taglineCtrl, _emailCtrl, _phoneCtrl, _addressCtrl, _regNoCtrl,
       _minLoanCtrl, _maxLoanCtrl, _loanRateCtrl, _penaltyRateCtrl,
       _minSavingsCtrl, _savingsRateCtrl, _shareValueCtrl, _minSharesCtrl,
+      _bankNameCtrl, _bankAccountNameCtrl, _bankAccountNumberCtrl, _bankBranchCtrl,
     ]) c.dispose();
     super.dispose();
   }
@@ -81,6 +88,10 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
         _savingsRateCtrl.text = '${d['savingsRate'] ?? 8}';
         _shareValueCtrl.text  = '${d['shareValue']  ?? 1000}';
         _minSharesCtrl.text   = '${d['minShares']   ?? 1}';
+        _bankNameCtrl.text = d['bankName'] ?? '';
+        _bankAccountNameCtrl.text = d['bankAccountName'] ?? '';
+        _bankAccountNumberCtrl.text = d['bankAccountNumber'] ?? '';
+        _bankBranchCtrl.text = d['bankBranch'] ?? '';
       } else {
         _setDefaults();
       }
@@ -127,6 +138,10 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
         'savingsRate': double.tryParse(_savingsRateCtrl.text) ?? 8.0,
         'shareValue':  int.tryParse(_shareValueCtrl.text)  ?? 1000,
         'minShares':   int.tryParse(_minSharesCtrl.text)   ?? 1,
+        'bankName': _bankNameCtrl.text.trim(),
+        'bankAccountName': _bankAccountNameCtrl.text.trim(),
+        'bankAccountNumber': _bankAccountNumberCtrl.text.trim(),
+        'bankBranch': _bankBranchCtrl.text.trim(),
         'updatedAt':   FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       // Reload SaccoService so branding updates live
@@ -204,6 +219,34 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
                 _section('Share Settings'),
                 _numField(_shareValueCtrl, 'Share Value (UGX per share)', Icons.price_change_rounded),
                 _numField(_minSharesCtrl,  'Minimum Shares per Member',   Icons.confirmation_number_rounded),
+
+                const SizedBox(height: 8),
+                _section('Bank Account Configuration'),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Configure SACCO bank account for receiving teller transfers',
+                          style: GoogleFonts.poppins(fontSize: 12, color: Colors.blue.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _field(_bankNameCtrl, 'Bank Name', Icons.account_balance),
+                _field(_bankAccountNameCtrl, 'Account Name', Icons.person_outline),
+                _field(_bankAccountNumberCtrl, 'Account Number', Icons.numbers),
+                _field(_bankBranchCtrl, 'Branch (Optional)', Icons.location_on_outlined),
 
                 const SizedBox(height: 24),
                 PrimaryButton(

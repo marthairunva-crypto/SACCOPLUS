@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -20,235 +21,81 @@ class ComprehensiveReportsScreen extends StatefulWidget {
   State<ComprehensiveReportsScreen> createState() => _ComprehensiveReportsScreenState();
 }
 
-class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen> {
-  int _selectedReportIndex = 0;
+class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen> with SingleTickerProviderStateMixin {
+  TabController? _tabController;
   
   final List<Map<String, dynamic>> _reports = [
-    {'icon': Icons.calendar_month, 'title': 'Monthly Report', 'subtitle': 'Income & Expenses'},
+    {'icon': Icons.calendar_month, 'title': 'Monthly', 'subtitle': 'Income & Expenses'},
+    {'icon': Icons.trending_up, 'title': 'Income', 'subtitle': 'Revenue & Earnings'},
+    {'icon': Icons.trending_down, 'title': 'Expense', 'subtitle': 'Costs & Expenditures'},
     {'icon': Icons.account_balance_wallet, 'title': 'Trial Balance', 'subtitle': 'Debits & Credits'},
     {'icon': Icons.account_balance, 'title': 'Balance Sheet', 'subtitle': 'Assets & Liabilities'},
-    {'icon': Icons.verified_user, 'title': 'KYC Report', 'subtitle': 'Member Verification'},
-    {'icon': Icons.credit_card, 'title': 'Loan Report', 'subtitle': 'Loan Portfolio'},
-    {'icon': Icons.wallet, 'title': 'Wallet Report', 'subtitle': 'Transactions'},
-    {'icon': Icons.people, 'title': 'Member Report', 'subtitle': 'Member Directory'},
+    {'icon': Icons.verified_user, 'title': 'KYC', 'subtitle': 'Member Verification'},
+    {'icon': Icons.credit_card, 'title': 'Loans', 'subtitle': 'Loan Portfolio'},
+    {'icon': Icons.wallet, 'title': 'Wallet', 'subtitle': 'Transactions'},
+    {'icon': Icons.people, 'title': 'Members', 'subtitle': 'Member Directory'},
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 900;
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: _reports.length, vsync: this);
+  }
 
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_tabController == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
+    final fmt = NumberFormat('#,###', 'en_US');
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      appBar: widget.embedded ? null : AppBar(
+      appBar: AppBar(
         title: Text('Financial Reports', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         backgroundColor: ModernTheme.primary,
         elevation: 0,
-      ),
-      body: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-    );
-  }
-
-  Widget _buildDesktopLayout() {
-    return Row(
-      children: [
-        // Sidebar
-        Container(
-          width: 280,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(2, 0),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [ModernTheme.primary, ModernTheme.primary.withOpacity(0.8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.assessment, color: Colors.white, size: 32),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Financial Reports',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Text(
-                      'Comprehensive Analytics',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  itemCount: _reports.length,
-                  itemBuilder: (context, index) => _buildSidebarItem(index),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Content
-        Expanded(
-          child: _buildContent(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMobileLayout() {
-    return Column(
-      children: [
-        Container(
-          color: Colors.white,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: List.generate(
-                _reports.length,
-                (index) => Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _buildMobileTab(index),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Expanded(child: _buildContent()),
-      ],
-    );
-  }
-
-  Widget _buildSidebarItem(int index) {
-    final report = _reports[index];
-    final isSelected = _selectedReportIndex == index;
-    
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Material(
-        color: isSelected ? ModernTheme.primary.withOpacity(0.1) : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? ModernTheme.primary : Colors.transparent,
-              width: 2,
-            ),
-          ),
-          child: ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSelected ? ModernTheme.primary : Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                report['icon'],
-                color: isSelected ? Colors.white : Colors.grey.shade600,
-                size: 20,
-              ),
-            ),
-            title: Text(
-              report['title'],
-              style: GoogleFonts.poppins(
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                fontSize: 14,
-                color: isSelected ? ModernTheme.primary : ModernTheme.textPrimary,
-              ),
-            ),
-            subtitle: Text(
-              report['subtitle'],
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                color: ModernTheme.textSecondary,
-              ),
-            ),
-            onTap: () => setState(() => _selectedReportIndex = index),
-          ),
+        automaticallyImplyLeading: !widget.embedded,
+        bottom: TabBar(
+          controller: _tabController!,
+          isScrollable: true,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          labelStyle: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+          unselectedLabelStyle: GoogleFonts.poppins(fontSize: 13),
+          tabs: _reports.map((report) {
+            return Tab(
+              icon: Icon(report['icon'] as IconData, size: 20),
+              text: report['title'],
+            );
+          }).toList(),
         ),
       ),
-    );
-  }
-
-  Widget _buildMobileTab(int index) {
-    final report = _reports[index];
-    final isSelected = _selectedReportIndex == index;
-    
-    return GestureDetector(
-      onTap: () => setState(() => _selectedReportIndex = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? ModernTheme.primary : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              report['icon'],
-              size: 18,
-              color: isSelected ? Colors.white : Colors.grey.shade700,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              report['title'],
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? Colors.white : Colors.grey.shade700,
-              ),
-            ),
-          ],
-        ),
+      body: TabBarView(
+        controller: _tabController!,
+        children: [
+          _MonthlyReportTab(fmt: fmt),
+          _IncomeReportTab(fmt: fmt),
+          _ExpenseReportTab(fmt: fmt),
+          _TrialBalanceTab(fmt: fmt),
+          _BalanceSheetTab(fmt: fmt),
+          _KYCReportTab(fmt: fmt),
+          _LoanReportTab(fmt: fmt),
+          _WalletReportTab(fmt: fmt),
+          _MemberReportTab(fmt: fmt),
+        ],
       ),
     );
-  }
-
-  Widget _buildContent() {
-    final fmt = NumberFormat('#,###', 'en_US');
-    
-    switch (_selectedReportIndex) {
-      case 0:
-        return _MonthlyReportTab(fmt: fmt);
-      case 1:
-        return _TrialBalanceTab(fmt: fmt);
-      case 2:
-        return _BalanceSheetTab(fmt: fmt);
-      case 3:
-        return _KYCReportTab(fmt: fmt);
-      case 4:
-        return _LoanReportTab(fmt: fmt);
-      case 5:
-        return _WalletReportTab(fmt: fmt);
-      case 6:
-        return _MemberReportTab(fmt: fmt);
-      default:
-        return const Center(child: Text('Select a report'));
-    }
   }
 }
 
@@ -2443,7 +2290,14 @@ class _MemberReportTabState extends State<_MemberReportTab> {
     });
     
     try {
-      final members = await ReportService.generateMemberReport();
+      // Add timeout to prevent infinite loading
+      final members = await ReportService.generateMemberReport()
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw TimeoutException('Loading members took too long. Please try again.');
+            },
+          );
       if (mounted) {
         setState(() {
           _members = members;
@@ -2451,9 +2305,10 @@ class _MemberReportTabState extends State<_MemberReportTab> {
         });
       }
     } catch (e) {
+      print('❌ Error loading members: $e');
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _error = e.toString().replaceFirst('Exception: ', '').replaceFirst('TimeoutException: ', '');
           _loading = false;
         });
       }
@@ -2725,6 +2580,389 @@ class _MemberReportTabState extends State<_MemberReportTab> {
           textAlign: TextAlign.center,
         ),
       ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Income Report Tab
+// ═══════════════════════════════════════════════════════════════════════════════
+class _IncomeReportTab extends StatefulWidget {
+  final NumberFormat fmt;
+  const _IncomeReportTab({required this.fmt});
+
+  @override
+  State<_IncomeReportTab> createState() => _IncomeReportTabState();
+}
+
+class _IncomeReportTabState extends State<_IncomeReportTab> {
+  Map<String, dynamic>? _report;
+  bool _loading = false;
+  int _selectedMonth = DateTime.now().month;
+  int _selectedYear = DateTime.now().year;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReport();
+  }
+
+  Future<void> _loadReport() async {
+    setState(() => _loading = true);
+    try {
+      final report = await ReportService.generateMonthlyReport(
+        year: _selectedYear,
+        month: _selectedMonth,
+      );
+      setState(() {
+        _report = report;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Text('Month:', style: GoogleFonts.poppins(fontSize: 14)),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _selectedMonth,
+                items: List.generate(12, (i) => i + 1)
+                    .map((m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(DateFormat('MMMM').format(DateTime(2024, m))),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _selectedMonth = v);
+                    _loadReport();
+                  }
+                },
+              ),
+              const SizedBox(width: 24),
+              Text('Year:', style: GoogleFonts.poppins(fontSize: 14)),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _selectedYear,
+                items: List.generate(5, (i) => DateTime.now().year - i)
+                    .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _selectedYear = v);
+                    _loadReport();
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _report == null
+                  ? const Center(child: Text('No data'))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Income Report',
+                            style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            'Period: ${_report!['period']}',
+                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 24),
+                          _buildIncomeSection(),
+                        ],
+                      ),
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIncomeSection() {
+    // Check if income key exists, otherwise show placeholder
+    if (!_report!.containsKey('income')) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            children: [
+              Icon(Icons.info_outline, size: 64, color: Colors.green.shade300),
+              const SizedBox(height: 16),
+              Text(
+                'Income Tracking',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Detailed income categorization and reporting will be available in future updates.',
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final income = _report!['income'] as Map<String, dynamic>;
+    final totalIncome = income['total'] as int? ?? 0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('INCOME', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Divider(),
+            _buildReportRow('Interest Income', income['interest'] ?? 0),
+            _buildReportRow('Fee Income', income['fees'] ?? 0),
+            _buildReportRow('Penalty Income', income['penalties'] ?? 0),
+            const Divider(),
+            _buildReportRow('TOTAL INCOME', totalIncome, isBold: true, color: Colors.green),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReportRow(String label, int amount, {bool isBold = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              fontSize: isBold ? 16 : 14,
+            ),
+          ),
+          Text(
+            'UGX ${widget.fmt.format(amount)}',
+            style: GoogleFonts.poppins(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+              fontSize: isBold ? 16 : 14,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Expense Report Tab
+// ═══════════════════════════════════════════════════════════════════════════════
+class _ExpenseReportTab extends StatefulWidget {
+  final NumberFormat fmt;
+  const _ExpenseReportTab({required this.fmt});
+
+  @override
+  State<_ExpenseReportTab> createState() => _ExpenseReportTabState();
+}
+
+class _ExpenseReportTabState extends State<_ExpenseReportTab> {
+  Map<String, dynamic>? _report;
+  bool _loading = false;
+  int _selectedMonth = DateTime.now().month;
+  int _selectedYear = DateTime.now().year;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReport();
+  }
+
+  Future<void> _loadReport() async {
+    setState(() => _loading = true);
+    try {
+      final report = await ReportService.generateMonthlyReport(
+        year: _selectedYear,
+        month: _selectedMonth,
+      );
+      setState(() {
+        _report = report;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Text('Month:', style: GoogleFonts.poppins(fontSize: 14)),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _selectedMonth,
+                items: List.generate(12, (i) => i + 1)
+                    .map((m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(DateFormat('MMMM').format(DateTime(2024, m))),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _selectedMonth = v);
+                    _loadReport();
+                  }
+                },
+              ),
+              const SizedBox(width: 24),
+              Text('Year:', style: GoogleFonts.poppins(fontSize: 14)),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _selectedYear,
+                items: List.generate(5, (i) => DateTime.now().year - i)
+                    .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _selectedYear = v);
+                    _loadReport();
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _report == null
+                  ? const Center(child: Text('No data'))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Expense Report',
+                            style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            'Period: ${_report!['period']}',
+                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 24),
+                          _buildExpenseSection(),
+                        ],
+                      ),
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpenseSection() {
+    // Check if expenses key exists, otherwise show placeholder
+    if (!_report!.containsKey('expenses')) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            children: [
+              Icon(Icons.info_outline, size: 64, color: Colors.blue.shade300),
+              const SizedBox(height: 16),
+              Text(
+                'Expense Tracking',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Detailed expense categorization and reporting will be available in future updates.',
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final expenses = _report!['expenses'] as Map<String, dynamic>;
+    final totalExpenses = expenses['total'] as int? ?? 0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('EXPENSES', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Divider(),
+            _buildReportRow('Salaries', expenses['salaries'] ?? 0),
+            _buildReportRow('Utilities', expenses['utilities'] ?? 0),
+            _buildReportRow('Office Expenses', expenses['officeExpenses'] ?? 0),
+            _buildReportRow('Other Expenses', expenses['other'] ?? 0),
+            const Divider(),
+            _buildReportRow('TOTAL EXPENSES', totalExpenses, isBold: true, color: Colors.red),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReportRow(String label, int amount, {bool isBold = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              fontSize: isBold ? 16 : 14,
+            ),
+          ),
+          Text(
+            'UGX ${widget.fmt.format(amount)}',
+            style: GoogleFonts.poppins(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+              fontSize: isBold ? 16 : 14,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

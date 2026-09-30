@@ -481,8 +481,14 @@ class _LiquidityMonitorScreenState extends State<LiquidityMonitorScreen> {
         .reduce((a, b) => a < b ? a : b);
     
     final yRange = maxY - minY;
-    final chartMaxY = (maxY + (yRange * 0.2)).toDouble();
-    final chartMinY = (minY < 0 ? minY - (yRange.abs() * 0.2) : 0.0).toDouble();
+    // Ensure a minimum range to avoid division by zero
+    final effectiveRange = yRange == 0 ? (maxY == 0 ? 100 : maxY * 0.2) : yRange;
+    final chartMaxY = (maxY + (effectiveRange * 0.2)).toDouble();
+    final chartMinY = (minY < 0 ? minY - (effectiveRange.abs() * 0.2) : 0.0).toDouble();
+    
+    // Calculate horizontal interval with safety check
+    final interval = (chartMaxY - chartMinY) / 5;
+    final safeInterval = interval > 0 ? interval : 20.0;
 
     return Card(
       elevation: 2,
@@ -572,7 +578,7 @@ class _LiquidityMonitorScreenState extends State<LiquidityMonitorScreen> {
                   gridData: FlGridData(
                     show: true,
                     drawVerticalLine: false,
-                    horizontalInterval: (chartMaxY - chartMinY) / 5,
+                    horizontalInterval: safeInterval,
                   ),
                   borderData: FlBorderData(
                     show: true,

@@ -187,8 +187,17 @@ class ReportService {
       if (outstanding > 0) {
         totalLoansPrincipal += outstanding;
         // Calculate interest on outstanding (simplified)
-        final interestRate = (doc['interestRate'] as num?)?.toDouble() ?? 0.0;
-        totalLoansInterest += (outstanding * interestRate / 100).toInt();
+        // Safe field access - handle missing or null interestRate
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          final interestRate = (data['interestRate'] as num?)?.toDouble() ?? 
+                               (data['interest'] as num?)?.toDouble() ?? 
+                               15.0; // Default interest rate
+          totalLoansInterest += (outstanding * interestRate / 100).toInt();
+        } catch (e) {
+          // If field doesn't exist, use default 15% interest
+          totalLoansInterest += (outstanding * 15.0 / 100).toInt();
+        }
       }
     }
 

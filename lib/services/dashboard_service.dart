@@ -138,38 +138,52 @@ class DashboardService {
       int totalSavings = 0;
       int totalShares = 0;
       int totalWallet = 0;
+      int totalLoans = 0;
       int membersWithSavings = 0;
       int membersWithShares = 0;
+
+      print('📊 DashboardService.getSavingsSummary:');
+      print('   - Found ${snapshot.docs.length} members');
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
         final savings = (data['savingsBalance'] as num?)?.toInt() ?? 0;
-        final shares = (data['sharesValue'] as num?)?.toInt() ?? 0;
+        final shares = (data['sharesBalance'] as num?)?.toInt() ?? 0;
         final wallet = (data['walletBalance'] as num?)?.toInt() ?? 0;
+        final loans = (data['loanBalance'] as num?)?.toInt() ?? 0;
 
         totalSavings += savings;
         totalShares += shares;
         totalWallet += wallet;
+        totalLoans += loans;
 
         if (savings > 0) membersWithSavings++;
         if (shares > 0) membersWithShares++;
       }
 
+      print('   - Total Savings: UGX $totalSavings');
+      print('   - Total Shares: UGX $totalShares');
+      print('   - Total Wallet: UGX $totalWallet');
+      print('   - Total Loans: UGX $totalLoans');
+
       return {
         'totalSavings': totalSavings,
         'totalShares': totalShares,
         'totalWallet': totalWallet,
-        'totalBalance': totalSavings + totalShares + totalWallet,
+        'totalLoans': totalLoans,
+        'totalAssets': totalSavings + totalShares + totalWallet,
         'membersWithSavings': membersWithSavings,
         'membersWithShares': membersWithShares,
         'totalMembers': snapshot.docs.length,
       };
     } catch (e) {
+      print('❌ Error in getSavingsSummary: $e');
       return {
         'totalSavings': 0,
         'totalShares': 0,
         'totalWallet': 0,
-        'totalBalance': 0,
+        'totalLoans': 0,
+        'totalAssets': 0,
         'membersWithSavings': 0,
         'membersWithShares': 0,
         'totalMembers': 0,

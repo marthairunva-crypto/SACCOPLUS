@@ -7,6 +7,7 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/professional_data_table.dart';
 import '../../utils/csv_export.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
@@ -17,22 +18,8 @@ class LoanApprovalScreen extends StatefulWidget {
   State<LoanApprovalScreen> createState() => _LoanApprovalScreenState();
 }
 
-class _LoanApprovalScreenState extends State<LoanApprovalScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabs;
+class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
   final fmt = NumberFormat('#,###', 'en_US');
-
-  @override
-  void initState() {
-    super.initState();
-    _tabs = TabController(length: 3, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,33 +41,273 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
             onPressed: _exportLoans,
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          indicatorColor: AppTheme.accent,
-          indicatorWeight: 3,
-          labelStyle:
-              GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
-          tabs: const [
-            Tab(text: 'All'),
-            Tab(text: 'Pending'),
-            Tab(text: 'Reviewed'),
-          ],
-        ),
       ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [
-          _LoanList(filter: 'All', fmt: fmt, onAction: _handleAction),
-          _LoanList(
-              filter: AppConstants.statusPending,
-              fmt: fmt,
-              onAction: _handleAction),
-          _LoanList(filter: 'Reviewed', fmt: fmt, onAction: _handleAction),
-        ],
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseService.getAllLoans(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (!snap.hasData || snap.data!.docs.isEmpty) {
+            return const EmptyState(
+              message: 'No loan applications here.',
+              icon: Icons.inbox_rounded,
+            );
+          }
+
+          final loans = snap.data!.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return {
+              'id': doc.id,
+              ...data,
+            };
+          }).toList();
+
+          return Container(
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ProfessionalDataTable(
+              columns: [
+                DataTableColumn(
+                  key: 'memberName',
+                  label: 'Member',
+                  width: 180,
+                  builder: (row) => Text(
+                    row['memberName'] ?? '-',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                DataTableColumn(
+                  key: 'referenceNumber',
+                  label: 'Loan Ref',
+                  width: 120,
+                  builder: (row) => Text(
+                    row['referenceNumber'] ?? '-',
+                    style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                DataTableColumn(
+                  key: 'amount',
+                  label: 'Amount',
+                  width: 140,
+                  builder: (row) => Text(
+                    'UGX ${fmt.format(row['amount'] ?? 0)}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ),
+                DataTableColumn(
+                  key: 'loanProduct',
+                  label: 'Product',
+                  width: 140,
+                  builder: (row) => Text(
+                    row['loanProduct'] ?? '-',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                DataTableColumn(
+                  key: 'principalOutstanding',
+                  label: 'Outstanding',
+                  width: 120,
+                  builder: (row) => Text(
+                    'UGX ${fmt.format(row['principalOutstanding'] ?? 0)}',
+                    style: GoogleFonts.poppins(fontSize: 13, color: Colors.red.shade700),
+                  ),
+                ),
+                DataTableColumn(
+                  key: 'createdAt',
+                  label: 'Applied',
+                  width: 110,
+                  builder: (row) {
+                    final createdAt = row['createdAt'];
+                    if (createdAt is Timestamp) {
+                      return Text(
+                        DateFormat('MMM d, yyyy').format(createdAt.toDate()),
+                        style: const TextStyle(fontSize: 13),
+                      );
+                    }
+                    return const Text('-', style: TextStyle(fontSize: 13));
+                  },
+                ),
+                DataTableColumn(
+                  key: 'outstandingDays',
+                  label: 'Days Overdue',
+                  width: 120,
+                  builder: (row) {
+                    final outstandingDays = row['outstandingDays'] ?? 0;
+                    if (outstandingDays > 0) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$outstandingDays days',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: AppTheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }
+                    return Text(
+                      '-',
+                      style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
+                    );
+                  },
+                ),
+                DataTableColumn(
+                  key: 'status',
+                  label: 'Status',
+                  width: 110,
+                  builder: (row) {
+                    final status = row['status'] ?? '';
+                    Color bgColor;
+                    Color textColor;
+                    
+                    if (status == 'paid' || status == 'cleared') {
+                      bgColor = Colors.green.shade50;
+                      textColor = Colors.green.shade700;
+                    } else if (status == AppConstants.statusPending) {
+                      bgColor = AppTheme.warning.withOpacity(0.1);
+                      textColor = AppTheme.warning;
+                    } else if (status == AppConstants.statusApproved || status == 'active') {
+                      bgColor = AppTheme.success.withOpacity(0.1);
+                      textColor = AppTheme.success;
+                    } else if (status == 'overdue') {
+                      bgColor = AppTheme.error.withOpacity(0.1);
+                      textColor = AppTheme.error;
+                    } else {
+                      bgColor = Colors.grey.shade100;
+                      textColor = Colors.grey.shade700;
+                    }
+                    
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        status.toUpperCase(),
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  },
+                ),
+                DataTableColumn(
+                  key: 'actions',
+                  label: 'Actions',
+                  width: 160,
+                  builder: (row) {
+                    final loanId = row['id'];
+                    
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.visibility_outlined, size: 20),
+                          color: Colors.blue,
+                          onPressed: () => _showLoanDetails(context, loanId, row),
+                          tooltip: 'View',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          color: Colors.orange,
+                          onPressed: () => _editLoan(loanId, row),
+                          tooltip: 'Edit',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          color: Colors.red,
+                          onPressed: () => _deleteLoan(loanId, row),
+                          tooltip: 'Delete',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+              data: loans,
+              onRowTap: (row) => _showLoanDetails(context, row['id'], row),
+              filters: [
+                TableFilter(
+                  key: 'status',
+                  label: 'Status',
+                  options: const [
+                    FilterOption(value: 'pending', label: 'Pending'),
+                    FilterOption(value: 'approved', label: 'Approved'),
+                    FilterOption(value: 'rejected', label: 'Rejected'),
+                    FilterOption(value: 'cleared', label: 'Cleared/Paid'),
+                  ],
+                ),
+                TableFilter(
+                  key: 'loanType',
+                  label: 'Type',
+                  options: const [
+                    FilterOption(value: 'business', label: 'Business'),
+                    FilterOption(value: 'agriculture', label: 'Agriculture'),
+                    FilterOption(value: 'emergency', label: 'Emergency'),
+                    FilterOption(value: 'education', label: 'Education'),
+                    FilterOption(value: 'development', label: 'Development'),
+                  ],
+                ),
+              ],
+              searchPlaceholder: 'Search by member name, purpose...',
+            ),
+          );
+        },
       ),
     );
+  }
+
+  int _calculateDaysOverdue(Map<String, dynamic> loan) {
+    final dueDate = loan['dueDate'];
+    if (dueDate == null) return 0;
+
+    DateTime? due;
+    if (dueDate is Timestamp) {
+      due = dueDate.toDate();
+    } else if (dueDate is DateTime) {
+      due = dueDate;
+    }
+
+    if (due == null) return 0;
+
+    final now = DateTime.now();
+    if (now.isAfter(due)) {
+      return now.difference(due).inDays;
+    }
+    return 0;
   }
 
   void _handleAction(String loanId, String action, String farmerName) {
@@ -91,9 +318,95 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
     }
   }
 
+  Future<void> _markLoanAsPaid(String loanId, String farmerName, Map<String, dynamic> loanData) async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Mark Loan as Paid', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to mark this loan as fully paid?', 
+                style: GoogleFonts.poppins(fontSize: 14)),
+            const SizedBox(height: 16),
+            Text('Member: $farmerName', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+            Text('Amount: UGX ${NumberFormat('#,###').format(loanData['amount'] ?? 0)}', 
+                style: GoogleFonts.poppins(fontSize: 13)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This will set the remaining balance to 0 and mark the loan as cleared.',
+                      style: GoogleFonts.poppins(fontSize: 11, color: Colors.orange.shade900),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Mark as Paid'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      // Update loan in Firestore
+      await FirebaseFirestore.instance
+          .collection('loans')
+          .doc(loanId)
+          .update({
+        'balance': 0,
+        'status': 'cleared',
+        'clearedAt': FieldValue.serverTimestamp(),
+        'clearedBy': FirebaseService.sessionUid,
+        'manuallyCleared': true,
+        'clearNote': 'Manually marked as paid by admin',
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Loan marked as fully paid for $farmerName'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _exportLoans() async {
     try {
-      // Show loading
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -102,9 +415,8 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
         ),
       );
 
-      // Fetch all loans
       final loans = await FirebaseService.getAllLoansOnce();
-      
+
       if (loans.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -116,7 +428,6 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
         return;
       }
 
-      // Export to CSV
       CsvExport.exportLoans(loans);
 
       if (!mounted) return;
@@ -139,7 +450,6 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
 
   void _doUpdate(String loanId, String status, {String? note}) async {
     await FirebaseService.updateLoanStatus(loanId, status, note: note);
-    // Audit log
     AuditService.log(
       action: status == AppConstants.statusApproved
           ? AuditService.kLoanApproved
@@ -189,621 +499,425 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen>
       ),
     );
   }
-}
 
-// ─── Loan List (StreamBuilder with Keep Alive) ────────────────────────────────
-class _LoanList extends StatefulWidget {
-  final String filter;
-  final NumberFormat fmt;
-  final void Function(String loanId, String action, String farmerName) onAction;
-
-  const _LoanList(
-      {required this.filter, required this.fmt, required this.onAction});
-
-  @override
-  State<_LoanList> createState() => _LoanListState();
-}
-
-class _LoanListState extends State<_LoanList> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true; // Keep this tab alive!
-
-  bool _include(String status) {
-    if (widget.filter == 'All') return true;
-    if (widget.filter == AppConstants.statusPending) {
-      return status == AppConstants.statusPending;
-    }
-    return status != AppConstants.statusPending;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context); // MUST call super.build when using AutomaticKeepAliveClientMixin
-    
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseService.getAllLoans(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        
-        if (!snap.hasData) {
-          return const EmptyState(
-              message: 'No loan applications here.',
-              icon: Icons.inbox_rounded);
-        }
-        
-        final docs = (snap.data?.docs ?? [])
-            .where((d) => _include((d['status'] as String? ?? '')))
-            .toList();
-            
-        if (docs.isEmpty) {
-          return const EmptyState(
-              message: 'No loan applications here.',
-              icon: Icons.inbox_rounded);
-        }
-        
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (_, i) {
-            final data = docs[i].data() as Map<String, dynamic>;
-            final loanId = docs[i].id;
-            final status = data['status'] as String? ?? '';
-            final isPending = status == AppConstants.statusPending;
-            final farmerName = data['memberName'] as String? ??
-                data['farmerName'] as String? ??
-                data['memberId'] as String? ??
-                data['farmerId'] as String? ??
-                'Member';
-            return _LoanApprovalCard(
-              loan: data,
-              loanId: loanId,
-              fmt: widget.fmt,
-              onApprove: isPending
-                  ? () => widget.onAction(
-                      loanId, AppConstants.statusApproved, farmerName)
-                  : null,
-              onReject: isPending
-                  ? () => widget.onAction(
-                      loanId, AppConstants.statusRejected, farmerName)
-                  : null,
-            );
-          },
+  void _editLoan(String loanId, Map<String, dynamic> loanData) {
+    // Show edit dialog with loan fields
+    showDialog(
+      context: context,
+      builder: (context) => _EditLoanDialog(loanId: loanId, loanData: loanData),
+    ).then((updated) {
+      if (updated == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Loan updated successfully')),
         );
-      },
-    );
+      }
+    });
   }
-}
 
-// ─── Loan Card ────────────────────────────────────────────────────────────────
-class _LoanApprovalCard extends StatelessWidget {
-  final Map<String, dynamic> loan;
-  final String loanId;
-  final NumberFormat fmt;
-  final VoidCallback? onApprove;
-  final VoidCallback? onReject;
-
-  const _LoanApprovalCard({
-    required this.loan,
-    required this.loanId,
-    required this.fmt,
-    this.onApprove,
-    this.onReject,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final farmerName = loan['memberName'] as String? ??
-        loan['farmerName'] as String? ??
-        loan['memberId'] as String? ??
-        loan['farmerId'] as String? ??
-        'Member';
-    final amount = (loan['amount'] as num?)?.toInt() ?? 0;
-    final loanType = loan['loanType'] as String? ?? '-';
-    final purpose = loan['purpose'] as String? ?? '-';
-    final period = loan['repaymentPeriod'] as String? ??
-        loan['period'] as String? ??
-        '-';
-    final status = loan['status'] as String? ?? '-';
-    final createdAt = loan['createdAt'];
-    String dateStr = '-';
-    if (createdAt is Timestamp) {
-      dateStr = DateFormat('yyyy-MM-dd').format(createdAt.toDate());
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
+  Future<void> _deleteLoan(String loanId, Map<String, dynamic> loanData) async {
+    final memberName = loanData['memberName'] ?? 'this member';
+    final amount = loanData['amount'] ?? 0;
+    
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete Loan', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to delete this loan?', 
+                style: GoogleFonts.poppins(fontSize: 14)),
+            const SizedBox(height: 16),
+            Text('Member: $memberName', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+            Text('Amount: UGX ${NumberFormat('#,###').format(amount)}', 
+                style: GoogleFonts.poppins(fontSize: 13)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
+                  Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This action cannot be undone!',
+                      style: GoogleFonts.poppins(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.w600),
                     ),
-                    child: const Icon(Icons.person_rounded,
-                        color: AppTheme.primary, size: 22),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(farmerName,
-                          style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
-                      Text(loanId.length >= 8
-                          ? loanId.substring(0, 8).toUpperCase()
-                          : loanId.toUpperCase(),
-                          style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              color: AppTheme.textSecondary)),
-                    ],
                   ),
                 ],
               ),
-              StatusBadge(status: status),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                  child: _detail('Amount', 'UGX ${fmt.format(amount)}')),
-              Expanded(child: _detail('Type', loanType)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _detail('Purpose', purpose)),
-              Expanded(child: _detail('Period', period)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _detail('Applied On', dateStr),
-          // ── View full details (incl. guarantors) ──────────────────────────
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: () => _showFullDetails(context),
-            child: Row(
-              children: [
-                Text('View Full Details',
-                    style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppTheme.primary,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(width: 4),
-                const Icon(Icons.arrow_forward_ios_rounded,
-                    size: 11, color: AppTheme.primary),
-              ],
-            ),
-          ),
-          if (onApprove != null || onReject != null) ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                if (onReject != null)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onReject,
-                      icon: const Icon(Icons.close_rounded, size: 16),
-                      label: const Text('Reject'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.error,
-                        side: const BorderSide(color: AppTheme.error),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-                if (onApprove != null && onReject != null)
-                  const SizedBox(width: 10),
-                if (onApprove != null)
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: onApprove,
-                      icon: const Icon(Icons.check_rounded, size: 16),
-                      label: const Text('Approve'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.success,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-              ],
             ),
           ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
         ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      // Delete the loan from Firestore
+      await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .doc(loanId)
+          .delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Loan deleted for $memberName'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Log audit trail
+      await AuditService.log(
+        action: 'delete_loan',
+        details: 'Deleted loan for $memberName (UGX ${NumberFormat('#,###').format(amount)})',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error deleting loan: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 700),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Loan Details', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildDetailRow('Member Name', loan['memberName'] ?? loan['farmerName'] ?? 'N/A'),
+                      _buildDetailRow('Amount', 'UGX ${fmt.format(loan['amount'] ?? 0)}'),
+                      _buildDetailRow('Loan Type', loan['loanType'] ?? 'N/A'),
+                      _buildDetailRow('Purpose', loan['purpose'] ?? 'N/A'),
+                      _buildDetailRow('Period', loan['repaymentPeriod'] ?? loan['period'] ?? 'N/A'),
+                      _buildDetailRow('Status', loan['status'] ?? 'N/A'),
+                      _buildDetailRow('Applied On', loan['createdAt'] is Timestamp
+                          ? DateFormat('MMM d, yyyy').format((loan['createdAt'] as Timestamp).toDate())
+                          : 'N/A'),
+                      if (loan['dueDate'] != null)
+                        _buildDetailRow('Due Date', loan['dueDate'] is Timestamp
+                            ? DateFormat('MMM d, yyyy').format((loan['dueDate'] as Timestamp).toDate())
+                            : 'N/A'),
+                      if (_calculateDaysOverdue(loan) > 0)
+                        _buildDetailRow('Days Overdue', '${_calculateDaysOverdue(loan)} days',
+                            color: AppTheme.error),
+                    ],
+                  ),
+                ),
+              ),
+              if (loan['status'] == AppConstants.statusPending) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _handleAction(loanId, AppConstants.statusRejected,
+                              loan['memberName'] ?? 'Member');
+                        },
+                        icon: const Icon(Icons.close),
+                        label: const Text('Reject'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.error,
+                          padding: const EdgeInsets.all(16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _handleAction(loanId, AppConstants.statusApproved,
+                              loan['memberName'] ?? 'Member');
+                        },
+                        icon: const Icon(Icons.check),
+                        label: const Text('Approve'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.success,
+                          padding: const EdgeInsets.all(16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _detail(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 11, color: AppTheme.textSecondary)),
-        Text(value,
-            style: GoogleFonts.poppins(
+  Widget _buildDetailRow(String label, String value, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(
                 fontSize: 13,
+                color: Colors.grey.shade600,
                 fontWeight: FontWeight.w500,
-                color: AppTheme.textPrimary)),
-      ],
-    );
-  }
-
-  void _showFullDetails(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _LoanDetailSheet(loan: loan, loanId: loanId, fmt: fmt),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color ?? Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ─── Full Loan Detail Sheet (with Guarantors) ─────────────────────────────────
-class _LoanDetailSheet extends StatefulWidget {
-  final Map<String, dynamic> loan;
-  final String loanId;
-  final NumberFormat fmt;
 
-  const _LoanDetailSheet({
-    required this.loan,
-    required this.loanId,
-    required this.fmt,
-  });
+// ─── Edit Loan Dialog ─────────────────────────────────────────────────────────
+class _EditLoanDialog extends StatefulWidget {
+  final String loanId;
+  final Map<String, dynamic> loanData;
+
+  const _EditLoanDialog({required this.loanId, required this.loanData});
 
   @override
-  State<_LoanDetailSheet> createState() => _LoanDetailSheetState();
+  State<_EditLoanDialog> createState() => _EditLoanDialogState();
 }
 
-class _LoanDetailSheetState extends State<_LoanDetailSheet> {
-  List<Map<String, dynamic>> _guarantors = [];
-  bool _loadingGuarantors = true;
+class _EditLoanDialogState extends State<_EditLoanDialog> {
+  late TextEditingController _memberNameCtrl;
+  late TextEditingController _amountCtrl;
+  late TextEditingController _principalOutstandingCtrl;
+  late TextEditingController _interestAmountCtrl;
+  late TextEditingController _loanProductCtrl;
+  late TextEditingController _referenceNumberCtrl;
+  String _selectedStatus = 'approved';
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _loadGuarantors();
+    _memberNameCtrl = TextEditingController(text: widget.loanData['memberName'] ?? '');
+    _amountCtrl = TextEditingController(text: (widget.loanData['amount'] ?? 0).toString());
+    _principalOutstandingCtrl = TextEditingController(text: (widget.loanData['principalOutstanding'] ?? 0).toString());
+    _interestAmountCtrl = TextEditingController(text: (widget.loanData['interestAmount'] ?? 0).toString());
+    _loanProductCtrl = TextEditingController(text: widget.loanData['loanProduct'] ?? '');
+    _referenceNumberCtrl = TextEditingController(text: widget.loanData['referenceNumber'] ?? '');
+    _selectedStatus = widget.loanData['status'] ?? 'approved';
   }
 
-  Future<void> _loadGuarantors() async {
-    final list = await FirebaseService.getLoanGuarantors(widget.loanId);
-    if (mounted) {
-      setState(() {
-        _guarantors = list;
-        _loadingGuarantors = false;
-      });
+  @override
+  void dispose() {
+    _memberNameCtrl.dispose();
+    _amountCtrl.dispose();
+    _principalOutstandingCtrl.dispose();
+    _interestAmountCtrl.dispose();
+    _loanProductCtrl.dispose();
+    _referenceNumberCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveLoan() async {
+    setState(() => _saving = true);
+
+    try {
+      final updatedData = {
+        'memberName': _memberNameCtrl.text.trim(),
+        'amount': int.tryParse(_amountCtrl.text.replaceAll(',', '')) ?? 0,
+        'principalOutstanding': int.tryParse(_principalOutstandingCtrl.text.replaceAll(',', '')) ?? 0,
+        'interestAmount': int.tryParse(_interestAmountCtrl.text.replaceAll(',', '')) ?? 0,
+        'loanProduct': _loanProductCtrl.text.trim(),
+        'referenceNumber': _referenceNumberCtrl.text.trim(),
+        'status': _selectedStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .doc(widget.loanId)
+          .update(updatedData);
+
+      // Log audit trail
+      await AuditService.log(
+        action: 'update_loan',
+        details: 'Updated loan ${_referenceNumberCtrl.text} for ${_memberNameCtrl.text}',
+      );
+
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error updating loan: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final loan = widget.loan;
-    final fmt = widget.fmt;
-    final amount = (loan['amount'] as num?)?.toInt() ?? 0;
-    final farmerName = loan['memberName'] as String? ??
-        loan['farmerName'] as String? ??
-        'Member';
-    final createdAt = loan['createdAt'];
-    String dateStr = '—';
-    if (createdAt is Timestamp) {
-      dateStr = DateFormat('MMM d, yyyy – HH:mm').format(createdAt.toDate());
-    }
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      maxChildSize: 0.95,
-      minChildSize: 0.5,
-      builder: (_, controller) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            // Handle
-            const SizedBox(height: 12),
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Loan Details',
-                      style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w700, fontSize: 17)),
-                  StatusBadge(status: loan['status'] ?? '—'),
-                ],
-              ),
-            ),
-            const Divider(height: 20),
-            // Scrollable content
-            Expanded(
-              child: ListView(
-                controller: controller,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                children: [
-                  // ── Applicant ──────────────────────────────────────────
-                  _section('Applicant'),
-                  InfoRow(
-                      icon: Icons.person_rounded,
-                      label: 'Name',
-                      value: farmerName),
-                  InfoRow(
-                      icon: Icons.tag_rounded,
-                      label: 'Loan ID',
-                      value: widget.loanId.toUpperCase()),
-                  InfoRow(
-                      icon: Icons.event_rounded,
-                      label: 'Applied On',
-                      value: dateStr),
-
-                  // ── Loan Info ──────────────────────────────────────────
-                  _section('Loan Information'),
-                  InfoRow(
-                      icon: Icons.attach_money_rounded,
-                      label: 'Amount',
-                      value: 'UGX ${fmt.format(amount)}'),
-                  InfoRow(
-                      icon: Icons.category_outlined,
-                      label: 'Type',
-                      value: loan['loanType'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.grass_outlined,
-                      label: 'Purpose',
-                      value: loan['purpose'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.calendar_month_outlined,
-                      label: 'Repayment Period',
-                      value: loan['repaymentPeriod'] ?? '—'),
-                  if ((loan['description'] as String?)?.isNotEmpty == true)
-                    InfoRow(
-                        icon: Icons.notes_rounded,
-                        label: 'Description',
-                        value: loan['description']),
-
-                  // ── Collateral ─────────────────────────────────────────
-                  _section('Collateral'),
-                  InfoRow(
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Type',
-                      value: loan['collateralType'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.notes_rounded,
-                      label: 'Description',
-                      value: loan['collateralDescription'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.price_check_rounded,
-                      label: 'Estimated Value',
-                      value:
-                          'UGX ${fmt.format((loan['collateralValue'] as num?)?.toInt() ?? 0)}'),
-
-                  // ── Financial Info ─────────────────────────────────────
-                  _section('Financial Information'),
-                  InfoRow(
-                      icon: Icons.work_outline_rounded,
-                      label: 'Income Source',
-                      value: loan['incomeSource'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.trending_up_rounded,
-                      label: 'Monthly Income',
-                      value:
-                          'UGX ${fmt.format((loan['monthlyIncome'] as num?)?.toInt() ?? 0)}'),
-                  if ((loan['existingLoans'] as String?)?.isNotEmpty == true)
-                    InfoRow(
-                        icon: Icons.credit_card_outlined,
-                        label: 'Existing Loans',
-                        value: loan['existingLoans']),
-
-                  // ── Next of Kin ────────────────────────────────────────
-                  _section('Next of Kin'),
-                  InfoRow(
-                      icon: Icons.person_outline_rounded,
-                      label: 'Name',
-                      value: loan['nextOfKinName'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.phone_outlined,
-                      label: 'Phone',
-                      value: loan['nextOfKinPhone'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.family_restroom_rounded,
-                      label: 'Relationship',
-                      value: loan['nextOfKinRelation'] ?? '—'),
-                  InfoRow(
-                      icon: Icons.location_on_outlined,
-                      label: 'Address',
-                      value: loan['nextOfKinAddress'] ?? '—'),
-
-                  // ── Guarantors ─────────────────────────────────────────
-                  _section('Guarantors'),
-                  if (_loadingGuarantors)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Center(
-                          child: CircularProgressIndicator(
-                              color: AppTheme.primary, strokeWidth: 2)),
-                    )
-                  else if (_guarantors.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        'No guarantors recorded for this loan.',
-                        style: GoogleFonts.poppins(
-                            fontSize: 13, color: AppTheme.textSecondary),
-                      ),
-                    )
-                  else
-                    ..._guarantors.map((g) => _GuarantorRow(g)),
-
-                  // ── Admin Note ─────────────────────────────────────────
-                  if ((loan['adminNote'] as String?)?.isNotEmpty == true) ...[
-                    _section('Admin Note'),
-                    InfoRow(
-                        icon: Icons.comment_outlined,
-                        label: 'Note',
-                        value: loan['adminNote']),
-                  ],
-
-                  const SizedBox(height: 32),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _section(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 4),
-      child: Text(
-        title,
-        style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-            color: AppTheme.primary),
-      ),
-    );
-  }
-}
-
-class _GuarantorRow extends StatelessWidget {
-  final Map<String, dynamic> g;
-  const _GuarantorRow(this.g);
-
-  @override
-  Widget build(BuildContext context) {
-    final name = g['guarantorName'] as String? ?? '—';
-    final phone = g['guarantorPhone'] as String? ?? '—';
-    final memberNo = g['guarantorMemberNo'] as String? ?? '';
-    final consent = g['consentStatus'] as String? ?? 'pending';
-
-    Color consentColor;
-    IconData consentIcon;
-    switch (consent) {
-      case 'accepted':
-        consentColor = AppTheme.success;
-        consentIcon = Icons.check_circle_rounded;
-        break;
-      case 'declined':
-        consentColor = AppTheme.error;
-        consentIcon = Icons.cancel_rounded;
-        break;
-      default:
-        consentColor = AppTheme.warning;
-        consentIcon = Icons.schedule_rounded;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.divider),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Center(
-              child: Text(
-                name[0].toUpperCase(),
-                style: GoogleFonts.poppins(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: AppTheme.textPrimary)),
-                Text(phone,
-                    style: GoogleFonts.poppins(
-                        fontSize: 12, color: AppTheme.textSecondary)),
-                if (memberNo.isNotEmpty)
-                  Text('Member #$memberNo',
-                      style: GoogleFonts.poppins(
-                          fontSize: 11, color: AppTheme.textSecondary)),
-              ],
-            ),
-          ),
-          // Consent badge
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: consentColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: consentColor.withOpacity(0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(consentIcon, size: 12, color: consentColor),
-                const SizedBox(width: 4),
-                Text(
-                  consent[0].toUpperCase() + consent.substring(1),
-                  style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: consentColor,
-                      fontWeight: FontWeight.w600),
+    return AlertDialog(
+      title: Text('Edit Loan', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+      content: SingleChildScrollView(
+        child: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _memberNameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Member Name',
+                  border: OutlineInputBorder(),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _referenceNumberCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Reference Number',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _loanProductCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Loan Product',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _amountCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Loan Amount (UGX)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _principalOutstandingCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Principal Outstanding (UGX)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _interestAmountCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Interest Amount (UGX)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedStatus,
+                decoration: const InputDecoration(
+                  labelText: 'Status',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                  DropdownMenuItem(value: 'approved', child: Text('Approved')),
+                  DropdownMenuItem(value: 'active', child: Text('Active')),
+                  DropdownMenuItem(value: 'overdue', child: Text('Overdue')),
+                  DropdownMenuItem(value: 'paid', child: Text('Paid')),
+                  DropdownMenuItem(value: 'rejected', child: Text('Rejected')),
+                ],
+                onChanged: (value) => setState(() => _selectedStatus = value!),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _saveLoan,
+          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+              : const Text('Save Changes'),
+        ),
+      ],
     );
   }
 }

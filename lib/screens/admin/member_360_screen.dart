@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../../theme/modern_theme.dart';
+import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
 
 class Member360Screen extends StatefulWidget {
@@ -68,7 +68,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     try {
       // Load member profile
       final memberDoc = await FirebaseFirestore.instance
-          .collection('users')
+          .collection('saccoplus-members')
           .doc(_selectedMemberId)
           .get();
       
@@ -82,6 +82,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
       
       final data = memberDoc.data()!;
       print('✅ Member loaded: ${data['name'] ?? data['fullName']}');
+      print('💰 Savings Balance: ${data['savingsBalance']}');
       
       setState(() {
         _memberData = {'id': memberDoc.id, ...data};
@@ -98,6 +99,180 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         );
       }
     }
+  }
+
+  void _showEditMemberDialog() {
+    if (_memberData == null) return;
+    
+    final nameController = TextEditingController(text: _memberData!['name'] ?? _memberData!['fullName'] ?? '');
+    final phoneController = TextEditingController(text: _memberData!['phone'] ?? '');
+    final ninController = TextEditingController(text: _memberData!['nationalId'] ?? '');
+    final villageController = TextEditingController(text: _memberData!['village'] ?? '');
+    final districtController = TextEditingController(text: _memberData!['district'] ?? '');
+    final nextOfKinController = TextEditingController(text: _memberData!['nextOfKin'] ?? '');
+    final nextOfKinPhoneController = TextEditingController(text: _memberData!['nextOfKinPhone'] ?? '');
+    
+    final formKey = GlobalKey<FormState>();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.edit, color: AppTheme.primary),
+            const SizedBox(width: 12),
+            Text('Edit Member Information', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Full Name',
+                      prefixIcon: const Icon(Icons.person),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Name is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: phoneController,
+                    decoration: InputDecoration(
+                      labelText: 'Phone Number',
+                      prefixIcon: const Icon(Icons.phone),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: ninController,
+                    maxLength: 14,
+                    decoration: InputDecoration(
+                      labelText: 'National ID (NIN)',
+                      prefixIcon: const Icon(Icons.badge),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      helperText: 'Must be exactly 14 characters',
+                      counterText: '${ninController.text.length}/14',
+                    ),
+                    validator: (value) {
+                      if (value != null && value.trim().isNotEmpty) {
+                        if (value.trim().length != 14) {
+                          return 'NIN must be exactly 14 characters';
+                        }
+                      }
+                      return null;
+                    },
+                    onChanged: (value) {
+                      // Trigger rebuild to update counter
+                      (context as Element).markNeedsBuild();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: villageController,
+                    decoration: InputDecoration(
+                      labelText: 'Village',
+                      prefixIcon: const Icon(Icons.location_on),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: districtController,
+                    decoration: InputDecoration(
+                      labelText: 'District',
+                      prefixIcon: const Icon(Icons.map),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nextOfKinController,
+                    decoration: InputDecoration(
+                      labelText: 'Next of Kin',
+                      prefixIcon: const Icon(Icons.people),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nextOfKinPhoneController,
+                    decoration: InputDecoration(
+                      labelText: 'Next of Kin Phone',
+                      prefixIcon: const Icon(Icons.phone_android),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) {
+                return;
+              }
+              
+              try {
+                await FirebaseFirestore.instance
+                    .collection('saccoplus-members')
+                    .doc(_selectedMemberId)
+                    .update({
+                  'name': nameController.text.trim(),
+                  'fullName': nameController.text.trim(),
+                  'phone': phoneController.text.trim(),
+                  'nationalId': ninController.text.trim(),
+                  'village': villageController.text.trim(),
+                  'district': districtController.text.trim(),
+                  'nextOfKin': nextOfKinController.text.trim(),
+                  'nextOfKinPhone': nextOfKinPhoneController.text.trim(),
+                });
+                
+                if (mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Member information updated successfully!'),
+                      backgroundColor: AppTheme.success,
+                    ),
+                  );
+                  _loadMemberData(); // Reload data
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error updating member: $e'),
+                      backgroundColor: AppTheme.error,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            child: Text('Save Changes', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -143,10 +318,10 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               child: TabBar(
                 controller: _tabController,
                 isScrollable: true,
-                labelColor: ModernTheme.primary,
+                labelColor: AppTheme.primary,
                 unselectedLabelColor: Colors.grey,
                 labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
-                indicatorColor: ModernTheme.primary,
+                indicatorColor: AppTheme.primary,
                 tabs: const [
                   Tab(text: 'Overview'),
                   Tab(text: 'Savings'),
@@ -215,7 +390,12 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               if (member['id'] == null) return false;
               final name = (member['name'] ?? member['fullName'] ?? '').toString().toLowerCase();
               final phone = (member['phone'] ?? '').toString();
-              return name.contains(query) || phone.contains(query);
+              final accountNumber = (member['accountNumber'] ?? '').toString();
+              final memberNumber = (member['memberNumber'] ?? '').toString();
+              return name.contains(query) || 
+                     phone.contains(query) || 
+                     accountNumber.contains(query) ||
+                     memberNumber.contains(query);
             }).toList();
             
             print('🔍 Autocomplete: query="$query", results=${results.length}');
@@ -237,7 +417,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               controller: controller,
               focusNode: focusNode,
               decoration: InputDecoration(
-                hintText: 'Type member name or phone...',
+                hintText: 'Type name, phone, account or member number...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
@@ -260,11 +440,18 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     itemCount: options.length,
                     itemBuilder: (context, index) {
                       final member = options.elementAt(index);
+                      final accountNum = member['accountNumber'] ?? '';
+                      final phone = member['phone'] ?? 'No phone';
+                      final subtitle = accountNum.isNotEmpty 
+                          ? '$phone  •  Acc: $accountNum'
+                          : phone;
+                      
                       return ListTile(
                         leading: CircleAvatar(
+                          backgroundColor: AppTheme.primary.withOpacity(0.1),
                           child: Text(
                             ((member['name'] ?? member['fullName'] ?? 'U').toString()[0]).toUpperCase(),
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: AppTheme.primary),
                           ),
                         ),
                         title: Text(
@@ -272,7 +459,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                           style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
                         ),
                         subtitle: Text(
-                          member['phone'] ?? 'No phone',
+                          subtitle,
                           style: GoogleFonts.poppins(fontSize: 12),
                         ),
                         onTap: () => onSelected(member),
@@ -291,6 +478,8 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Widget _buildMemberHeader() {
     final memberName = _memberData!['name'] ?? _memberData!['fullName'] ?? 'Unknown';
     final memberPhone = _memberData!['phone'] ?? 'No phone';
+    final accountNumber = _memberData!['accountNumber'] ?? 'N/A';
+    final memberNumber = _memberData!['memberNumber'] ?? 'N/A';
     
     return Container(
       margin: const EdgeInsets.all(16),
@@ -337,10 +526,11 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Member ID: ${_memberData!['id']}',
+                  'Account: $accountNumber  •  Member: $memberNumber',
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     color: Colors.white70,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -401,26 +591,43 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildOverviewTab() {
+    // Get real financial data from member document
+    final savingsBalance = (_memberData!['savingsBalance'] ?? 0).toDouble();
+    final sharesBalance = (_memberData!['sharesBalance'] ?? 0).toDouble();
+    final loanBalance = (_memberData!['loanBalance'] ?? 0).toDouble();
+    final walletBalance = (_memberData!['walletBalance'] ?? 0).toDouble();
+    
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Financial Summary
-          _buildSectionTitle('Financial Summary'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildSectionTitle('Financial Summary'),
+              IconButton(
+                icon: const Icon(Icons.edit, size: 20),
+                onPressed: _showEditMemberDialog,
+                tooltip: 'Edit Member Info',
+                color: AppTheme.primary,
+              ),
+            ],
+          ),
           Row(
             children: [
-              Expanded(child: _buildSummaryCard('Total Savings', '2,450,000', Icons.savings, Colors.blue)),
+              Expanded(child: _buildSummaryCard('Total Savings', _currencyFormat.format(savingsBalance), Icons.savings, Colors.blue)),
               const SizedBox(width: 12),
-              Expanded(child: _buildSummaryCard('Total Shares', '1,500,000', Icons.pie_chart, Colors.green)),
+              Expanded(child: _buildSummaryCard('Total Shares', _currencyFormat.format(sharesBalance), Icons.pie_chart, Colors.green)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildSummaryCard('Active Loans', '5,000,000', Icons.account_balance, Colors.orange)),
+              Expanded(child: _buildSummaryCard('Active Loans', _currencyFormat.format(loanBalance), Icons.account_balance, Colors.orange)),
               const SizedBox(width: 12),
-              Expanded(child: _buildSummaryCard('Total Deposits', '500,000', Icons.account_balance_wallet, Colors.purple)),
+              Expanded(child: _buildSummaryCard('Wallet Balance', _currencyFormat.format(walletBalance), Icons.account_balance_wallet, Colors.purple)),
             ],
           ),
           
@@ -441,9 +648,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildSavingsTab() {
+    // Get savings balance from member document
+    final savingsBalance = (_memberData!['savingsBalance'] ?? 0).toDouble();
+    
+    // Also check if there are transactions in the savings collection
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
-          .collection('savings')
+          .collection('saccoplus-savings')
           .where('farmerId', isEqualTo: _selectedMemberId)
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
           .orderBy('createdAt', descending: true)
@@ -453,25 +664,16 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           return const Center(child: CircularProgressIndicator());
         }
         
-        final savings = snapshot.data!.docs;
+        final savingsTransactions = snapshot.data!.docs;
         
-        if (savings.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade300),
-                const SizedBox(height: 16),
-                Text('No savings records', style: GoogleFonts.poppins(color: Colors.grey)),
-              ],
-            ),
-          );
-        }
-        
-        final totalSavings = savings.fold<double>(
+        // Calculate total from transactions if any exist
+        final transactionsTotal = savingsTransactions.fold<double>(
           0,
           (sum, doc) => sum + ((doc.data() as Map)['amount'] ?? 0).toDouble(),
         );
+        
+        // Use the higher of the two (member document balance or transaction sum)
+        final displayBalance = savingsBalance > 0 ? savingsBalance : transactionsTotal;
         
         return Column(
           children: [
@@ -490,35 +692,59 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     children: [
                       Text('Total Savings', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
                       Text(
-                        _currencyFormat.format(totalSavings),
+                        _currencyFormat.format(displayBalance),
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      if (savingsTransactions.isNotEmpty)
+                        Text(
+                          '${savingsTransactions.length} transactions',
+                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                        ),
                     ],
                   ),
                   const Icon(Icons.savings, size: 48, color: Colors.white24),
                 ],
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: savings.length,
-                itemBuilder: (context, index) {
-                  final saving = savings[index].data() as Map<String, dynamic>;
-                  return _buildTransactionTile(
-                    saving['createdAt'],
-                    saving['amount'],
-                    saving['description'] ?? 'Savings Deposit',
-                    Icons.savings,
-                    Colors.green,
-                  );
-                },
+            if (savingsTransactions.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      Text('No transaction history', style: GoogleFonts.poppins(color: Colors.grey)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Balance: ${_currencyFormat.format(displayBalance)}',
+                        style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: savingsTransactions.length,
+                  itemBuilder: (context, index) {
+                    final saving = savingsTransactions[index].data() as Map<String, dynamic>;
+                    return _buildTransactionTile(
+                      saving['createdAt'],
+                      saving['amount'],
+                      saving['description'] ?? 'Savings Deposit',
+                      Icons.savings,
+                      Colors.green,
+                    );
+                  },
+                ),
               ),
-            ),
           ],
         );
       },
@@ -526,9 +752,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildSharesTab() {
+    // Get shares balance from member document
+    final sharesBalance = (_memberData!['sharesBalance'] ?? 0).toDouble();
+    
+    // Also check if there are transactions in the shares collection
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
-          .collection('shares')
+          .collection('saccoplus-shares')
           .where('farmerId', isEqualTo: _selectedMemberId)
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
           .orderBy('createdAt', descending: true)
@@ -538,25 +768,16 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           return const Center(child: CircularProgressIndicator());
         }
         
-        final shares = snapshot.data!.docs;
+        final sharesTransactions = snapshot.data!.docs;
         
-        if (shares.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey.shade300),
-                const SizedBox(height: 16),
-                Text('No shares records', style: GoogleFonts.poppins(color: Colors.grey)),
-              ],
-            ),
-          );
-        }
-        
-        final totalShares = shares.fold<double>(
+        // Calculate total from transactions if any exist
+        final transactionsTotal = sharesTransactions.fold<double>(
           0,
           (sum, doc) => sum + ((doc.data() as Map)['amount'] ?? 0).toDouble(),
         );
+        
+        // Use the higher of the two (member document balance or transaction sum)
+        final displayBalance = sharesBalance > 0 ? sharesBalance : transactionsTotal;
         
         return Column(
           children: [
@@ -575,35 +796,59 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     children: [
                       Text('Total Shares Value', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
                       Text(
-                        _currencyFormat.format(totalShares),
+                        _currencyFormat.format(displayBalance),
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      if (sharesTransactions.isNotEmpty)
+                        Text(
+                          '${sharesTransactions.length} transactions',
+                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                        ),
                     ],
                   ),
                   const Icon(Icons.pie_chart, size: 48, color: Colors.white24),
                 ],
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: shares.length,
-                itemBuilder: (context, index) {
-                  final share = shares[index].data() as Map<String, dynamic>;
-                  return _buildTransactionTile(
-                    share['createdAt'],
-                    share['amount'],
-                    share['description'] ?? 'Shares Purchase',
-                    Icons.pie_chart,
-                    Colors.green,
-                  );
-                },
+            if (sharesTransactions.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      Text('No transaction history', style: GoogleFonts.poppins(color: Colors.grey)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Balance: ${_currencyFormat.format(displayBalance)}',
+                        style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: sharesTransactions.length,
+                  itemBuilder: (context, index) {
+                    final share = sharesTransactions[index].data() as Map<String, dynamic>;
+                    return _buildTransactionTile(
+                      share['createdAt'],
+                      share['amount'],
+                      share['description'] ?? 'Shares Purchase',
+                      Icons.pie_chart,
+                      Colors.green,
+                    );
+                  },
+                ),
               ),
-            ),
           ],
         );
       },
@@ -611,9 +856,11 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildLoansTab() {
+    final loanBalance = (_memberData!['loanBalance'] ?? 0).toDouble();
+    
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
-          .collection('loans')
+          .collection('saccoplus-loans')
           .where('farmerId', isEqualTo: _selectedMemberId)
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
           .orderBy('createdAt', descending: true)
@@ -625,26 +872,73 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         
         final loans = snapshot.data!.docs;
         
-        if (loans.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.account_balance_outlined, size: 64, color: Colors.grey.shade300),
-                const SizedBox(height: 16),
-                Text('No loan records', style: GoogleFonts.poppins(color: Colors.grey)),
-              ],
+        return Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFFEF4444), Color(0xFFDC2626)]),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Outstanding Loan Balance', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
+                      Text(
+                        _currencyFormat.format(loanBalance),
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (loans.isNotEmpty)
+                        Text(
+                          '${loans.length} loan(s)',
+                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                        ),
+                    ],
+                  ),
+                  const Icon(Icons.account_balance, size: 48, color: Colors.white24),
+                ],
+              ),
             ),
-          );
-        }
-        
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: loans.length,
-          itemBuilder: (context, index) {
-            final loan = loans[index].data() as Map<String, dynamic>;
-            return _buildLoanCard(loan);
-          },
+            if (loans.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.account_balance_outlined, size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      Text('No loan records', style: GoogleFonts.poppins(color: Colors.grey)),
+                      if (loanBalance > 0) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Outstanding: ${_currencyFormat.format(loanBalance)}',
+                          style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: loans.length,
+                  itemBuilder: (context, index) {
+                    final loan = loans[index].data() as Map<String, dynamic>;
+                    return _buildLoanCard(loan);
+                  },
+                ),
+              ),
+          ],
         );
       },
     );
@@ -698,12 +992,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         children: [
           Icon(Icons.folder_outlined, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 16),
-          Text('Document management coming soon', style: GoogleFonts.poppins(color: Colors.grey)),
-          const SizedBox(height: 8),
-          Text(
-            'KYC documents, contracts, and attachments',
-            style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 12),
-          ),
+          Text('KYC documents, contracts, and attachments', style: GoogleFonts.poppins(color: Colors.grey)),
         ],
       ),
     );
@@ -792,12 +1081,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           ),
           const SizedBox(height: 4),
           Text(
-            'UGX $value',
+            value,
             style: GoogleFonts.poppins(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
             ),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -834,6 +1124,9 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
       ),
       child: Column(
         children: [
+          _buildInfoRow('Account Number', _memberData!['accountNumber'] ?? 'N/A'),
+          _buildInfoRow('Member Number', _memberData!['memberNumber'] ?? 'N/A'),
+          const Divider(height: 20),
           _buildInfoRow('Phone', _memberData!['phone'] ?? 'N/A'),
           _buildInfoRow('National ID', _memberData!['nationalId'] ?? 'N/A'),
           _buildInfoRow('Village', _memberData!['village'] ?? 'N/A'),
@@ -862,29 +1155,178 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildRecentActivity() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+    if (_memberData == null) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'No recent activity',
+            style: GoogleFonts.poppins(color: Colors.grey, fontSize: 14),
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          _buildActivityItem('Savings Deposit', '250,000', '2 days ago', Icons.savings, Colors.green),
-          const Divider(),
-          _buildActivityItem('Loan Repayment', '150,000', '5 days ago', Icons.payment, Colors.orange),
-          const Divider(),
-          _buildActivityItem('Shares Purchase', '100,000', '1 week ago', Icons.pie_chart, Colors.blue),
-        ],
-      ),
+        ),
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('saccoplus-savings-transactions')
+          .where('memberId', isEqualTo: _selectedMemberId)
+          .orderBy('createdAt', descending: true)
+          .limit(3)
+          .snapshots(),
+      builder: (context, savingsSnapshot) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('saccoplus-repayments')
+              .where('memberId', isEqualTo: _selectedMemberId)
+              .orderBy('createdAt', descending: true)
+              .limit(3)
+              .snapshots(),
+          builder: (context, repaymentsSnapshot) {
+            // Combine all activities
+            List<Map<String, dynamic>> activities = [];
+
+            // Add savings transactions
+            if (savingsSnapshot.hasData) {
+              for (var doc in savingsSnapshot.data!.docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                activities.add({
+                  'title': 'Savings Deposit',
+                  'amount': data['amount'] ?? 0,
+                  'date': data['createdAt'],
+                  'icon': Icons.savings,
+                  'color': Colors.green,
+                });
+              }
+            }
+
+            // Add loan repayments
+            if (repaymentsSnapshot.hasData) {
+              for (var doc in repaymentsSnapshot.data!.docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                activities.add({
+                  'title': 'Loan Repayment',
+                  'amount': data['amount'] ?? 0,
+                  'date': data['createdAt'],
+                  'icon': Icons.payment,
+                  'color': Colors.orange,
+                });
+              }
+            }
+
+            // Sort by date
+            activities.sort((a, b) {
+              final aDate = a['date'] as Timestamp?;
+              final bDate = b['date'] as Timestamp?;
+              if (aDate == null || bDate == null) return 0;
+              return bDate.compareTo(aDate);
+            });
+
+            // Take only 5 most recent
+            activities = activities.take(5).toList();
+
+            if (activities.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.history, size: 48, color: Colors.grey.shade300),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No recent activity',
+                        style: GoogleFonts.poppins(color: Colors.grey, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: activities.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final activity = entry.value;
+                  final timestamp = activity['date'] as Timestamp?;
+                  final timeAgo = timestamp != null
+                      ? _getTimeAgo(timestamp.toDate())
+                      : 'Unknown';
+                  
+                  return Column(
+                    children: [
+                      if (index > 0) const Divider(),
+                      _buildActivityItem(
+                        activity['title'],
+                        _currencyFormat.format(activity['amount']).replaceAll('UGX ', ''),
+                        timeAgo,
+                        activity['icon'],
+                        activity['color'],
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            );
+          },
+        );
+      },
     );
+  }
+
+  String _getTimeAgo(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 365) {
+      final years = (difference.inDays / 365).floor();
+      return '$years year${years > 1 ? 's' : ''} ago';
+    } else if (difference.inDays > 30) {
+      final months = (difference.inDays / 30).floor();
+      return '$months month${months > 1 ? 's' : ''} ago';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
+    } else {
+      return 'Just now';
+    }
   }
 
   Widget _buildActivityItem(String title, String amount, String time, IconData icon, Color color) {

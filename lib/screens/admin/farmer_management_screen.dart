@@ -2,66 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'dart:math';
 import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/audit_service.dart';
+import '../../core/sacco_service.dart';
+import '../../core/account_number_service.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/professional_data_table.dart';
 import '../../utils/csv_export.dart';
-import 'member_360_screen.dart';
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MEMBER MANAGEMENT + KYC VERIFICATION
-// ═══════════════════════════════════════════════════════════════════════════
 
 class FarmerManagementScreen extends StatefulWidget {
   final bool embedded;
   const FarmerManagementScreen({super.key, this.embedded = false});
+  
   @override
   State<FarmerManagementScreen> createState() => _FarmerManagementScreenState();
 }
 
-class _FarmerManagementScreenState extends State<FarmerManagementScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabs;
-  final _searchCtrl = TextEditingController();
-  String _query = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _tabs = TabController(length: 3, vsync: this);
-    _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text.trim()));
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  static String _name(Map<String, dynamic> d) =>
-      (d['name'] as String? ?? d['fullName'] as String? ?? '').trim();
-
-  List<QueryDocumentSnapshot> _filter(
-      List<QueryDocumentSnapshot> docs, String? idStatusFilter) {
-    return docs.where((d) {
-      final data = d.data() as Map<String, dynamic>;
-      if (idStatusFilter != null) {
-        if ((data['idStatus'] as String? ?? '') != idStatusFilter) return false;
-      }
-      if (_query.isEmpty) return true;
-      final q = _query.toLowerCase();
-      return _name(data).toLowerCase().contains(q) ||
-          (data['phone'] as String? ?? '').toLowerCase().contains(q) ||
-          (data['village'] as String? ?? '').toLowerCase().contains(q) ||
-          (data['memberNumber'] as String? ?? '').toLowerCase().contains(q);
-    }).toList();
-  }
-
+class _FarmerManagementScreenState extends State<FarmerManagementScreen> {
   @override
   Widget build(BuildContext context) {
+    final fmt = NumberFormat('#,###', 'en_US');
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
@@ -74,1263 +38,1014 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen>
                 onPressed: () => Navigator.pop(context),
               ),
         actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+            child: ElevatedButton.icon(
+              onPressed: () => _showAddMemberDialog(context),
+              icon: const Icon(Icons.person_add, size: 18),
+              label: const Text('Add Member'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+                foregroundColor: Colors.white,
+                elevation: 2,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.file_download_outlined),
             tooltip: 'Export Members',
             onPressed: _exportMembers,
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          indicatorColor: AppTheme.accent,
-          indicatorWeight: 3,
-          labelStyle: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
-          tabs: const [
-            Tab(text: 'All'),
-            Tab(text: 'KYC Pending'),
-            Tab(text: 'Verified'),
-          ],
-        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseService.getAllFarmers(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+            return const Center(child: CircularProgressIndicator());
           }
-          final all = snap.data?.docs ?? [];
-          final pending = all.where((d) =>
-              (d.data() as Map<String, dynamic>)['idStatus'] == 'pending').length;
-          final verified = all.where((d) =>
-              (d.data() as Map<String, dynamic>)['idStatus'] == 'approved').length;
 
-          return Column(
-            children: [
-              // Search + stats
-              Container(
-                color: AppTheme.primary,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _searchCtrl,
-                      style: GoogleFonts.poppins(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Search name, phone, location…',
-                        hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                        prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
-                        suffixIcon: _query.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear_rounded, color: Colors.white70),
-                                onPressed: () { _searchCtrl.clear(); setState(() => _query = ''); },
-                              )
-                            : null,
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.15),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
+          if (!snap.hasData || snap.data!.docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.people_outline, size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 16),
+                  Text('No members registered yet', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => _showAddMemberDialog(context),
+                    icon: const Icon(Icons.person_add),
+                    label: const Text('Add First Member'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                     ),
-                    const SizedBox(height: 10),
-                    Row(children: [
-                      _pill('Total', '${all.length}', Colors.white),
-                      const SizedBox(width: 8),
-                      _pill('KYC Pending', '$pending', AppTheme.warning),
-                      const SizedBox(width: 8),
-                      _pill('Verified', '$verified', AppTheme.success),
-                    ]),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabs,
-                  children: [
-                    _MemberList(docs: _filter(all, null), onTap: _open),
-                    _MemberList(docs: _filter(all, 'pending'), onTap: _open,
-                        emptyMsg: 'No pending KYC verifications.'),
-                    _MemberList(docs: _filter(all, 'approved'), onTap: _open,
-                        emptyMsg: 'No verified members yet.'),
-                  ],
-                ),
+            );
+          }
+
+          final members = snap.data!.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return {
+              'id': doc.id,
+              'memberNumber': data['memberNumber'] ?? 'N/A',
+              'accountNumber': data['accountNumber'] ?? 'N/A',
+              'name': data['name'] ?? data['fullName'] ?? 'N/A',
+              'phone': data['phone'] ?? 'N/A',
+              'village': data['village'] ?? 'N/A',
+              'savingsBalance': data['savingsBalance'] ?? 0,
+              'sharesBalance': data['sharesBalance'] ?? 0,
+              'loanBalance': data['loanBalance'] ?? 0,
+              'idStatus': data['idStatus'] ?? 'pending',
+              'createdAt': data['createdAt'],
+              'email': data['email'] ?? '',
+              'gender': data['gender'] ?? '',
+              'district': data['district'] ?? '',
+            };
+          }).toList();
+
+          return Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 1400),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-            ],
+              child: ProfessionalDataTable(
+                columns: [
+                  const DataTableColumn(key: 'memberNumber', label: 'Member No.', width: 120),
+                  const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 130),
+                  const DataTableColumn(key: 'name', label: 'Full Name', width: 180),
+                  const DataTableColumn(key: 'phone', label: 'Phone', width: 130),
+                  const DataTableColumn(key: 'village', label: 'Village', width: 130),
+                  DataTableColumn(
+                    key: 'savingsBalance',
+                    label: 'Savings',
+                    width: 120,
+                    builder: (row) => Text(
+                      'UGX ${fmt.format(row['savingsBalance'])}',
+                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.success),
+                    ),
+                  ),
+                  DataTableColumn(
+                    key: 'sharesBalance',
+                    label: 'Shares',
+                    width: 120,
+                    builder: (row) => Text(
+                      'UGX ${fmt.format(row['sharesBalance'])}',
+                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.blue.shade700),
+                    ),
+                  ),
+                  DataTableColumn(
+                    key: 'loanBalance',
+                    label: 'Loan',
+                    width: 120,
+                    builder: (row) {
+                      final loanBalance = row['loanBalance'] ?? 0;
+                      return Text(
+                        'UGX ${fmt.format(loanBalance)}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: loanBalance > 0 ? AppTheme.error : Colors.grey,
+                        ),
+                      );
+                    },
+                  ),
+                  DataTableColumn(
+                    key: 'idStatus',
+                    label: 'KYC Status',
+                    width: 110,
+                    builder: (row) {
+                      final status = row['idStatus'] ?? 'pending';
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: status == 'approved'
+                              ? AppTheme.success.withOpacity(0.1)
+                              : status == 'rejected'
+                                  ? AppTheme.error.withOpacity(0.1)
+                                  : AppTheme.warning.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          status,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: status == 'approved'
+                                ? AppTheme.success
+                                : status == 'rejected'
+                                    ? AppTheme.error
+                                    : AppTheme.warning,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    },
+                  ),
+                  DataTableColumn(
+                    key: 'actions',
+                    label: 'Actions',
+                    width: 100,
+                    builder: (row) => IconButton(
+                      icon: const Icon(Icons.visibility_outlined, size: 20),
+                      color: AppTheme.primary,
+                      onPressed: () => _showMemberDetailsDialog(context, row, fmt),
+                      tooltip: 'View Details',
+                    ),
+                  ),
+                ],
+                data: members,
+                onRowTap: (row) => _showMemberDetailsDialog(context, row, fmt),
+                filters: const [
+                  TableFilter(
+                    key: 'idStatus',
+                    label: 'KYC Status',
+                    options: [
+                      FilterOption(value: 'pending', label: 'Pending'),
+                      FilterOption(value: 'approved', label: 'Approved'),
+                      FilterOption(value: 'rejected', label: 'Rejected'),
+                    ],
+                  ),
+                ],
+                searchPlaceholder: 'Search by name, phone, member number...',
+              ),
+            ),
           );
         },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddMemberDialog(),
-        icon: const Icon(Icons.person_add),
-        label: const Text('Add Member'),
-        backgroundColor: AppTheme.primary,
       ),
     );
   }
 
-  void _showAddMemberDialog() {
+  void _showMemberDetailsDialog(BuildContext context, Map<String, dynamic> member, NumberFormat fmt) {
     showDialog(
       context: context,
-      builder: (context) => _AddMemberDialog(),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 700, maxHeight: 600),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.person, color: AppTheme.primary, size: 28),
+                      ),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(member['name'], style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
+                          Text(member['memberNumber'], style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+              const Divider(height: 32),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildInfoSection('Contact Information', [
+                        _buildInfoRow('Phone', member['phone']),
+                        _buildInfoRow('Email', member['email'].isEmpty ? 'N/A' : member['email']),
+                        _buildInfoRow('Village', member['village']),
+                        _buildInfoRow('District', member['district'].isEmpty ? 'N/A' : member['district']),
+                        _buildInfoRow('Account Number', member['accountNumber']),
+                      ]),
+                      const SizedBox(height: 24),
+                      _buildInfoSection('Financial Summary', [
+                        _buildInfoRow('Savings Balance', 'UGX ${fmt.format(member['savingsBalance'])}', color: AppTheme.success),
+                        _buildInfoRow('Shares Balance', 'UGX ${fmt.format(member['sharesBalance'])}', color: Colors.blue),
+                        _buildInfoRow('Loan Balance', 'UGX ${fmt.format(member['loanBalance'])}', 
+                            color: member['loanBalance'] > 0 ? AppTheme.error : Colors.grey),
+                      ]),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
+  }
+
+  Widget _buildInfoSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+          child: Column(children: children),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade700)),
+          Text(value, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: color ?? Colors.black87)),
+        ],
+      ),
+    );
+  }
+
+  void _showAddMemberDialog(BuildContext context) {
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final dobCtrl = TextEditingController();
+    final villageCtrl = TextEditingController();
+    final parishCtrl = TextEditingController();
+    final subcountyCtrl = TextEditingController();
+    final districtCtrl = TextEditingController();
+    final nextOfKinNameCtrl = TextEditingController();
+    final nextOfKinPhoneCtrl = TextEditingController();
+    final nextOfKinRelationCtrl = TextEditingController();
+    
+    String selectedGender = 'Male';
+    String selectedMemberType = 'Individual';
+    DateTime? selectedDOB;
+    String? photoUrl;
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 700, maxHeight: 800),
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.person_add, color: AppTheme.primary, size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Text('Add New Member', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      if (!isLoading)
+                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                  const Divider(height: 32),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Personal Information Section
+                          Text('Personal Information', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: nameCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Full Name *',
+                              prefixIcon: const Icon(Icons.person),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: phoneCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Phone Number *',
+                              prefixIcon: const Icon(Icons.phone),
+                              hintText: '256XXXXXXXXX',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: emailCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Email (Optional)',
+                              prefixIcon: const Icon(Icons.email),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: selectedGender,
+                                  decoration: InputDecoration(
+                                    labelText: 'Gender *',
+                                    prefixIcon: const Icon(Icons.wc),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  items: ['Male', 'Female'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                                  onChanged: (v) => setState(() => selectedGender = v!),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: dobCtrl,
+                                  decoration: InputDecoration(
+                                    labelText: 'Date of Birth *',
+                                    prefixIcon: const Icon(Icons.calendar_today),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  readOnly: true,
+                                  onTap: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: DateTime.now().subtract(const Duration(days: 6570)), // 18 years ago
+                                      firstDate: DateTime(1940),
+                                      lastDate: DateTime.now(),
+                                    );
+                                    if (date != null) {
+                                      setState(() {
+                                        selectedDOB = date;
+                                        dobCtrl.text = DateFormat('dd/MM/yyyy').format(date);
+                                      });
+                                    }
+                                  },
+                                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          // Address Section
+                          Text('Address Information', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: villageCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Village *',
+                              prefixIcon: const Icon(Icons.location_on),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: parishCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Parish/Division *',
+                              prefixIcon: const Icon(Icons.map),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: subcountyCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Subcounty/Division *',
+                              prefixIcon: const Icon(Icons.location_city),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: districtCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'District *',
+                              prefixIcon: const Icon(Icons.location_city_outlined),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          // Photo Upload
+                          Text('Passport Photo', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.photo_camera, color: Colors.grey.shade600),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    photoUrl != null ? 'Photo uploaded' : 'Upload passport photo',
+                                    style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade600),
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: null, // TODO: Implement photo upload
+                                  icon: const Icon(Icons.upload, size: 18),
+                                  label: const Text('Upload'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          // Next of Kin Section
+                          Text('Next of Kin Details', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: nextOfKinNameCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Next of Kin Name *',
+                              prefixIcon: const Icon(Icons.person_outline),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: nextOfKinPhoneCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Next of Kin Phone *',
+                              prefixIcon: const Icon(Icons.phone_outlined),
+                              hintText: '256XXXXXXXXX',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          TextFormField(
+                            controller: nextOfKinRelationCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Relationship *',
+                              prefixIcon: const Icon(Icons.family_restroom),
+                              hintText: 'e.g., Spouse, Parent, Sibling',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          // Member Type Section
+                          Text('Member Information', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                          const SizedBox(height: 16),
+                          
+                          DropdownButtonFormField<String>(
+                            value: selectedMemberType,
+                            decoration: InputDecoration(
+                              labelText: 'Member Type *',
+                              prefixIcon: const Icon(Icons.group),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            items: ['Individual', 'Group'].map((type) => 
+                              DropdownMenuItem(value: type, child: Text(type))
+                            ).toList(),
+                            onChanged: (v) => setState(() => selectedMemberType = v!),
+                          ),
+                          const SizedBox(height: 12),
+                          
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Account number, PIN, and login credentials will be auto-generated and sent via SMS',
+                                    style: GoogleFonts.poppins(fontSize: 12, color: Colors.blue.shade900),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      if (!isLoading)
+                        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
+                      if (!isLoading) const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  if (!formKey.currentState!.validate()) return;
+                                  
+                                  // Show preview dialog before saving
+                                  final confirmed = await _showMemberPreview(
+                                    context: context,
+                                    name: nameCtrl.text.trim(),
+                                    phone: phoneCtrl.text.trim(),
+                                    email: emailCtrl.text.trim(),
+                                    gender: selectedGender,
+                                    dateOfBirth: selectedDOB!,
+                                    village: villageCtrl.text.trim(),
+                                    parish: parishCtrl.text.trim(),
+                                    subcounty: subcountyCtrl.text.trim(),
+                                    district: districtCtrl.text.trim(),
+                                    nextOfKinName: nextOfKinNameCtrl.text.trim(),
+                                    nextOfKinPhone: nextOfKinPhoneCtrl.text.trim(),
+                                    nextOfKinRelation: nextOfKinRelationCtrl.text.trim(),
+                                    memberType: selectedMemberType,
+                                  );
+                                  
+                                  if (confirmed != true) return;
+                                  
+                                  setState(() => isLoading = true);
+                                  try {
+                                    await _createMember(
+                                      name: nameCtrl.text.trim(),
+                                      phone: phoneCtrl.text.trim(),
+                                      email: emailCtrl.text.trim(),
+                                      gender: selectedGender,
+                                      dateOfBirth: selectedDOB!,
+                                      village: villageCtrl.text.trim(),
+                                      parish: parishCtrl.text.trim(),
+                                      subcounty: subcountyCtrl.text.trim(),
+                                      district: districtCtrl.text.trim(),
+                                      nextOfKinName: nextOfKinNameCtrl.text.trim(),
+                                      nextOfKinPhone: nextOfKinPhoneCtrl.text.trim(),
+                                      nextOfKinRelation: nextOfKinRelationCtrl.text.trim(),
+                                      memberType: selectedMemberType,
+                                      photoUrl: photoUrl,
+                                    );
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      // Show centered success dialog
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          title: Row(
+                                            children: [
+                                              Icon(Icons.check_circle, color: Colors.green.shade600, size: 28),
+                                              const SizedBox(width: 12),
+                                              Text(
+                                                'Member Added',
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          content: Text(
+                                            'Member has been successfully added to the system',
+                                            style: GoogleFonts.poppins(fontSize: 15),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(context),
+                                              child: Text(
+                                                'OK',
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.primary,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      // Show centered error dialog
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          title: Row(
+                                            children: [
+                                              Icon(Icons.error_outline, color: Colors.red.shade600, size: 28),
+                                              const SizedBox(width: 12),
+                                              Text(
+                                                'Error',
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          content: Text(
+                                            e.toString().replaceFirst('Exception: ', ''),
+                                            style: GoogleFonts.poppins(fontSize: 15),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(context),
+                                              child: Text(
+                                                'OK',
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.primary,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                  } finally {
+                                    if (mounted) setState(() => isLoading = false);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: isLoading
+                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Text('Add Member'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool?> _showMemberPreview({
+    required BuildContext context,
+    required String name,
+    required String phone,
+    required String email,
+    required String gender,
+    required DateTime dateOfBirth,
+    required String village,
+    required String parish,
+    required String subcounty,
+    required String district,
+    required String nextOfKinName,
+    required String nextOfKinPhone,
+    required String nextOfKinRelation,
+    required String memberType,
+  }) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.preview, color: AppTheme.primary),
+            const SizedBox(width: 12),
+            Text('Preview Member Details', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Please review the information before saving:', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
+              const SizedBox(height: 16),
+              
+              _previewSection('Personal Information', [
+                _previewItem('Full Name', name),
+                _previewItem('Phone', phone),
+                if (email.isNotEmpty) _previewItem('Email', email),
+                _previewItem('Gender', gender),
+                _previewItem('Date of Birth', '${dateOfBirth.day}/${dateOfBirth.month}/${dateOfBirth.year}'),
+              ]),
+              
+              _previewSection('Address', [
+                _previewItem('Village', village),
+                _previewItem('Parish/Division', parish),
+                _previewItem('Subcounty/Division', subcounty),
+                _previewItem('District', district),
+              ]),
+              
+              _previewSection('Next of Kin', [
+                _previewItem('Name', nextOfKinName),
+                _previewItem('Phone', nextOfKinPhone),
+                _previewItem('Relationship', nextOfKinRelation),
+              ]),
+              
+              _previewSection('Member Type', [
+                _previewItem('Type', memberType),
+              ]),
+              
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.green.shade700, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Account credentials will be auto-generated and sent via SMS',
+                        style: GoogleFonts.poppins(fontSize: 11, color: Colors.green.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Edit'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            child: const Text('Confirm & Save'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _previewSection(String title, List<Widget> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+        const SizedBox(height: 8),
+        ...items,
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+  
+  Widget _previewItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text('$label:', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
+          ),
+          Expanded(
+            child: Text(value, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createMember({
+    required String name,
+    required String phone,
+    required String email,
+    required String gender,
+    required DateTime dateOfBirth,
+    required String village,
+    required String parish,
+    required String subcounty,
+    required String district,
+    required String nextOfKinName,
+    required String nextOfKinPhone,
+    required String nextOfKinRelation,
+    required String memberType,
+    String? photoUrl,
+  }) async {
+    final memberId = 'phone_$phone';
+    final tenantId = FirebaseService.sessionTenantId;
+    
+    final existing = await FirebaseFirestore.instance.collection(AppConstants.usersCol).doc(memberId).get();
+    if (existing.exists) throw Exception('Member with this phone number already exists');
+    
+    // Generate account number using the service
+    final accountNumber = await AccountNumberService.generateNext();
+    
+    // Generate member number (simple sequential)
+    final membersCount = await FirebaseFirestore.instance
+        .collection('saccoplus-members')
+        .where('tenantId', isEqualTo: tenantId)
+        .count()
+        .get();
+    final memberNumber = 'M${((membersCount.count ?? 0) + 1).toString().padLeft(6, '0')}';
+    
+    // Generate random 4-digit PIN
+    final random = Random();
+    final pin = (1000 + random.nextInt(9000)).toString();
+    
+    // Generate temporary password (first 4 letters of name + last 4 digits of phone)
+    final tempPassword = '${name.replaceAll(' ', '').substring(0, min(4, name.length)).toLowerCase()}${phone.substring(phone.length - 4)}';
+    
+    final now = Timestamp.now();
+    
+    final memberData = {
+      'tenantId': tenantId,
+      'memberNumber': memberNumber,
+      'accountNumber': accountNumber,
+      'name': name,
+      'fullName': name,
+      'phone': phone,
+      'email': email.isNotEmpty ? email : null,
+      'gender': gender,
+      'dateOfBirth': Timestamp.fromDate(dateOfBirth),
+      'village': village,
+      'parish': parish,
+      'subcounty': subcounty,
+      'district': district,
+      'photoUrl': photoUrl,
+      'nextOfKin': {
+        'name': nextOfKinName,
+        'phone': nextOfKinPhone,
+        'relationship': nextOfKinRelation,
+      },
+      'memberType': memberType,
+      'pin': pin, // Store hashed in production
+      'tempPassword': tempPassword,
+      'savingsBalance': 0,
+      'sharesBalance': 0,
+      'loanBalance': 0,
+      'idStatus': 'pending',
+      'role': 'farmer',
+      'status': 'active',
+      'createdAt': now,
+      'updatedAt': now,
+      'createdBy': FirebaseService.sessionUid,
+    };
+    
+    // Create member document
+    await FirebaseFirestore.instance.collection('saccoplus-members').doc(memberId).set(memberData);
+    
+    // Also create in users collection for authentication
+    await FirebaseFirestore.instance.collection(AppConstants.usersCol).doc(memberId).set(memberData);
+    
+    // Audit log
+    await AuditService.log(
+      action: 'MEMBER_CREATED',
+      description: 'Created new member: $name',
+      targetId: memberId,
+      targetName: name,
+      meta: {'memberNumber': memberNumber, 'accountNumber': accountNumber},
+    );
+    
+    // TODO: Send SMS with credentials
+    // SMS message format:
+    // "Welcome to SACCOPLUS! Your account has been created.
+    // Account No: $accountNumber
+    // Member No: $memberNumber  
+    // Username: $phone
+    // PIN: $pin
+    // Temp Password: $tempPassword
+    // Please change your password on first login."
+    
+    print('📱 SMS would be sent to $phone:');
+    print('Account: $accountNumber, Member: $memberNumber, PIN: $pin, Password: $tempPassword');
   }
 
   Future<void> _exportMembers() async {
     try {
-      // Show loading
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Exporting members...'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-
-      // Fetch all members
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exporting members...'), duration: Duration(seconds: 2)));
       final members = await FirebaseService.getAllFarmersOnce();
-      
       if (members.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No members to export'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No members to export'), backgroundColor: Colors.orange));
         return;
       }
-
-      // Export to CSV
       CsvExport.exportMembers(members);
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Exported ${members.length} members successfully!'),
-          backgroundColor: AppTheme.success,
-        ),
+        SnackBar(content: Text('Exported ${members.length} members successfully!'), backgroundColor: AppTheme.success),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Export failed: ${e.toString()}'),
-          backgroundColor: AppTheme.error,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: ${e.toString()}'), backgroundColor: AppTheme.error));
     }
-  }
-
-  Widget _pill(String label, String value, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-    decoration: BoxDecoration(
-      color: color.withOpacity(0.18),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: color.withOpacity(0.5)),
-    ),
-    child: Text('$label: $value',
-        style: GoogleFonts.poppins(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
-  );
-
-  void _open(String docId, Map<String, dynamic> data) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 800),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Member360Screen(memberId: docId),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Member List ──────────────────────────────────────────────────────────────
-class _MemberList extends StatelessWidget {
-  final List<QueryDocumentSnapshot> docs;
-  final void Function(String docId, Map<String, dynamic> data) onTap;
-  final String emptyMsg;
-
-  const _MemberList({
-    required this.docs,
-    required this.onTap,
-    this.emptyMsg = 'No members found.',
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (docs.isEmpty) {
-      return EmptyState(message: emptyMsg, icon: Icons.people_outline_rounded);
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: docs.length,
-      itemBuilder: (_, i) {
-        final doc = docs[i];
-        final data = doc.data() as Map<String, dynamic>;
-        final name = (data['name'] as String? ?? data['fullName'] as String? ?? 'Member').trim();
-        final phone = data['phone'] as String? ?? '';
-        final village = data['village'] as String? ?? '';
-        final idStatus = data['idStatus'] as String? ?? '';
-        final profileImage = data['profileImage'] as String? ?? '';
-        final memberNo = data['memberNumber'] as String? ?? '';
-
-        Color statusColor;
-        IconData statusIcon;
-        String statusLabel;
-        switch (idStatus) {
-          case 'approved':
-            statusColor = AppTheme.success;
-            statusIcon = Icons.verified_rounded;
-            statusLabel = 'Verified';
-            break;
-          case 'pending':
-            statusColor = AppTheme.warning;
-            statusIcon = Icons.schedule_rounded;
-            statusLabel = 'KYC Pending';
-            break;
-          case 'rejected':
-            statusColor = AppTheme.error;
-            statusIcon = Icons.cancel_rounded;
-            statusLabel = 'Rejected';
-            break;
-          default:
-            statusColor = AppTheme.textSecondary;
-            statusIcon = Icons.person_outline_rounded;
-            statusLabel = 'No KYC';
-        }
-
-        return GestureDetector(
-          onTap: () => onTap(doc.id, data),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: idStatus == 'pending'
-                  ? Border.all(color: AppTheme.warning.withOpacity(0.4))
-                  : Border.all(color: AppTheme.divider),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))
-              ],
-            ),
-            child: Row(
-              children: [
-                // Avatar
-                CircleAvatar(
-                  radius: 26,
-                  backgroundColor: AppTheme.primary.withOpacity(0.1),
-                  backgroundImage: profileImage.isNotEmpty ? NetworkImage(profileImage) : null,
-                  child: profileImage.isEmpty
-                      ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'M',
-                          style: GoogleFonts.poppins(
-                              color: AppTheme.primary, fontWeight: FontWeight.w700, fontSize: 18))
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name,
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14)),
-                      const SizedBox(height: 2),
-                      Text(
-                        [if (phone.isNotEmpty) phone, if (village.isNotEmpty) village]
-                            .join('  •  '),
-                        style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary),
-                      ),
-                      if (memberNo.isNotEmpty)
-                        Text('Member #$memberNo',
-                            style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textSecondary)),
-                    ],
-                  ),
-                ),
-                // KYC badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: statusColor.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(statusIcon, size: 12, color: statusColor),
-                      const SizedBox(width: 4),
-                      Text(statusLabel,
-                          style: GoogleFonts.poppins(
-                              fontSize: 10, color: statusColor, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ─── Member Detail Screen (Full KYC) ─────────────────────────────────────────
-class MemberDetailScreen extends StatefulWidget {
-  final String docId;
-  final Map<String, dynamic> initialData;
-
-  const MemberDetailScreen({super.key, required this.docId, required this.initialData});
-
-  @override
-  State<MemberDetailScreen> createState() => _MemberDetailScreenState();
-}
-
-class _MemberDetailScreenState extends State<MemberDetailScreen>
-    with SingleTickerProviderStateMixin {
-  bool _updating = false;
-  final fmt = NumberFormat('#,###', 'en_US');
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 5, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _updateKyc(String status, {String? note}) async {
-    setState(() => _updating = true);
-    try {
-      await FirebaseService.updateIdVerificationStatus(widget.docId, status);
-      AuditService.log(
-        action: status == 'approved' ? AuditService.kKycApproved : AuditService.kKycRejected,
-        description: 'KYC ${status} for member',
-        targetId: widget.docId,
-        targetName: widget.initialData['name'] as String? ?? '',
-        meta: note != null ? {'note': note} : null,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(status == 'approved'
-              ? 'KYC approved. Member notified via SMS.'
-              : 'KYC rejected. Member notified via SMS.'),
-          backgroundColor: status == 'approved' ? AppTheme.success : AppTheme.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: AppTheme.error,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _updating = false);
-    }
-  }
-
-  void _showRejectDialog() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('Reject KYC',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Provide a reason (optional). The member will be notified via SMS.',
-                style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textSecondary)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'e.g. ID image is blurry, please resubmit',
-                hintStyle: GoogleFonts.poppins(fontSize: 13),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.poppins())),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _updateKyc('rejected', note: ctrl.text.trim());
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            child: Text('Reject', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.surface,
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseService.getUserProfileStream(widget.docId),
-        builder: (context, snap) {
-          final f = (snap.hasData && snap.data!.exists)
-              ? snap.data!.data() as Map<String, dynamic>
-              : widget.initialData;
-
-          final name = (f['name'] as String? ?? f['fullName'] as String? ?? 'Member').trim();
-          final phone = f['phone'] as String? ?? '—';
-          final village = f['village'] as String? ?? '—';
-          final occupation = f['occupation'] as String? ?? f['district'] as String? ?? '—';
-          final memberType = f['memberType'] as String? ?? f['farmType'] as String? ?? '—';
-          final nextOfKin = f['nextOfKin'] as String? ?? '—';
-          final memberStatus = f['memberStatus'] as String? ?? 'Active';
-          final memberNo = f['memberNumber'] as String? ?? '—';
-          final idStatus = f['idStatus'] as String? ?? '';
-          final idType = f['idType'] as String? ?? '—';
-          final frontUrl = f['idFrontUrl'] as String? ?? '';
-          final backUrl = f['idBackUrl'] as String? ?? '';
-          final profileImage = f['profileImage'] as String? ?? '';
-          final createdAt = f['createdAt'];
-          String joinDate = '—';
-          if (createdAt is String && createdAt.isNotEmpty) {
-            try {
-              joinDate = DateFormat('MMM d, yyyy').format(DateTime.parse(createdAt));
-            } catch (_) {}
-          }
-
-          // KYC status styling
-          Color kycColor;
-          IconData kycIcon;
-          String kycLabel;
-          switch (idStatus) {
-            case 'approved':
-              kycColor = AppTheme.success; kycIcon = Icons.verified_rounded; kycLabel = 'KYC VERIFIED';
-              break;
-            case 'pending':
-              kycColor = AppTheme.warning; kycIcon = Icons.schedule_rounded; kycLabel = 'KYC PENDING';
-              break;
-            case 'rejected':
-              kycColor = AppTheme.error; kycIcon = Icons.cancel_rounded; kycLabel = 'KYC REJECTED';
-              break;
-            default:
-              kycColor = AppTheme.textSecondary; kycIcon = Icons.help_outline_rounded; kycLabel = 'NOT SUBMITTED';
-          }
-
-          return CustomScrollView(
-            slivers: [
-              // ── Header ──────────────────────────────────────────────────
-              SliverAppBar(
-                expandedHeight: 220,
-                pinned: true,
-                backgroundColor: AppTheme.primary,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                actions: [
-                  // KYC status badge in app bar
-                  Container(
-                    margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: kycColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: kycColor.withOpacity(0.5)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(kycIcon, size: 13, color: Colors.white),
-                        const SizedBox(width: 5),
-                        Text(kycLabel,
-                            style: GoogleFonts.poppins(
-                                fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                ],
-                flexibleSpace: FlexibleSpaceBar(
-                  background: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [AppTheme.primaryDark, AppTheme.primaryLight],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    child: SafeArea(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 40),
-                          // Profile photo
-                          Stack(
-                            alignment: Alignment.bottomRight,
-                            children: [
-                              CircleAvatar(
-                                radius: 44,
-                                backgroundColor: Colors.white.withOpacity(0.2),
-                                backgroundImage: profileImage.isNotEmpty
-                                    ? NetworkImage(profileImage) : null,
-                                child: profileImage.isEmpty
-                                    ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'M',
-                                        style: GoogleFonts.poppins(
-                                            color: Colors.white, fontWeight: FontWeight.w800, fontSize: 32))
-                                    : null,
-                              ),
-                              if (idStatus == 'approved')
-                                Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: const BoxDecoration(
-                                      color: AppTheme.success, shape: BoxShape.circle),
-                                  child: const Icon(Icons.check_rounded, color: Colors.white, size: 14),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text(name,
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
-                          Text(phone,
-                              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
-                          if (memberNo != '—')
-                            Text('Member #$memberNo',
-                                style: GoogleFonts.poppins(color: Colors.white54, fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-
-                      // ── Personal Info ──────────────────────────────────
-                      _section('Personal Information'),
-                      _infoCard([
-                        _row(Icons.phone_outlined, 'Phone', phone),
-                        _row(Icons.location_on_outlined, 'Village / Location', village),
-                        _row(Icons.work_outline_rounded, 'Occupation', occupation),
-                        _row(Icons.people_outline_rounded, 'Next of Kin', nextOfKin),
-                        _row(Icons.calendar_today_outlined, 'Joined', joinDate),
-                      ]),
-
-                      const SizedBox(height: 16),
-
-                      // ── Membership ─────────────────────────────────────
-                      _section('Membership'),
-                      _infoCard([
-                        _row(Icons.badge_outlined, 'Member Number', memberNo),
-                        _row(Icons.category_outlined, 'Member Type', memberType),
-                        _row(Icons.verified_user_outlined, 'Account Status', memberStatus),
-                      ]),
-
-                      const SizedBox(height: 16),
-
-                      // ── KYC / ID Verification ──────────────────────────
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _section('KYC / ID Verification', noBottom: true),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: kycColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: kycColor.withOpacity(0.3)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(kycIcon, size: 12, color: kycColor),
-                                const SizedBox(width: 4),
-                                Text(kycLabel,
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 10, color: kycColor, fontWeight: FontWeight.w700)),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-
-                      if (idStatus.isEmpty && frontUrl.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surface,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.divider),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.info_outline_rounded, color: AppTheme.textSecondary),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text('This member has not submitted ID documents yet.',
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 13, color: AppTheme.textSecondary)),
-                              ),
-                            ],
-                          ),
-                        )
-                      else ...[
-                        _infoCard([
-                          _row(Icons.badge_outlined, 'ID Type', idType),
-                        ]),
-                        const SizedBox(height: 12),
-
-                        // ID images — full width, zoomable
-                        if (frontUrl.isNotEmpty || backUrl.isNotEmpty) ...[
-                          Text('ID Documents',
-                              style: GoogleFonts.poppins(
-                                  fontSize: 13, fontWeight: FontWeight.w600,
-                                  color: AppTheme.textPrimary)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              if (frontUrl.isNotEmpty)
-                                Expanded(child: _idImage('Front', frontUrl)),
-                              if (frontUrl.isNotEmpty && backUrl.isNotEmpty)
-                                const SizedBox(width: 10),
-                              if (backUrl.isNotEmpty)
-                                Expanded(child: _idImage('Back', backUrl)),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // ── KYC Action Buttons ─────────────────────────
-                        if (_updating)
-                          const Center(child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: CircularProgressIndicator(color: AppTheme.primary),
-                          ))
-                        else if (idStatus == 'pending') ...[
-                          // Prominent approve/reject for pending
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.warning.withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppTheme.warning.withOpacity(0.3)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(children: [
-                                  const Icon(Icons.pending_actions_rounded,
-                                      color: AppTheme.warning, size: 18),
-                                  const SizedBox(width: 8),
-                                  Text('Action Required',
-                                      style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14, color: AppTheme.warning)),
-                                ]),
-                                const SizedBox(height: 6),
-                                Text('Review the ID documents above and approve or reject this member\'s KYC.',
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 12, color: AppTheme.textSecondary)),
-                                const SizedBox(height: 14),
-                                Row(children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: _showRejectDialog,
-                                      icon: const Icon(Icons.close_rounded, size: 16),
-                                      label: const Text('Reject'),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: AppTheme.error,
-                                        side: const BorderSide(color: AppTheme.error),
-                                        padding: const EdgeInsets.symmetric(vertical: 13),
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 2,
-                                    child: ElevatedButton.icon(
-                                      onPressed: () => _updateKyc('approved'),
-                                      icon: const Icon(Icons.verified_rounded, size: 16),
-                                      label: const Text('Approve KYC'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppTheme.success,
-                                        padding: const EdgeInsets.symmetric(vertical: 13),
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                    ),
-                                  ),
-                                ]),
-                              ],
-                            ),
-                          ),
-                        ] else if (idStatus == 'approved') ...[
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.success.withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppTheme.success.withOpacity(0.3)),
-                            ),
-                            child: Row(children: [
-                              const Icon(Icons.verified_rounded, color: AppTheme.success, size: 22),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text('KYC Approved',
-                                      style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.w700, color: AppTheme.success)),
-                                  Text('This member is fully verified and can apply for loans.',
-                                      style: GoogleFonts.poppins(
-                                          fontSize: 12, color: AppTheme.textSecondary)),
-                                ]),
-                              ),
-                            ]),
-                          ),
-                          const SizedBox(height: 10),
-                          OutlinedButton.icon(
-                            onPressed: _showRejectDialog,
-                            icon: const Icon(Icons.undo_rounded, size: 16),
-                            label: const Text('Revoke KYC Approval'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.error,
-                              side: const BorderSide(color: AppTheme.error),
-                              minimumSize: const Size(double.infinity, 46),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ] else if (idStatus == 'rejected') ...[
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.error.withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppTheme.error.withOpacity(0.3)),
-                            ),
-                            child: Row(children: [
-                              const Icon(Icons.cancel_rounded, color: AppTheme.error, size: 22),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text('KYC Rejected',
-                                      style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.w700, color: AppTheme.error)),
-                                  Text('Member has been notified to resubmit documents.',
-                                      style: GoogleFonts.poppins(
-                                          fontSize: 12, color: AppTheme.textSecondary)),
-                                ]),
-                              ),
-                            ]),
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton.icon(
-                            onPressed: () => _updateKyc('approved'),
-                            icon: const Icon(Icons.verified_rounded, size: 16),
-                            label: const Text('Approve Anyway'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.success,
-                              minimumSize: const Size(double.infinity, 46),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ],
-                      ],
-
-                      const SizedBox(height: 32),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _section(String title, {bool noBottom = false}) => Padding(
-    padding: EdgeInsets.only(bottom: noBottom ? 0 : 8),
-    child: Text(title,
-        style: GoogleFonts.poppins(
-            fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primary)),
-  );
-
-  Widget _infoCard(List<Widget> rows) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: AppTheme.divider),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
-    ),
-    child: Column(children: rows),
-  );
-
-  Widget _row(IconData icon, String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: Row(children: [
-      Container(
-        padding: const EdgeInsets.all(7),
-        decoration: BoxDecoration(
-            color: AppTheme.primary.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(8)),
-        child: Icon(icon, size: 16, color: AppTheme.primary),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label,
-              style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textSecondary)),
-          Text(value,
-              style: GoogleFonts.poppins(
-                  fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
-        ]),
-      ),
-    ]),
-  );
-
-  Widget _idImage(String label, String url) {
-    return GestureDetector(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => _ImageViewerScreen(title: label, url: url))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary)),
-          const SizedBox(height: 6),
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  url,
-                  height: 140,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) => progress == null
-                      ? child
-                      : Container(
-                          height: 140,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        ),
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 140,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Center(
-                        child: Icon(Icons.broken_image_outlined, color: Colors.grey, size: 36)),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 8, right: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 16),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Full-screen Image Viewer ─────────────────────────────────────────────────
-class _ImageViewerScreen extends StatelessWidget {
-  final String title;
-  final String url;
-  const _ImageViewerScreen({required this.title, required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(title, style: GoogleFonts.poppins(color: Colors.white, fontSize: 15)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          minScale: 0.5,
-          maxScale: 6.0,
-          child: Image.network(
-            url,
-            fit: BoxFit.contain,
-            loadingBuilder: (_, child, progress) => progress == null
-                ? child
-                : const Center(child: CircularProgressIndicator(color: Colors.white)),
-            errorBuilder: (_, __, ___) =>
-                const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADD MEMBER DIALOG
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _AddMemberDialog extends StatefulWidget {
-  @override
-  State<_AddMemberDialog> createState() => _AddMemberDialogState();
-}
-
-class _AddMemberDialogState extends State<_AddMemberDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _villageController = TextEditingController();
-  final _districtController = TextEditingController();
-  final _ninController = TextEditingController();
-  bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
-    _villageController.dispose();
-    _districtController.dispose();
-    _ninController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 500),
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(Icons.person_add, color: AppTheme.primary, size: 28),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Add New Member',
-                        style: GoogleFonts.poppins(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name *',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Name is required';
-                    }
-                    return null;
-                  },
-                  textCapitalization: TextCapitalization.words,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone Number *',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.phone),
-                    hintText: '256XXXXXXXXX',
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Phone number is required';
-                    }
-                    if (!RegExp(r'^256\d{9}$').hasMatch(value.trim())) {
-                      return 'Invalid phone (use format: 256XXXXXXXXX)';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email (Optional)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.email),
-                  ),
-                  validator: (value) {
-                    if (value != null && value.isNotEmpty) {
-                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                        return 'Invalid email address';
-                      }
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _villageController,
-                        decoration: const InputDecoration(
-                          labelText: 'Village',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.location_on),
-                        ),
-                        textCapitalization: TextCapitalization.words,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _districtController,
-                        decoration: const InputDecoration(
-                          labelText: 'District',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.map),
-                        ),
-                        textCapitalization: TextCapitalization.words,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _ninController,
-                  decoration: const InputDecoration(
-                    labelText: 'National ID (NIN) - Optional',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.badge),
-                    hintText: 'CM...',
-                  ),
-                  textCapitalization: TextCapitalization.characters,
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isLoading ? null : () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: Text('Cancel', style: GoogleFonts.poppins()),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _addMember,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                'Add Member',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _addMember() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final phone = _phoneController.text.trim();
-      final memberId = 'phone_$phone';
-      
-      // Check if member already exists
-      final existingMember = await FirebaseFirestore.instance
-          .collection(AppConstants.usersCol)
-          .doc(memberId)
-          .get();
-
-      if (existingMember.exists) {
-        throw Exception('Member with this phone number already exists');
-      }
-
-      // Generate member number
-      final memberNumber = await _generateMemberNumber();
-
-      // Create member data
-      final memberData = {
-        'id': memberId,
-        'tenantId': FirebaseService.sessionTenantId,
-        'name': _nameController.text.trim(),
-        'fullName': _nameController.text.trim(),
-        'phone': phone,
-        'phoneNumber': phone,
-        'email': _emailController.text.trim(),
-        'village': _villageController.text.trim(),
-        'district': _districtController.text.trim(),
-        'nin': _ninController.text.trim(),
-        'memberNumber': memberNumber,
-        'role': AppConstants.roleMember,
-        'idStatus': 'pending',
-        'walletBalance': 0,
-        'savingsBalance': 0,
-        'sharesBalance': 0,
-        'totalShares': 0,
-        'loanBalance': 0,
-        'createdAt': FieldValue.serverTimestamp(),
-        'createdBy': FirebaseService.sessionUid,
-        'registrationDate': FieldValue.serverTimestamp(),
-        'addedByAdmin': true,
-      };
-
-      // Add to Firestore - use AppConstants.usersCol to match getAllFarmers()
-      await FirebaseFirestore.instance
-          .collection(AppConstants.usersCol)
-          .doc(memberId)
-          .set(memberData);
-
-      // Audit log
-      await AuditService.log(
-        action: 'MEMBER_ADDED',
-        description: 'Admin added new member: ${_nameController.text.trim()}',
-        targetId: memberId,
-        targetName: _nameController.text.trim(),
-        meta: {
-          'phone': phone,
-          'memberNumber': memberNumber,
-        },
-      );
-
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Member added successfully! Member #: $memberNumber',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: AppTheme.success,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Error: ${e.toString()}',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: AppTheme.error,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<String> _generateMemberNumber() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection(AppConstants.usersCol)
-        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-        .where('role', isEqualTo: AppConstants.roleMember)
-        .get();
-
-    final count = snapshot.docs.length + 1;
-    return 'MEM${DateTime.now().year}${count.toString().padLeft(4, '0')}';
   }
 }

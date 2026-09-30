@@ -15,10 +15,11 @@ import '../common/about_screen.dart';
 import '../common/settings_screen.dart';
 import 'loan_approval_screen.dart';
 import 'farmer_management_screen.dart';
-import 'migration_screen.dart';
 import 'create_loan_screen.dart';
 import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
+import 'migrate_shares_screen.dart';
+import 'migrate_loans_screen.dart';
 import 'teller_screen.dart';
 import 'enhanced_audit_screen.dart';
 import 'loan_portfolio_screen.dart';
@@ -108,35 +109,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
       'expenses': const ExpensesScreen(),
       'ledger': const GeneralLedgerScreen(),
       'financial_reports': const ComprehensiveReportsScreen(embedded: true),
+      'migrate_shares': const MigrateSharesScreen(),
+      'migrate_loans': const MigrateLoansScreen(),
       
       // INTELLIGENCE
-      'intelligence': const _PlaceholderScreen(title: 'SACCO Intelligence', icon: Icons.psychology_rounded),
       'risk_center': LoanRiskCenterScreen(tenantId: FirebaseService.sessionTenantId),
-      'fraud': const _PlaceholderScreen(title: 'Fraud Monitor', icon: Icons.water_drop_rounded),
       'liquidity': LiquidityMonitorScreen(tenantId: FirebaseService.sessionTenantId),
-      'analytics': const _PlaceholderScreen(title: 'Analytics', icon: Icons.analytics_rounded),
-      
-      // GOVERNANCE
-      'board': const _PlaceholderScreen(title: 'Board & Committees', icon: Icons.groups_rounded),
-      'meetings': const _PlaceholderScreen(title: 'Meetings', icon: Icons.event_rounded),
-      'agm': const _PlaceholderScreen(title: 'AGM', icon: Icons.assignment_rounded),
-      'resolutions': const _PlaceholderScreen(title: 'Resolutions', icon: Icons.task_alt_rounded),
-      'policies': const _PlaceholderScreen(title: 'Policies & Documents', icon: Icons.description_rounded),
-      
-      // COMPLIANCE
-      'compliance': const _PlaceholderScreen(title: 'Compliance Center', icon: Icons.verified_rounded),
-      'regulatory': const _PlaceholderScreen(title: 'Regulatory Reports', icon: Icons.bar_chart_rounded),
-      'audit_reviews': const _PlaceholderScreen(title: 'Audit & Reviews', icon: Icons.fact_check_rounded),
-      'kyc_compliance': const _PlaceholderScreen(title: 'KYC Compliance', icon: Icons.check_circle_rounded),
-      'aml': const _PlaceholderScreen(title: 'AML/CFT', icon: Icons.policy_rounded),
       
       // OPERATIONS
-      'branches': const _PlaceholderScreen(title: 'Branches', icon: Icons.location_on_rounded),
       'staff': const StaffManagementScreen(),
       'notifications': const AdminNotificationsScreen(),
       
       // SYSTEM
-      'roles': const _PlaceholderScreen(title: 'Roles & Permissions', icon: Icons.security_rounded),
       'settings': const SaccoSettingsScreen(),
       'audit': const EnhancedAuditScreen(embedded: true),
       'reports': const ReportsScreen(embedded: true),
@@ -433,6 +417,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   {'icon': Icons.money_off_rounded, 'label': 'Expenses', 'route': 'expenses'},
                   {'icon': Icons.book_rounded, 'label': 'General Ledger', 'route': 'ledger'},
                   {'icon': Icons.assessment_rounded, 'label': 'Financial Reports', 'route': 'financial_reports'},
+                  {'icon': Icons.upload_file_rounded, 'label': 'Migrate Shares', 'route': 'migrate_shares'},
+                  {'icon': Icons.account_balance_rounded, 'label': 'Migrate Loans', 'route': 'migrate_loans'},
                 ],
               ),
               
@@ -441,46 +427,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 'Intelligence',
                 Icons.psychology_rounded,
                 [
-                  {'icon': Icons.psychology_rounded, 'label': 'SACCO Intelligence', 'route': 'intelligence'},
                   {'icon': Icons.shield_rounded, 'label': 'Risk Center', 'route': 'risk_center'},
-                  {'icon': Icons.water_drop_rounded, 'label': 'Fraud Monitor', 'route': 'fraud'},
                   {'icon': Icons.water_rounded, 'label': 'Liquidity Monitor', 'route': 'liquidity'},
-                  {'icon': Icons.analytics_rounded, 'label': 'Analytics', 'route': 'analytics'},
                 ],
               ),
               
-              // GOVERNANCE SECTION - Collapsible
-              _buildExpansionSection(
-                'Governance',
-                Icons.groups_rounded,
-                [
-                  {'icon': Icons.groups_rounded, 'label': 'Board & Committees', 'route': 'board'},
-                  {'icon': Icons.event_rounded, 'label': 'Meetings', 'route': 'meetings'},
-                  {'icon': Icons.assignment_rounded, 'label': 'AGM', 'route': 'agm'},
-                  {'icon': Icons.task_alt_rounded, 'label': 'Resolutions', 'route': 'resolutions'},
-                  {'icon': Icons.description_rounded, 'label': 'Policies & Documents', 'route': 'policies'},
-                ],
-              ),
-              
-              // COMPLIANCE SECTION - Collapsible
-              _buildExpansionSection(
-                'Compliance',
-                Icons.verified_rounded,
-                [
-                  {'icon': Icons.verified_rounded, 'label': 'Compliance Center', 'route': 'compliance'},
-                  {'icon': Icons.bar_chart_rounded, 'label': 'Regulatory Reports', 'route': 'regulatory'},
-                  {'icon': Icons.fact_check_rounded, 'label': 'Audit & Reviews', 'route': 'audit_reviews'},
-                  {'icon': Icons.check_circle_rounded, 'label': 'KYC Compliance', 'route': 'kyc_compliance'},
-                  {'icon': Icons.policy_rounded, 'label': 'AML/CFT', 'route': 'aml'},
-                ],
-              ),
               
               // OPERATIONS SECTION - Collapsible
               _buildExpansionSection(
                 'Operations',
                 Icons.settings_rounded,
                 [
-                  {'icon': Icons.location_on_rounded, 'label': 'Branches', 'route': 'branches'},
                   {'icon': Icons.badge_rounded, 'label': 'Staff Management', 'route': 'staff'},
                   {'icon': Icons.mail_rounded, 'label': 'Notifications', 'route': 'notifications'},
                 ],
@@ -491,9 +448,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 'System',
                 Icons.settings_applications_rounded,
                 [
-                  {'icon': Icons.security_rounded, 'label': 'Roles & Permissions', 'route': 'roles'},
                   {'icon': Icons.tune_rounded, 'label': 'Settings', 'route': 'settings'},
                   {'icon': Icons.history_rounded, 'label': 'Audit Trail', 'route': 'audit'},
+                  {'icon': Icons.description_rounded, 'label': 'Reports', 'route': 'reports'},
                 ],
               ),
               
@@ -596,8 +553,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
               color: Colors.transparent,
               child: InkWell(
                 onTap: () {
-                  print('🎯 Sidebar item clicked: $route, current: $_selectedScreen');
-                  setState(() => _selectedScreen = route);
+                  if (kDebugMode) {
+                    print('🎯 Sidebar item clicked: $route, current: $_selectedScreen');
+                  }
+                  setState(() {
+                    _selectedScreen = route;
+                    if (kDebugMode) {
+                      print('✅ State updated: $_selectedScreen');
+                    }
+                  });
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -890,7 +854,93 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         EnhancedMetricsService().getEnhancedMetrics(tenantId),
         LoanRiskService().getLoanRiskAnalysis(tenantId),
         LiquidityService().getLiquidityAnalysis(tenantId),
-      ]);
+      ]).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          print('⚠️  Dashboard: Load timeout after 30 seconds');
+          // Return empty/default data on timeout
+          return [
+            <Map<String, dynamic>>[],
+            <Map<String, dynamic>>[],
+            <String, dynamic>{},
+            <String, dynamic>{},
+            <Map<String, dynamic>>[],
+            <String, dynamic>{'total': 0, 'byType': {}},
+            EnhancedMetrics(
+              par30Rate: 0,
+              par60Rate: 0,
+              par90Rate: 0,
+              par30Amount: 0,
+              par60Amount: 0,
+              par90Amount: 0,
+              totalPortfolioValue: 0,
+              totalLoans: 0,
+              portfolioHealthScore: 0,
+              healthStatus: 'Unknown',
+              memberGrowthRate: 0,
+              newMembers30Days: 0,
+              totalMembers: 0,
+              collectionEfficiency: 0,
+              totalCollected30Days: 0,
+              liquidityRatio: 0,
+              totalCash: 0,
+            ),
+            LoanRiskAnalysis(
+              totalLoans: 0,
+              totalPortfolio: 0,
+              performingCount: 0,
+              watchCount: 0,
+              substandardCount: 0,
+              doubtfulCount: 0,
+              lossCount: 0,
+              performingAmount: 0,
+              watchAmount: 0,
+              substandardAmount: 0,
+              doubtfulAmount: 0,
+              lossAmount: 0,
+              performingPercent: 0,
+              watchPercent: 0,
+              substandardPercent: 0,
+              doubtfulPercent: 0,
+              lossPercent: 0,
+              currentCount: 0,
+              aging1_30Count: 0,
+              aging31_60Count: 0,
+              aging61_90Count: 0,
+              aging91_180Count: 0,
+              aging180PlusCount: 0,
+              currentAmount: 0,
+              aging1_30Amount: 0,
+              aging31_60Amount: 0,
+              aging61_90Amount: 0,
+              aging91_180Amount: 0,
+              aging180PlusAmount: 0,
+              riskScore: 0,
+              highRiskLoans: [],
+            ),
+            LiquidityAnalysis(
+              currentCashPosition: 0,
+              totalDeposits: 0,
+              totalWithdrawals: 0,
+              activeLoanBalance: 0,
+              totalLoansDisbursed: 0,
+              last7DaysDeposits: 0,
+              last7DaysWithdrawals: 0,
+              last7DaysRepayments: 0,
+              avgDailyInflow: 0,
+              avgDailyOutflow: 0,
+              netDailyFlow: 0,
+              liquidityRatio: 0,
+              cashCoverageDays: 0,
+              liquidityStatus: 'Unknown',
+              isHealthy: false,
+              recommendation: 'Data unavailable',
+              forecast: [],
+              alerts: [],
+            ),
+          ];
+        },
+      );
       final loans = results[0] as List<Map<String, dynamic>>;
       final farmers = results[1] as List<Map<String, dynamic>>;
       final savingsData = results[2] as Map<String, dynamic>;
@@ -977,76 +1027,78 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         _liquidityAnalysis = liquidityAnalysis;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      print('❌ Dashboard: Error loading data: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Widget _buildActionRequiredSection(bool isDesktop) {
-    // Enhanced alert items with more detail matching professional design
-    final actionItems = [
-      {
+    // Build alert items from real data only
+    final actionItems = <Map<String, dynamic>>[];
+    
+    // Overdue loans
+    final overdueCount = _alerts['overdueLoans']?['count'] ?? 0;
+    if (overdueCount > 0) {
+      actionItems.add({
         'severity': 'critical',
         'icon': Icons.error_outline,
         'title': 'loans are overdue',
-        'count': _alerts['overdueLoans']?['count'] ?? 4,
+        'count': overdueCount,
         'action': 'view_overdue_loans',
-      },
-      {
+      });
+    }
+    
+    // Pending loan approvals
+    final pendingLoansCount = _alerts['pendingLoanApprovals']?['count'] ?? 0;
+    if (pendingLoansCount > 0) {
+      actionItems.add({
         'severity': 'warning',
         'icon': Icons.pending_actions,
         'title': 'loan applications awaiting approval',
-        'count': _alerts['pendingLoanApprovals']?['count'] ?? 3,
+        'count': pendingLoansCount,
         'action': 'view_pending_loans',
-      },
-      {
-        'severity': 'warning',
-        'icon': Icons.sync_problem,
-        'title': 'transactions require reconciliation',
-        'count': 2,
-        'action': 'view_reconciliation',
-      },
-      {
+      });
+    }
+    
+    // Pending KYC
+    final pendingKYCCount = _alerts['pendingKYC']?['count'] ?? 0;
+    if (pendingKYCCount > 0) {
+      actionItems.add({
         'severity': 'warning',
         'icon': Icons.badge_outlined,
         'title': 'members have incomplete KYC',
-        'count': _alerts['pendingKYC']?['count'] ?? 5,
+        'count': pendingKYCCount,
         'action': 'view_kyc',
-      },
-      {
-        'severity': 'warning',
+      });
+    }
+    
+    // Liquidity warnings
+    final liquidityStatus = _alerts['liquidityStatus']?['status'] ?? 'healthy';
+    if (liquidityStatus == 'caution' || liquidityStatus == 'critical') {
+      actionItems.add({
+        'severity': liquidityStatus == 'critical' ? 'critical' : 'warning',
         'icon': Icons.water_drop_outlined,
-        'title': 'liquidity approaching configured warning threshold',
+        'title': _alerts['liquidityStatus']?['message'] ?? 'liquidity needs attention',
         'count': 1,
         'action': 'view_liquidity',
-      },
-      {
-        'severity': 'critical',
-        'icon': Icons.report_problem_outlined,
-        'title': 'suspicious transaction detected',
-        'count': 1,
-        'action': 'view_fraud',
-      },
-      {
+      });
+    }
+    
+    // Failed transactions
+    final failedTxnCount = _alerts['failedTransactions']?['count'] ?? 0;
+    if (failedTxnCount > 0) {
+      actionItems.add({
         'severity': 'critical',
         'icon': Icons.cancel_outlined,
         'title': 'failed payment transactions',
-        'count': 2,
+        'count': failedTxnCount,
         'action': 'view_failed_payments',
-      },
-      {
-        'severity': 'warning',
-        'icon': Icons.approval_outlined,
-        'title': 'pending maker-checker approvals',
-        'count': 3,
-        'action': 'view_approvals',
-      },
-    ];
+      });
+    }
 
-    // Filter out items with 0 count
-    final activeItems = actionItems.where((item) => (item['count'] as int) > 0).toList();
-
-    if (activeItems.isEmpty) return const SizedBox.shrink();
+    // If no alerts, don't show the section
+    if (actionItems.isEmpty) return const SizedBox.shrink();
 
     return Container(
       padding: EdgeInsets.all(isDesktop ? 24 : 16),
@@ -1092,7 +1144,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                       ),
                     ),
                     Text(
-                      '${activeItems.length} items need your attention',
+                      '${actionItems.length} item${actionItems.length == 1 ? '' : 's'} need your attention',
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -1115,7 +1167,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             ],
           ),
           const SizedBox(height: 16),
-          ...activeItems.map((item) => _buildEnhancedAlertItem(item, isDesktop)).toList(),
+          ...actionItems.map((item) => _buildEnhancedAlertItem(item, isDesktop)).toList(),
         ],
       ),
     ).animate().fadeIn(duration: 600.ms).slideY(begin: -0.1, end: 0);
@@ -1352,7 +1404,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'SACCO PERFORMANCE DASHBOARD',
+                          'MBADIFA SACCO',
                           style: GoogleFonts.poppins(
                             color: Colors.white,
                             fontSize: isDesktop ? 24 : 18,
@@ -2478,6 +2530,24 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                 final amount = (loan['amount'] as num?)?.toInt() ?? 0;
                 final status = loan['status'] as String? ?? 'pending';
                 final farmerName = loan['farmerName'] as String? ?? 'Unknown';
+                
+                // ⏰ Calculate overdue days
+                int? overdueDays;
+                final dueDate = loan['dueDate'];
+                final repaid = (loan['totalRepaid'] as num?)?.toInt() ?? 0;
+                
+                if (dueDate != null && repaid < amount) {
+                  DateTime? due;
+                  if (dueDate is Timestamp) {
+                    due = dueDate.toDate();
+                  } else if (dueDate is DateTime) {
+                    due = dueDate;
+                  }
+                  
+                  if (due != null && due.isBefore(DateTime.now())) {
+                    overdueDays = DateTime.now().difference(due).inDays;
+                  }
+                }
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
@@ -2490,8 +2560,12 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          Icons.receipt_long_rounded,
-                          color: _getStatusColor(status),
+                          overdueDays != null && overdueDays > 0
+                              ? Icons.warning_amber_rounded
+                              : Icons.receipt_long_rounded,
+                          color: overdueDays != null && overdueDays > 0
+                              ? Colors.red
+                              : _getStatusColor(status),
                           size: 20,
                         ),
                       ),
@@ -2509,12 +2583,34 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
-                            Text(
-                              'UGX ${NumberFormat('#,###').format(amount)}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
+                            Row(
+                              children: [
+                                Text(
+                                  'UGX ${NumberFormat('#,###').format(amount)}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                if (overdueDays != null && overdueDays > 0) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '$overdueDays days overdue',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
@@ -3703,16 +3799,7 @@ class _PlaceholderScreen extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Coming soon to SACCOPLUS Pro',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[500],
-                  fontStyle: FontStyle.italic,
-                ),
-                textAlign: TextAlign.center,
-              ),
+
             ],
           ),
         ),

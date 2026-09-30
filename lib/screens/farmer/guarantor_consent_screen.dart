@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
+import '../../core/sacco_service.dart';
 import '../../widgets/app_widgets.dart';
 
 /// Shows the guarantors selected for a loan and lets the member
@@ -40,11 +41,12 @@ class _GuarantorConsentScreenState extends State<GuarantorConsentScreen> {
         final phone = g['phone'] as String? ?? '';
         if (phone.isEmpty) continue;
         final name = g['name'] as String? ?? 'Member';
+        final saccoName = SaccoService.current.saccoName;
         final msg =
             'Dear $name, $applicantName has listed you as a guarantor for a '
-            'UGX $fmt loan at SACCOPLUS Pro SACCO. '
+            'UGX $fmt loan at $saccoName. '
             'By agreeing, you accept liability if they default. '
-            'Contact your SACCO for details. Ref: SACCOPLUS';
+            'Contact your SACCO for details. Ref: $saccoName';
         await FirebaseService.sendSmsToPhone(phone, msg);
       }
       if (mounted) setState(() => _smsSent = true);

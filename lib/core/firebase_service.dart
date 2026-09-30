@@ -890,6 +890,7 @@ class FirebaseService {
   }
 
   static Future<List<Map<String, dynamic>>> getAllLoansOnce() async {
+    print('🔍 getAllLoansOnce: sessionTenantId = $sessionTenantId');
     for (int i = 0; i < 3; i++) {
       try {
         final q = await _db
@@ -897,6 +898,7 @@ class FirebaseService {
             .where('tenantId', isEqualTo: sessionTenantId)
             .get(const GetOptions(source: Source.server));
         final docs = q.docs.map((d) => d.data()).toList();
+        print('📥 getAllLoansOnce: Found ${docs.length} loans');
         docs.sort((a, b) {
           final ta = a['createdAt'];
           final tb = b['createdAt'];
@@ -904,10 +906,12 @@ class FirebaseService {
           return (tb as Timestamp).compareTo(ta as Timestamp);
         });
         return docs;
-      } catch (_) {
+      } catch (e) {
+        print('❌ getAllLoansOnce attempt ${i + 1} failed: $e');
         await Future.delayed(const Duration(milliseconds: 600));
       }
     }
+    print('❌ getAllLoansOnce: All attempts failed, returning empty list');
     return [];
   }
 
@@ -934,6 +938,7 @@ class FirebaseService {
   }
 
   static Future<List<Map<String, dynamic>>> getAllFarmersOnce() async {
+    print('🔍 getAllFarmersOnce: sessionTenantId = $sessionTenantId, roleMember = ${AppConstants.roleMember}');
     for (int i = 0; i < 3; i++) {
       try {
         final q = await _db
@@ -941,11 +946,15 @@ class FirebaseService {
             .where('role', isEqualTo: AppConstants.roleMember)
             .where('tenantId', isEqualTo: sessionTenantId)
             .get(const GetOptions(source: Source.server));
-        return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-      } catch (_) {
+        final members = q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+        print('📥 getAllFarmersOnce: Found ${members.length} members');
+        return members;
+      } catch (e) {
+        print('❌ getAllFarmersOnce attempt ${i + 1} failed: $e');
         await Future.delayed(const Duration(milliseconds: 600));
       }
     }
+    print('❌ getAllFarmersOnce: All attempts failed, returning empty list');
     return [];
   }
 
@@ -2317,9 +2326,10 @@ class FirebaseService {
     );
 
     // 8. Send confirmation SMS with actual balance
+    final saccoName = SaccoService.current.saccoName;
     await sendSmsToPhone(
       phone,
-      'SACCOPLUS: UGX ${_formatCurrency(amount)} deposited to your $savingsType savings. Your $savingsType balance is now UGX ${_formatCurrency(newBalance)}. Total savings: UGX ${_formatCurrency(totalBalance)}. Thank you!'
+      '$saccoName: UGX ${_formatCurrency(amount)} deposited to your $savingsType savings. Your $savingsType balance is now UGX ${_formatCurrency(newBalance)}. Total savings: UGX ${_formatCurrency(totalBalance)}. Thank you!'
     );
   }
 
@@ -2455,9 +2465,10 @@ class FirebaseService {
     );
 
     // 9. SMS confirmation
+    final saccoName = SaccoService.current.saccoName;
     await sendSmsToPhone(
       phone,
-      'SACCOPLUS: UGX ${_formatCurrency(netAmount)} withdrawn from your $savingsType savings (charge: UGX ${_formatCurrency(charge)}). Destination: $destination. Thank you!',
+      '$saccoName: UGX ${_formatCurrency(netAmount)} withdrawn from your $savingsType savings (charge: UGX ${_formatCurrency(charge)}). Destination: $destination. Thank you!',
     );
 
     return {
@@ -2661,9 +2672,10 @@ class FirebaseService {
     );
 
     // 7. Send confirmation SMS
+    final saccoName = SaccoService.current.saccoName;
     await sendSmsToPhone(
       phone,
-      'SACCOPLUS: You purchased $numberOfShares shares for UGX ${_formatCurrency(totalAmount)}. Your shareholding has been updated. Thank you!'
+      '$saccoName: You purchased $numberOfShares shares for UGX ${_formatCurrency(totalAmount)}. Your shareholding has been updated. Thank you!'
     );
   }
 
@@ -2925,9 +2937,10 @@ class FirebaseService {
     );
 
     // 7. Send confirmation SMS
+    final saccoName = SaccoService.current.saccoName;
     await sendSmsToPhone(
       phone,
-      'SACCOPLUS: Fixed deposit of UGX ${_formatCurrency(principal)} created for ${termMonths} months. Pending admin approval. Thank you!'
+      '$saccoName: Fixed deposit of UGX ${_formatCurrency(principal)} created for ${termMonths} months. Pending admin approval. Thank you!'
     );
   }
 

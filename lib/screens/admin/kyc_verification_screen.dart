@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../../theme/modern_theme.dart';
+import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
 
 class KYCVerificationScreen extends StatefulWidget {
@@ -47,10 +47,10 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
             color: Colors.white,
             child: TabBar(
               controller: _tabController,
-              labelColor: ModernTheme.primary,
+              labelColor: AppTheme.primary,
               unselectedLabelColor: Colors.grey,
               labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-              indicatorColor: ModernTheme.primary,
+              indicatorColor: AppTheme.primary,
               tabs: const [
                 Tab(text: 'Pending'),
                 Tab(text: 'Approved'),
@@ -85,9 +85,9 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
         }
 
         final members = snapshot.data!.docs;
-        final pending = members.where((d) => (d.data() as Map)['kycStatus'] == 'pending').length;
-        final verified = members.where((d) => (d.data() as Map)['kycStatus'] == 'verified').length;
-        final rejected = members.where((d) => (d.data() as Map)['kycStatus'] == 'rejected').length;
+        final pending = members.where((d) => (d.data() as Map)['idStatus'] == 'pending').length;
+        final verified = members.where((d) => (d.data() as Map)['idStatus'] == 'approved').length;
+        final rejected = members.where((d) => (d.data() as Map)['idStatus'] == 'rejected').length;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -148,9 +148,10 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
         var members = snapshot.data!.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final kycStatus = data['kycStatus'] ?? 'pending';
+          final idStatus = data['idStatus'] ?? 'pending';
           if (statusFilter == 'all') return true;
-          return kycStatus == statusFilter;
+          if (statusFilter == 'verified') return idStatus == 'approved';
+          return idStatus == statusFilter;
         }).toList();
 
         if (members.isEmpty) {
@@ -183,8 +184,8 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
   }
 
   Widget _buildMemberCard(String memberId, Map<String, dynamic> member) {
-    final kycStatus = member['kycStatus'] ?? 'pending';
-    final statusColor = kycStatus == 'verified'
+    final kycStatus = member['idStatus'] ?? 'pending';
+    final statusColor = kycStatus == 'approved'
         ? Colors.green
         : kycStatus == 'rejected'
             ? Colors.red
@@ -223,7 +224,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
-          member['nationalId'] ?? member['phone'],
+          member['nationalId']?.toString() ?? member['phone']?.toString() ?? 'No ID/Phone',
           style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
         ),
         trailing: Container(
@@ -265,10 +266,10 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
                 
                 Row(
                   children: [
-                    if (kycStatus != 'verified')
+                    if (kycStatus != 'approved')
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => _updateKYCStatus(memberId, 'verified'),
+                          onPressed: () => _updateKYCStatus(memberId, 'approved'),
                           icon: const Icon(Icons.check_circle, size: 18),
                           label: const Text('Approve'),
                           style: ElevatedButton.styleFrom(
@@ -277,7 +278,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
                           ),
                         ),
                       ),
-                    if (kycStatus != 'verified') const SizedBox(width: 12),
+                    if (kycStatus != 'approved') const SizedBox(width: 12),
                     if (kycStatus != 'rejected')
                       Expanded(
                         child: OutlinedButton.icon(

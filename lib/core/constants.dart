@@ -53,7 +53,7 @@ class AppConstants {
   static const String statusWrittenOff = 'Written Off';
 
   // ── User Roles ────────────────────────────────────────────────────────────
-  static const String roleMember      = 'member';
+  static const String roleMember      = 'Member';  // Capital M to match Firebase data
   static const String roleAdmin       = 'admin';
   static const String roleTeller      = 'teller';
   static const String roleLoanOfficer = 'loan_officer';
@@ -70,7 +70,7 @@ class AppConstants {
   static const int walletDailyLimit  = 5000000;  // UGX 5M
   static const int walletMinWithdraw = 1000;      // UGX 1K
   // Charges — MarzPay API fees + platform margin (updated Sept 2026)
-  static const double walletDepositChargePercent  = 0.032; // 3.2% collection
+  static const double walletDepositChargePercent  = 0.03; // 3.2% collection
   static const double walletWithdrawChargePercent = 0.035; // 3.5% disbursement
   static const int    walletMinCharge             = 200;  // UGX 200 minimum
 
@@ -105,7 +105,7 @@ class AppConstants {
   static const String companyName    = 'Infinitech Innovations Ltd';
   static const String companyCity    = 'Mbarara, Uganda';
   static const String companyWebsite = 'www.infinitech.co.ug';
-  static const String companyContact = '0200959496';
+  static const String companyContact = '+256778474686';
   static const String companyEmail   = 'info@infinitech.co.ug';
   static String get companyCopyright =>
       '© ${DateTime.now().year} Infinitech Innovations Ltd. All rights reserved.';
