@@ -872,6 +872,19 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         
         final loans = snapshot.data!.docs;
         
+        // Calculate actual outstanding balance from loan records
+        final actualOutstanding = loans.fold<double>(
+          0,
+          (sum, doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final principalOutstanding = (data['principalOutstanding'] ?? 0).toDouble();
+            return sum + principalOutstanding;
+          },
+        );
+        
+        // Use the actual outstanding from loans if available, otherwise fall back to member document
+        final displayBalance = actualOutstanding > 0 ? actualOutstanding : loanBalance;
+        
         return Column(
           children: [
             Container(
@@ -889,7 +902,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     children: [
                       Text('Outstanding Loan Balance', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
                       Text(
-                        _currencyFormat.format(loanBalance),
+                        _currencyFormat.format(displayBalance),
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: 28,
@@ -1138,7 +1151,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value, {bool isError = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -1147,7 +1160,11 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           Text(label, style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 13)),
           Text(
             value,
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13),
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+              color: isError ? Colors.red.shade700 : null,
+            ),
           ),
         ],
       ),
@@ -1421,13 +1438,21 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
   Widget _buildLoanCard(Map<String, dynamic> loan) {
     final status = loan['status'] ?? 'pending';
-    final statusColor = status == 'approved'
+    final statusColor = status == 'paid' || status == 'cleared'
         ? Colors.green
-        : status == 'disbursed'
+        : status == 'active' || status == 'approved'
             ? Colors.blue
-            : status == 'rejected'
+            : status == 'overdue'
                 ? Colors.red
                 : Colors.orange;
+    
+    final amount = (loan['amount'] ?? 0).toDouble();
+    final principalOutstanding = (loan['principalOutstanding'] ?? 0).toDouble();
+    final outstandingDays = loan['outstandingDays'] ?? 0;
+    final referenceNumber = loan['referenceNumber'] ?? 'N/A';
+    final loanProduct = loan['loanProduct'] ?? 'General Loan';
+    final interestRate = loan['interestRate'] ?? 0;
+    final durationMonths = loan['durationMonths'] ?? 0;
     
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1449,9 +1474,25 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Loan Application',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      loanProduct,
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Ref: $referenceNumber',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1471,9 +1512,14 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
             ],
           ),
           const SizedBox(height: 12),
-          _buildInfoRow('Amount', _currencyFormat.format(loan['amount'] ?? 0)),
-          _buildInfoRow('Interest Rate', '${loan['interestRate'] ?? 0}%'),
-          _buildInfoRow('Duration', '${loan['durationMonths'] ?? 0} months'),
+          _buildInfoRow('Loan Amount', _currencyFormat.format(amount)),
+          _buildInfoRow('Principal Outstanding', _currencyFormat.format(principalOutstanding)),
+          if (outstandingDays > 0)
+            _buildInfoRow('Days Overdue', '$outstandingDays days', isError: true),
+          if (interestRate > 0)
+            _buildInfoRow('Interest Rate', '$interestRate%'),
+          if (durationMonths > 0)
+            _buildInfoRow('Duration', '$durationMonths months'),
           _buildInfoRow('Applied', _formatDate(loan['createdAt'])),
         ],
       ),
