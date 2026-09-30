@@ -1,6 +1,9 @@
 import 'dart:convert';
-import 'dart:html' as html;
 import 'package:intl/intl.dart';
+
+// Conditional imports for platform-specific code
+import 'dart:io' if (dart.library.html) 'dart:html' as platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Utility class for exporting data to CSV files
 class CsvExport {
@@ -164,14 +167,28 @@ class CsvExport {
     }
   }
 
-  /// Download CSV file in browser
+  /// Download CSV file (platform-aware)
   static void _downloadCsv(String csvContent, String filename) {
+    if (kIsWeb) {
+      // Web platform - use dart:html
+      _downloadCsvWeb(csvContent, filename);
+    } else {
+      // Desktop/Mobile platform - file system access needed
+      // For Windows build, this won't be called as export isn't used
+      print('CSV export not implemented for desktop platforms');
+    }
+  }
+  
+  /// Download CSV file in browser (web only)
+  static void _downloadCsvWeb(String csvContent, String filename) {
+    // This code only runs on web platform
     final bytes = utf8.encode(csvContent);
-    final blob = html.Blob([bytes], 'text/csv;charset=utf-8');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
+    // Using dynamic to avoid compile-time errors on non-web platforms
+    final blob = (platform as dynamic).Blob([bytes], 'text/csv;charset=utf-8');
+    final url = (platform as dynamic).Url.createObjectUrlFromBlob(blob);
+    final anchor = (platform as dynamic).AnchorElement(href: url)
       ..setAttribute('download', filename)
       ..click();
-    html.Url.revokeObjectUrl(url);
+    (platform as dynamic).Url.revokeObjectUrl(url);
   }
 }

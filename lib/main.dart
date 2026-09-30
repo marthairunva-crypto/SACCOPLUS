@@ -1,4 +1,3 @@
-import 'package:device_preview/device_preview.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,12 +20,8 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(
-    DevicePreview(
-      enabled: false,  // Only enable in debug/profile mode
-      builder: (context) => const SaccoPlusApp(),
-    ),
-  );
+  // DevicePreview disabled for production builds
+  runApp(const SaccoPlusApp());
 }
 
 class SaccoPlusApp extends StatefulWidget {
@@ -56,9 +51,6 @@ class _SaccoPlusAppState extends State<SaccoPlusApp> {
       debugShowCheckedModeBanner: false,
       theme: theme,
       home: const SplashScreen(),
-      useInheritedMediaQuery: true,
-      locale: DevicePreview.locale(context),
-      builder: DevicePreview.appBuilder,
     );
   }
 }
