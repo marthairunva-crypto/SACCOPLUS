@@ -16,7 +16,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.5'
+          flutter-version: '3.24.5'
           channel: 'stable'
       
       - name: Setup CMake
@@ -24,42 +24,25 @@ jobs:
         with:
           cmake-version: '3.28.0'
       
+      - name: Flutter Doctor
+        run: flutter doctor -v
+      
       - name: Install dependencies
         run: flutter pub get
       
-      - name: Set CMake Policy for Timestamp
+      - name: Build Windows Release
         run: |
-          $env:CMAKE_POLICY_DEFAULT_CMP0135="NEW"
-          echo "CMAKE_POLICY_DEFAULT_CMP0135=NEW" >> $env:GITHUB_ENV
-      
-      - name: Build Windows Release (attempt 1)
-        id: build_attempt_1
-        run: flutter build windows --release
-        continue-on-error: true
-      
-      - name: Patch Firebase CMake if build failed
-        if: steps.build_attempt_1.outcome == 'failure'
-        run: |
-          Write-Host "First build failed, patching Firebase CMake..."
-          $cmakeFile = "build/windows/x64/extracted/firebase_cpp_sdk_windows/CMakeLists.txt"
-          if (Test-Path $cmakeFile) {
-            Write-Host "Found Firebase CMakeLists.txt, patching..."
-            $content = Get-Content $cmakeFile
-            $content = $content -replace 'cmake_minimum_required\(VERSION 3\.1\)', 'cmake_minimum_required(VERSION 3.5)'
-            # Add policy for DOWNLOAD_EXTRACT_TIMESTAMP
-            $content = "cmake_policy(SET CMP0135 NEW)`n" + ($content -join "`n")
-            Set-Content $cmakeFile $content
-          }
-      
-      - name: Build Windows Release (attempt 2)
-        if: steps.build_attempt_1.outcome == 'failure'
-        run: flutter build windows --release
+          # Set environment variable for CMake policy
+          $env:CMAKE_POLICY_DEFAULT_CMP0135 = "NEW"
+          flutter build windows --release --verbose
       
       - name: Create ZIP of Release
+        if: success()
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath saccoplus-windows.zip
       
       - name: Upload Windows EXE
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: SACCOPLUS-Windows
