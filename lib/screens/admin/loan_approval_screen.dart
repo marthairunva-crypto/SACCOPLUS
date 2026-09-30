@@ -144,26 +144,39 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                   },
                 ),
                 DataTableColumn(
-                  key: 'outstandingDays',
-                  label: 'Days Overdue',
+                  key: 'dueDate',
+                  label: 'Due Date',
                   width: 140,
                   builder: (row) {
+                    final dueDate = row['dueDate'];
                     final outstandingDays = row['outstandingDays'] ?? 0;
-                    if (outstandingDays > 0) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.error.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$outstandingDays days',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: AppTheme.error,
-                            fontWeight: FontWeight.w600,
+                    
+                    if (dueDate is Timestamp) {
+                      final isOverdue = outstandingDays > 0;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            DateFormat('MMM d, yyyy').format(dueDate.toDate()),
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              color: isOverdue ? Colors.red.shade700 : Colors.black87,
+                              fontWeight: isOverdue ? FontWeight.w600 : FontWeight.normal,
+                            ),
                           ),
-                        ),
+                          if (isOverdue) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '$outstandingDays days overdue',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10,
+                                color: Colors.red.shade600,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ],
                       );
                     }
                     return Text(
@@ -753,6 +766,7 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
   bool _saving = false;
   DateTime? _createdAt;
   DateTime? _appliedDate;
+  DateTime? _dueDate;
 
   @override
   void initState() {
@@ -774,6 +788,9 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
     } else if (widget.loanData['createdAt'] is Timestamp) {
       // If appliedDate doesn't exist, use createdAt as default
       _appliedDate = (widget.loanData['createdAt'] as Timestamp).toDate();
+    }
+    if (widget.loanData['dueDate'] is Timestamp) {
+      _dueDate = (widget.loanData['dueDate'] as Timestamp).toDate();
     }
   }
 
@@ -810,6 +827,14 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
       if (_appliedDate != null) {
         updatedData['appliedDate'] = Timestamp.fromDate(_appliedDate!);
       }
+      if (_dueDate != null) {
+        updatedData['dueDate'] = Timestamp.fromDate(_dueDate!);
+        
+        // Recalculate outstanding days based on due date
+        final now = DateTime.now();
+        final daysDiff = now.difference(_dueDate!).inDays;
+        updatedData['outstandingDays'] = daysDiff > 0 ? daysDiff : 0;
+      }
 
       await FirebaseFirestore.instance
           .collection('saccoplus-loans')
@@ -841,12 +866,38 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
     }
   }
 
-  Future<void> _pickDate(BuildContext context, bool isCreatedDate) async {
+  Future<void> _pickDate(BuildContext context, String dateType) async {
+    DateTime? initialDate;
+    DateTime firstDate;
+    DateTime lastDate;
+    
+    switch (dateType) {
+      case 'created':
+        initialDate = _createdAt;
+        firstDate = DateTime(2020);
+        lastDate = DateTime.now().add(const Duration(days: 365));
+        break;
+      case 'applied':
+        initialDate = _appliedDate;
+        firstDate = DateTime(2020);
+        lastDate = DateTime.now().add(const Duration(days: 365));
+        break;
+      case 'due':
+        initialDate = _dueDate;
+        firstDate = DateTime(2020);
+        lastDate = DateTime.now().add(const Duration(days: 3650)); // 10 years ahead
+        break;
+      default:
+        initialDate = DateTime.now();
+        firstDate = DateTime(2020);
+        lastDate = DateTime.now().add(const Duration(days: 365));
+    }
+    
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: (isCreatedDate ? _createdAt : _appliedDate) ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initialDate ?? DateTime.now(),
+      firstDate: firstDate,
+      lastDate: lastDate,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -864,10 +915,16 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
     
     if (picked != null) {
       setState(() {
-        if (isCreatedDate) {
-          _createdAt = picked;
-        } else {
-          _appliedDate = picked;
+        switch (dateType) {
+          case 'created':
+            _createdAt = picked;
+            break;
+          case 'applied':
+            _appliedDate = picked;
+            break;
+          case 'due':
+            _dueDate = picked;
+            break;
         }
       });
     }
@@ -952,7 +1009,7 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
               ),
               const SizedBox(height: 16),
               InkWell(
-                onTap: () => _pickDate(context, false),
+                onTap: () => _pickDate(context, 'applied'),
                 child: InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Applied Date',
@@ -972,7 +1029,31 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
               ),
               const SizedBox(height: 16),
               InkWell(
-                onTap: () => _pickDate(context, true),
+                onTap: () => _pickDate(context, 'due'),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Due Date',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: const Icon(Icons.event),
+                    helperText: _dueDate != null && DateTime.now().isAfter(_dueDate!)
+                        ? '⚠️ ${DateTime.now().difference(_dueDate!).inDays} days overdue'
+                        : null,
+                    helperStyle: const TextStyle(color: Colors.red),
+                  ),
+                  child: Text(
+                    _dueDate != null
+                        ? DateFormat('MMM dd, yyyy').format(_dueDate!)
+                        : 'Select due date',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _dueDate != null ? Colors.black87 : Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              InkWell(
+                onTap: () => _pickDate(context, 'created'),
                 child: InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Created Date',
