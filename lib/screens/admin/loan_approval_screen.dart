@@ -82,7 +82,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'memberName',
                   label: 'Member',
-                  width: 180,
+                  width: 200,
                   builder: (row) => Text(
                     row['memberName'] ?? '-',
                     style: const TextStyle(fontSize: 13),
@@ -91,7 +91,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'referenceNumber',
                   label: 'Loan Ref',
-                  width: 120,
+                  width: 130,
                   builder: (row) => Text(
                     row['referenceNumber'] ?? '-',
                     style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
@@ -100,7 +100,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'amount',
                   label: 'Amount',
-                  width: 140,
+                  width: 150,
                   builder: (row) => Text(
                     'UGX ${fmt.format(row['amount'] ?? 0)}',
                     style: GoogleFonts.poppins(
@@ -113,7 +113,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'loanProduct',
                   label: 'Product',
-                  width: 140,
+                  width: 160,
                   builder: (row) => Text(
                     row['loanProduct'] ?? '-',
                     style: const TextStyle(fontSize: 13),
@@ -122,7 +122,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'principalOutstanding',
                   label: 'Outstanding',
-                  width: 120,
+                  width: 150,
                   builder: (row) => Text(
                     'UGX ${fmt.format(row['principalOutstanding'] ?? 0)}',
                     style: GoogleFonts.poppins(fontSize: 13, color: Colors.red.shade700),
@@ -131,7 +131,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'createdAt',
                   label: 'Applied',
-                  width: 110,
+                  width: 130,
                   builder: (row) {
                     final createdAt = row['createdAt'];
                     if (createdAt is Timestamp) {
@@ -146,7 +146,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'outstandingDays',
                   label: 'Days Overdue',
-                  width: 120,
+                  width: 140,
                   builder: (row) {
                     final outstandingDays = row['outstandingDays'] ?? 0;
                     if (outstandingDays > 0) {
@@ -175,7 +175,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'status',
                   label: 'Status',
-                  width: 110,
+                  width: 130,
                   builder: (row) {
                     final status = row['status'] ?? '';
                     Color bgColor;
@@ -219,7 +219,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'actions',
                   label: 'Actions',
-                  width: 160,
+                  width: 170,
                   builder: (row) {
                     final loanId = row['id'];
                     
