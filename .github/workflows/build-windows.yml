@@ -35,6 +35,8 @@ jobs:
           # Set CMake policies to avoid deprecation warnings
           $env:CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
           $env:CMAKE_POLICY_DEFAULT_CMP0135 = "NEW"
+          # Force CMake to use the installed Visual Studio generator
+          $env:CMAKE_GENERATOR = "Visual Studio 18 2026"
           flutter build windows --release --verbose
       
       - name: Create ZIP of Release
