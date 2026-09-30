@@ -22,7 +22,7 @@ jobs:
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
         with:
-          cmake-version: '3.28.0'
+          cmake-version: '3.27.0'
       
       - name: Flutter Doctor
         run: flutter doctor -v
@@ -32,7 +32,8 @@ jobs:
       
       - name: Build Windows Release
         run: |
-          # Set environment variable for CMake policy
+          # Set CMake policies to avoid deprecation warnings
+          $env:CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
           $env:CMAKE_POLICY_DEFAULT_CMP0135 = "NEW"
           flutter build windows --release --verbose
       
