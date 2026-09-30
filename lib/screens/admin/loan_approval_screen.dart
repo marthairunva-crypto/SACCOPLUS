@@ -591,7 +591,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
       // Log audit trail
       await AuditService.log(
         action: 'delete_loan',
-        details: 'Deleted loan for $memberName (UGX ${NumberFormat('#,###').format(amount)})',
+        description: 'Deleted loan for $memberName (UGX ${NumberFormat('#,###').format(amount)})',
       );
     } catch (e) {
       if (mounted) {
@@ -798,7 +798,7 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
       // Log audit trail
       await AuditService.log(
         action: 'update_loan',
-        details: 'Updated loan ${_referenceNumberCtrl.text} for ${_memberNameCtrl.text}',
+        description: 'Updated loan ${_referenceNumberCtrl.text} for ${_memberNameCtrl.text}',
       );
 
       if (mounted) {
