@@ -751,6 +751,8 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
   late TextEditingController _referenceNumberCtrl;
   String _selectedStatus = 'approved';
   bool _saving = false;
+  DateTime? _createdAt;
+  DateTime? _appliedDate;
 
   @override
   void initState() {
@@ -762,6 +764,17 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
     _loanProductCtrl = TextEditingController(text: widget.loanData['loanProduct'] ?? '');
     _referenceNumberCtrl = TextEditingController(text: widget.loanData['referenceNumber'] ?? '');
     _selectedStatus = widget.loanData['status'] ?? 'approved';
+    
+    // Initialize dates
+    if (widget.loanData['createdAt'] is Timestamp) {
+      _createdAt = (widget.loanData['createdAt'] as Timestamp).toDate();
+    }
+    if (widget.loanData['appliedDate'] is Timestamp) {
+      _appliedDate = (widget.loanData['appliedDate'] as Timestamp).toDate();
+    } else if (widget.loanData['createdAt'] is Timestamp) {
+      // If appliedDate doesn't exist, use createdAt as default
+      _appliedDate = (widget.loanData['createdAt'] as Timestamp).toDate();
+    }
   }
 
   @override
@@ -789,6 +802,14 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
         'status': _selectedStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       };
+      
+      // Add dates if they were set
+      if (_createdAt != null) {
+        updatedData['createdAt'] = Timestamp.fromDate(_createdAt!);
+      }
+      if (_appliedDate != null) {
+        updatedData['appliedDate'] = Timestamp.fromDate(_appliedDate!);
+      }
 
       await FirebaseFirestore.instance
           .collection('saccoplus-loans')
@@ -817,6 +838,38 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  Future<void> _pickDate(BuildContext context, bool isCreatedDate) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: (isCreatedDate ? _createdAt : _appliedDate) ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.primary,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (picked != null) {
+      setState(() {
+        if (isCreatedDate) {
+          _createdAt = picked;
+        } else {
+          _appliedDate = picked;
+        }
+      });
     }
   }
 
@@ -896,6 +949,46 @@ class _EditLoanDialogState extends State<_EditLoanDialog> {
                   DropdownMenuItem(value: 'rejected', child: Text('Rejected')),
                 ],
                 onChanged: (value) => setState(() => _selectedStatus = value!),
+              ),
+              const SizedBox(height: 16),
+              InkWell(
+                onTap: () => _pickDate(context, false),
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Applied Date',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    _appliedDate != null
+                        ? DateFormat('MMM dd, yyyy').format(_appliedDate!)
+                        : 'Select date',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _appliedDate != null ? Colors.black87 : Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              InkWell(
+                onTap: () => _pickDate(context, true),
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Created Date',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    _createdAt != null
+                        ? DateFormat('MMM dd, yyyy').format(_createdAt!)
+                        : 'Select date',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _createdAt != null ? Colors.black87 : Colors.grey,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
