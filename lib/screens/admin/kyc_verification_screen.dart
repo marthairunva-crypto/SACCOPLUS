@@ -335,15 +335,18 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
   Future<void> _updateKYCStatus(String memberId, String status) async {
     try {
-      // First check if document exists
-      final docRef = FirebaseFirestore.instance.collection('users').doc(memberId);
+      // Update saccoplus-members collection with both fields
+      final docRef = FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .doc(memberId);
+      
       final docSnapshot = await docRef.get();
       
       if (!docSnapshot.exists) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Member document not found. ID: $memberId'),
+              content: Text('Member not found. ID: $memberId'),
               backgroundColor: Colors.red,
             ),
           );
@@ -351,16 +354,19 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
         return;
       }
       
+      // Update both kycStatus and idStatus for compatibility
       await docRef.update({
         'kycStatus': status,
+        'idStatus': status,
         'kycVerifiedAt': FieldValue.serverTimestamp(),
         'kycVerifiedBy': FirebaseService.sessionUid,
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('KYC status updated to ${status.toUpperCase()}'),
+            content: Text('KYC ${status == "approved" ? "approved" : "updated"} successfully'),
             backgroundColor: Colors.green,
           ),
         );
@@ -368,7 +374,10 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error updating KYC: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -409,36 +418,53 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
             onPressed: () async {
               Navigator.pop(context);
               
-              // First check if document exists
-              final docRef = FirebaseFirestore.instance.collection('users').doc(memberId);
-              final docSnapshot = await docRef.get();
-              
-              if (!docSnapshot.exists) {
-                if (context.mounted) {
+              try {
+                // Update saccoplus-members collection with both fields
+                final docRef = FirebaseFirestore.instance
+                    .collection('saccoplus-members')
+                    .doc(memberId);
+                
+                final docSnapshot = await docRef.get();
+                
+                if (!docSnapshot.exists) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Member not found. ID: $memberId'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+                
+                // Update both kycStatus and idStatus for compatibility
+                await docRef.update({
+                  'kycStatus': 'rejected',
+                  'idStatus': 'rejected',
+                  'kycNotes': notesController.text,
+                  'kycRejectedAt': FieldValue.serverTimestamp(),
+                  'kycRejectedBy': FirebaseService.sessionUid,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                });
+
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Member document not found. ID: $memberId'),
+                    const SnackBar(
+                      content: Text('KYC rejected successfully'),
                       backgroundColor: Colors.red,
                     ),
                   );
                 }
-                return;
-              }
-              
-              await docRef.update({
-                'kycStatus': 'rejected',
-                'kycNotes': notesController.text,
-                'kycRejectedAt': FieldValue.serverTimestamp(),
-                'kycRejectedBy': FirebaseService.sessionUid,
-              });
-
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('KYC rejected'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error rejecting KYC: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),

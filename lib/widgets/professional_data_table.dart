@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class ProfessionalDataTable extends StatefulWidget {
   final List<DataTableColumn> columns;
@@ -27,7 +26,16 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   String _searchQuery = '';
   Map<String, String?> _selectedFilters = {};
   int _currentPage = 0;
-  final int _rowsPerPage = 50;
+  final int _rowsPerPage = 25;
+
+  // Clean modern color palette
+  static const _headerColor = Color(0xFF00BFA6); // Teal accent
+  static const _headerText = Colors.white;
+  static const _bodyText = Color(0xFF212121);
+  static const _secondaryText = Color(0xFF757575);
+  static const _borderColor = Color(0xFFE0E0E0);
+  static const _hoverColor = Color(0xFFF5F5F5);
+  static const _backgroundColor = Color(0xFFFAFAFA);
 
   List<Map<String, dynamic>> get _filteredData {
     var filtered = widget.data;
@@ -84,56 +92,53 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Modern Search and Filters Bar
+        // Clean Search and Filters Bar
         Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: const BoxDecoration(
             color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            border: Border(
+              bottom: BorderSide(color: _borderColor, width: 1),
+            ),
           ),
           child: Column(
             children: [
               Row(
                 children: [
-                  // Search Box with modern styling
+                  // Clean Search Box
                   if (widget.showSearch)
                     Expanded(
                       flex: 2,
                       child: Container(
+                        height: 42,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          color: _backgroundColor,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _borderColor),
                         ),
                         child: TextField(
                           decoration: InputDecoration(
                             hintText: widget.searchPlaceholder,
-                            hintStyle: GoogleFonts.poppins(
+                            hintStyle: const TextStyle(
                               fontSize: 14,
-                              color: const Color(0xFF94A3B8),
+                              color: _secondaryText,
                             ),
-                            prefixIcon: const Icon(Icons.search, color: Color(0xFF64748B), size: 20),
+                            prefixIcon: const Icon(Icons.search, color: _secondaryText, size: 20),
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(Icons.clear, size: 18),
                                     onPressed: () {
                                       setState(() {
                                         _searchQuery = '';
-                                        _currentPage = 0; // Reset to first page
+                                        _currentPage = 0;
                                       });
                                     },
                                   )
                                 : null,
                             border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           ),
-                          style: GoogleFonts.poppins(fontSize: 14),
+                          style: const TextStyle(fontSize: 14, color: _bodyText),
                           onChanged: (value) {
                             setState(() {
                               _searchQuery = value;
@@ -144,7 +149,7 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                       ),
                     ),
                   
-                  // Filters with modern styling
+                  // Clean Filters
                   if (widget.filters != null) ...[
                     const SizedBox(width: 12),
                     ...widget.filters!.map((filter) {
@@ -163,10 +168,10 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Showing ${_filteredData.isEmpty ? 0 : _currentPage * _rowsPerPage + 1}-${(_currentPage * _rowsPerPage + _paginatedData.length)} of ${_filteredData.length} results',
-                    style: GoogleFonts.poppins(
+                    'Showing ${_filteredData.isEmpty ? 0 : _currentPage * _rowsPerPage + 1}-${(_currentPage * _rowsPerPage + _paginatedData.length)} of ${_filteredData.length} entries',
+                    style: const TextStyle(
                       fontSize: 13,
-                      color: const Color(0xFF64748B),
+                      color: _secondaryText,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -177,36 +182,29 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
           ),
         ),
 
-        // Beautiful Table
+        // Clean Table
         Expanded(
           child: _filteredData.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(Icons.inbox_outlined, size: 48, color: Colors.grey[400]),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
+                      Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[300]),
+                      const SizedBox(height: 16),
+                      const Text(
                         'No data found',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
+                        style: TextStyle(
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFF475569),
+                          color: _secondaryText,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
+                      const Text(
                         'Try adjusting your search or filters',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: const Color(0xFF94A3B8),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _secondaryText,
                         ),
                       ),
                       if (_searchQuery.isNotEmpty || _selectedFilters.values.any((v) => v != null && v != 'all'))
@@ -222,34 +220,20 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                             },
                             icon: const Icon(Icons.refresh, size: 18),
                             label: const Text('Clear filters'),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            ),
                           ),
                         ),
                     ],
                   ),
                 )
               : Container(
-                  margin: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 20,
-                        offset: const Offset(0, 4),
+                  width: double.infinity,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: MediaQuery.of(context).size.width - 150,
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: SingleChildScrollView(
-                        child: _buildTable(),
-                      ),
+                      child: _buildTable(),
                     ),
                   ),
                 ),
@@ -260,19 +244,20 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
 
   Widget _buildFilterDropdown(TableFilter filter) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _borderColor),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _selectedFilters[filter.key] ?? 'all',
-          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF64748B), size: 20),
-          style: GoogleFonts.poppins(
+          icon: const Icon(Icons.keyboard_arrow_down, color: _secondaryText, size: 20),
+          style: const TextStyle(
             fontSize: 13,
-            color: const Color(0xFF1E293B),
+            color: _bodyText,
             fontWeight: FontWeight.w500,
           ),
           items: [
@@ -299,48 +284,65 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   }
 
   Widget _buildPagination() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left, size: 20),
-            onPressed: _currentPage > 0
-                ? () => setState(() => _currentPage--)
-                : null,
-            color: _currentPage > 0 ? const Color(0xFF3B82F6) : const Color(0xFFCBD5E1),
-            splashRadius: 20,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'Page ${_currentPage + 1} of $_totalPages',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF475569),
+    return Row(
+      children: [
+        // Previous button
+        Material(
+          color: _currentPage > 0 ? Colors.white : _backgroundColor,
+          borderRadius: BorderRadius.circular(6),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: Border.all(color: _borderColor),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.chevron_left,
+                size: 20,
+                color: _currentPage > 0 ? _bodyText : _secondaryText,
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, size: 20),
-            onPressed: _currentPage < _totalPages - 1
-                ? () => setState(() => _currentPage++)
-                : null,
-            color: _currentPage < _totalPages - 1 ? const Color(0xFF3B82F6) : const Color(0xFFCBD5E1),
-            splashRadius: 20,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
+        ),
+        
+        // Page info
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Page ${_currentPage + 1} of $_totalPages',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _bodyText,
+            ),
           ),
-        ],
-      ),
+        ),
+        
+        // Next button
+        Material(
+          color: _currentPage < _totalPages - 1 ? Colors.white : _backgroundColor,
+          borderRadius: BorderRadius.circular(6),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: _currentPage < _totalPages - 1 ? () => setState(() => _currentPage++) : null,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: Border.all(color: _borderColor),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: _currentPage < _totalPages - 1 ? _bodyText : _secondaryText,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -349,70 +351,64 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       columnWidths: {
         for (int i = 0; i < widget.columns.length; i++)
-          i: FixedColumnWidth(widget.columns[i].width),
+          i: IntrinsicColumnWidth(flex: widget.columns[i].width / 10),
       },
       children: [
-        // Beautiful Header Row with gradient
+        // Clean Header Row with teal accent
         TableRow(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                const Color(0xFF3B82F6),
-                const Color(0xFF2563EB),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+          decoration: const BoxDecoration(
+            color: _headerColor,
           ),
           children: widget.columns.map((column) {
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
+                ),
+              ),
               child: Text(
                 column.label,
-                style: GoogleFonts.poppins(
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: Colors.white,
-                  letterSpacing: 0.3,
+                  fontSize: 12,
+                  color: _headerText,
+                  letterSpacing: 0.2,
                 ),
               ),
             );
           }).toList(),
         ),
 
-        // Data Rows with alternating colors and hover effect
+        // Clean Data Rows with subtle borders
         ..._paginatedData.asMap().entries.map((entry) {
-          final index = entry.key;
           final row = entry.value;
-          final isEven = index % 2 == 0;
           
           return TableRow(
-            decoration: BoxDecoration(
-              color: isEven ? Colors.white : const Color(0xFFF8FAFC),
+            decoration: const BoxDecoration(
+              color: Colors.white,
             ),
             children: widget.columns.map((column) {
               final cellWidget = column.builder != null
                   ? column.builder!(row)
                   : Text(
                       row[column.key]?.toString() ?? '-',
-                      style: GoogleFonts.poppins(
+                      style: const TextStyle(
                         fontSize: 13,
-                        color: const Color(0xFF334155),
-                        fontWeight: FontWeight.w500,
+                        color: _bodyText,
+                        fontWeight: FontWeight.w400,
                       ),
                     );
 
               return InkWell(
-                onTap: widget.onRowTap != null
-                    ? () => widget.onRowTap!(row)
-                    : null,
-                hoverColor: const Color(0xFFEFF6FF),
+                onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
+                hoverColor: _hoverColor,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: const BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: const Color(0xFFE2E8F0),
+                        color: _borderColor,
                         width: 1,
                       ),
                     ),

@@ -139,7 +139,7 @@ class FirebaseService {
     // Fire and forget — don't block on the HTTP result
     _sendEgoSms(
       phone,
-      'Your SACCOPLUS Pro verification code is: $code. Valid for 5 minutes.',
+      'Your MBADIFA SACCO verification code is: $code. Valid for 5 minutes.',
     );
     return true;
   }
@@ -1042,7 +1042,7 @@ class FirebaseService {
     final marzResult = await marzPayCollect(
       phoneNumber: phoneNumber,
       amount: amount,
-      description: 'Wallet deposit - SACCOPLUS Pro',
+      description: 'Wallet deposit - MBADIFA SACCO',
       countryCode: countryCode,
       currencyCode: resolvedCurrency,
     );
@@ -1168,7 +1168,7 @@ class FirebaseService {
       'amount': amount,
       'country': countryCode,
       'reference': reference,
-      'description': 'Wallet withdrawal - SACCOPLUS Pro',
+      'description': 'Wallet withdrawal - MBADIFA SACCO',
       // Only send currency for DRC
       if (country.isDualCurrency) 'currency': resolvedCurrency,
     });

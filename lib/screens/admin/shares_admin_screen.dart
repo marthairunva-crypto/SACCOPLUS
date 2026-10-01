@@ -9,7 +9,8 @@ import '../../core/theme.dart';
 import '../../widgets/app_widgets.dart';
 
 class SharesAdminScreen extends StatefulWidget {
-  const SharesAdminScreen({super.key});
+  final bool embedded;
+  const SharesAdminScreen({super.key, this.embedded = false});
   @override
   State<SharesAdminScreen> createState() => _SharesAdminScreenState();
 }
@@ -37,10 +38,13 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
         title: const Text('Shares Management'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: !widget.embedded,
+        leading: widget.embedded
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_ios_rounded),
+                onPressed: () => Navigator.pop(context),
+              ),
         actions: [
           IconButton(
             icon: const Icon(Icons.monetization_on_rounded, color: Colors.white),
@@ -354,56 +358,157 @@ class _MemberSharesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection(AppConstants.sharesCol).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection(AppConstants.sharesCol)
+          .snapshots(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
         }
+        
         final docs = snap.data?.docs ?? [];
+        
+        print('📊 Shares query returned ${docs.length} documents');
+        
         if (docs.isEmpty) {
-          return const EmptyState(message: 'No share records yet.', icon: Icons.pie_chart_outline_rounded);
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.pie_chart_outline_rounded, size: 80, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text('No share records yet', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Text(
+                  'Share transactions will appear here once imported or created',
+                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
         }
-        final totalShares = docs.fold<int>(0, (s, d) {
+
+        // Aggregate shares by member from transaction documents
+        final Map<String, Map<String, dynamic>> memberShares = {};
+        double totalSharesValue = 0;
+        
+        for (final doc in docs) {
           try {
-            final data = d.data() as Map<String, dynamic>?;
-            if (data == null) return s;
-            return s + ((data['totalShares'] as num?)?.toInt() ?? 0);
+            final data = doc.data() as Map<String, dynamic>?;
+            if (data == null) continue;
+            
+            // Handle both data structures:
+            // 1. Transaction format: {farmerId, amount, memberName, ...}
+            // 2. Summary format: {memberId, totalShares, ...}
+            
+            String? memberId;
+            double shareValue = 0;
+            String memberName = '';
+            
+            if (data.containsKey('farmerId')) {
+              // Transaction document
+              memberId = data['farmerId'] as String?;
+              shareValue = ((data['amount'] ?? 0) as num).toDouble();
+              memberName = data['memberName'] as String? ?? memberId ?? '';
+            } else if (data.containsKey('memberId')) {
+              // Summary document
+              memberId = data['memberId'] as String?;
+              shareValue = ((data['totalShares'] ?? 0) as num).toDouble() * 1000; // Assuming 1000 per share
+              memberName = memberId ?? '';
+            } else {
+              // Use doc ID as memberId
+              memberId = doc.id;
+              shareValue = ((data['totalShares'] ?? data['amount'] ?? 0) as num).toDouble();
+              memberName = memberId;
+            }
+            
+            if (memberId == null || memberId.isEmpty) continue;
+            
+            if (!memberShares.containsKey(memberId)) {
+              memberShares[memberId] = {
+                'memberId': memberId,
+                'memberName': memberName,
+                'totalValue': 0.0,
+                'count': 0,
+              };
+            }
+            
+            memberShares[memberId]!['totalValue'] = 
+                (memberShares[memberId]!['totalValue'] as double) + shareValue;
+            memberShares[memberId]!['count'] = 
+                (memberShares[memberId]!['count'] as int) + 1;
+            totalSharesValue += shareValue;
+            
           } catch (e) {
-            print('Error reading totalShares: $e');
-            return s;
+            print('Error processing share document ${doc.id}: $e');
           }
-        });
+        }
+        
+        print('📊 Aggregated ${memberShares.length} unique members');
+        print('📊 Total shares value: UGX ${fmt.format(totalSharesValue)}');
+        
+        if (memberShares.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.pie_chart_outline_rounded, size: 80, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text('No valid share records found', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Text(
+                  '${docs.length} documents found but could not be processed',
+                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          );
+        }
+        
+        final membersList = memberShares.values.toList()
+          ..sort((a, b) => (b['totalValue'] as double).compareTo(a['totalValue'] as double));
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length + 1,
+          itemCount: membersList.length + 1,
           itemBuilder: (_, i) {
             if (i == 0) {
               return Container(
                 margin: const EdgeInsets.only(bottom: 16),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [AppTheme.primary, AppTheme.primaryLight],
-                      begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  gradient: const LinearGradient(
+                    colors: [AppTheme.primary, AppTheme.primaryLight],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(children: [
                   const Icon(Icons.pie_chart_rounded, color: Colors.white, size: 28),
                   const SizedBox(width: 14),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Total Shares Issued', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
-                    Text(fmt.format(totalShares),
-                        style: GoogleFonts.poppins(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
+                    Text('Total Shares Value', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
+                    Text(
+                      'UGX ${fmt.format(totalSharesValue)}',
+                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      '${membersList.length} members  •  ${docs.length} transactions',
+                      style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                    ),
                   ]),
                 ]),
               );
             }
-            final doc = docs[i - 1];
-            final data = doc.data() as Map<String, dynamic>?;
-            if (data == null) return const SizedBox.shrink();
             
-            final shares = (data['totalShares'] as num?)?.toInt() ?? 0;
-            final pct = totalShares > 0 ? (shares / totalShares * 100) : 0.0;
+            final member = membersList[i - 1];
+            final shareValue = member['totalValue'] as double;
+            final count = member['count'] as int;
+            final memberId = member['memberId'] as String;
+            final memberName = member['memberName'] as String;
+            final pct = totalSharesValue > 0 ? (shareValue / totalSharesValue * 100) : 0.0;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
@@ -411,26 +516,60 @@ class _MemberSharesList extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  )
+                ],
               ),
               child: Row(children: [
                 Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(color: AppTheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                  child: Center(child: Text(
-                    doc.id.isNotEmpty ? doc.id[0].toUpperCase() : 'M',
-                    style: GoogleFonts.poppins(color: AppTheme.primary, fontWeight: FontWeight.w700, fontSize: 16),
-                  )),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Text(
+                      memberName.isNotEmpty ? memberName[0].toUpperCase() : 'M',
+                      style: GoogleFonts.poppins(
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(doc.id, style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
-                      overflow: TextOverflow.ellipsis),
-                  Text('$shares shares  •  ${pct.toStringAsFixed(1)}%',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
-                ])),
-                Text('UGX ${fmt.format(shares * 1000)}',
-                    style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        memberName,
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '$memberId  •  $count transaction${count > 1 ? 's' : ''}  •  ${pct.toStringAsFixed(1)}%',
+                        style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'UGX ${fmt.format(shareValue)}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ]),
             );
           },

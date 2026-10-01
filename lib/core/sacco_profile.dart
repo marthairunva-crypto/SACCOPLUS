@@ -200,8 +200,8 @@ class SaccoProfile {
 
   static const SaccoProfile defaultSacco = SaccoProfile(
     tenantId:  'sacco_001',
-    saccoName: 'SACCOPLUS Pro',
-    tagline:   'Banking Made Simple for Every SACCO',
+    saccoName: 'MBADIFA SACCO',
+    tagline:   'Poverty Must Go',
     country:   'UG',
     currency:  'UGX',
   );

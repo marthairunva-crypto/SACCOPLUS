@@ -69,7 +69,7 @@ class SaccoService {
     // 3. Ultimate fallback
     _current = SaccoProfile(
       tenantId:  tid,
-      saccoName: tid == 'sacco_001' ? 'SACCOPLUS Pro' : 'SACCO',
+      saccoName: tid == 'sacco_001' ? 'MBADIFA SACCO' : 'SACCO',
       country:   'UG',
       currency:  'UGX',
     );

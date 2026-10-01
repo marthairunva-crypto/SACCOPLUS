@@ -1,5 +1,5 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -14,12 +14,10 @@ import '../auth/professional_login_screen.dart';
 import '../common/about_screen.dart';
 import '../common/settings_screen.dart';
 import 'loan_approval_screen.dart';
-import 'farmer_management_screen.dart';
+import 'members_detailed_screen.dart';
 import 'create_loan_screen.dart';
 import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
-import 'migrate_shares_screen.dart';
-import 'migrate_loans_screen.dart';
 import 'teller_screen.dart';
 import 'enhanced_audit_screen.dart';
 import 'loan_portfolio_screen.dart';
@@ -28,15 +26,10 @@ import 'fixed_deposits_admin_screen.dart';
 import 'audit_log_screen.dart';
 import 'savings_admin_screen.dart';
 import 'shares_admin_screen.dart';
+import 'savings_summary_screen.dart';
 import 'sacco_settings_screen.dart';
 import 'staff_management_screen.dart';
 import 'dividend_distribution_screen.dart';
-import '../../debug/diagnose_data.dart';
-import '../../debug/fix_tenant_ids.dart';
-import '../../debug/check_session.dart';
-import '../../debug/quick_check.dart';
-import '../../debug/check_loan_fields.dart';
-import '../../debug/print_index_link.dart';
 import '../../services/dashboard_service.dart';
 import '../../services/alerts_service.dart';
 import '../../services/enhanced_metrics_service.dart';
@@ -54,6 +47,7 @@ import 'arrears_management_screen.dart';
 import 'risk_provisioning_screen.dart';
 import 'payment_screens.dart';
 import 'finance_screens.dart';
+import '../../scripts/reconcile_savings.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -75,14 +69,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
       'dashboard': _AdminHomeTab(onNavigate: (screen) => setState(() => _selectedScreen = screen)),
       
       // MEMBERS
-      'members': const FarmerManagementScreen(embedded: true),
+      'members': const MembersDetailedScreen(),
       'member_360': Member360Screen(),
       'kyc': const KYCVerificationScreen(),
       'dormant': const DormantAccountsScreen(),
       
       // SAVINGS & SHARES
-      'savings': const SavingsAdminScreen(),
-      'shares': const SharesAdminScreen(),
+      'savings': const SavingsAdminScreen(embedded: true),
+      'savings_summary': const SavingsSummaryScreen(),
+      'shares': const SharesAdminScreen(embedded: true),
       'fixed_deposits': const FixedDepositsAdminScreen(embedded: true),
       'dividends': const DividendDistributionScreen(),
       
@@ -109,8 +104,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       'expenses': const ExpensesScreen(),
       'ledger': const GeneralLedgerScreen(),
       'financial_reports': const ComprehensiveReportsScreen(embedded: true),
-      'migrate_shares': const MigrateSharesScreen(),
-      'migrate_loans': const MigrateLoansScreen(),
       
       // INTELLIGENCE
       'risk_center': LoanRiskCenterScreen(tenantId: FirebaseService.sessionTenantId),
@@ -124,6 +117,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       'settings': const SaccoSettingsScreen(),
       'audit': const EnhancedAuditScreen(embedded: true),
       'reports': const ReportsScreen(embedded: true),
+      'data_reconciliation': const DataReconciliationScreen(),
     };
     return _screenCacheInstance!;
   }
@@ -272,7 +266,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 padding: const EdgeInsets.all(14),
                 child: Image.asset(
-                  'assets/images/logo2.png',
+                  'assets/images/mbadifa-logo.png',
                   fit: BoxFit.contain,
                 ),
               ),
@@ -372,6 +366,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 Icons.savings_rounded,
                 [
                   {'icon': Icons.savings_rounded, 'label': 'Savings Management', 'route': 'savings'},
+                  {'icon': Icons.list_alt_rounded, 'label': 'Savings Summary', 'route': 'savings_summary'},
                   {'icon': Icons.pie_chart_rounded, 'label': 'Shares Management', 'route': 'shares'},
                   {'icon': Icons.account_balance_rounded, 'label': 'Fixed Deposits', 'route': 'fixed_deposits'},
                   {'icon': Icons.card_giftcard_rounded, 'label': 'Dividends', 'route': 'dividends'},
@@ -417,8 +412,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   {'icon': Icons.money_off_rounded, 'label': 'Expenses', 'route': 'expenses'},
                   {'icon': Icons.book_rounded, 'label': 'General Ledger', 'route': 'ledger'},
                   {'icon': Icons.assessment_rounded, 'label': 'Financial Reports', 'route': 'financial_reports'},
-                  {'icon': Icons.upload_file_rounded, 'label': 'Migrate Shares', 'route': 'migrate_shares'},
-                  {'icon': Icons.account_balance_rounded, 'label': 'Migrate Loans', 'route': 'migrate_loans'},
                 ],
               ),
               
@@ -451,6 +444,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   {'icon': Icons.tune_rounded, 'label': 'Settings', 'route': 'settings'},
                   {'icon': Icons.history_rounded, 'label': 'Audit Trail', 'route': 'audit'},
                   {'icon': Icons.description_rounded, 'label': 'Reports', 'route': 'reports'},
+                  {'icon': Icons.sync_rounded, 'label': 'Data Reconciliation', 'route': 'data_reconciliation'},
                 ],
               ),
               
@@ -806,11 +800,11 @@ class _AdminHomeTab extends StatefulWidget {
 }
 
 class _AdminHomeTabState extends State<_AdminHomeTab> {
-  Map<String, int> _cachedStats = {
-    'totalFarmers': 0, 'totalLoans': 0, 'pendingLoans': 0,
-    'approvedLoans': 0, 'verifiedIds': 0, 'pendingIds': 0,
-    'totalDisbursed': 0, 'totalRepaid': 0, 'outstanding': 0,
-    'savingsTotal': 0, 'sharesTotal': 0, 'fixedDepositsTotal': 0,
+  Map<String, num> _cachedStats = {
+    'totalFarmers': 0.0, 'totalLoans': 0.0, 'pendingLoans': 0.0,
+    'approvedLoans': 0.0, 'verifiedIds': 0.0, 'pendingIds': 0.0,
+    'totalDisbursed': 0.0, 'totalRepaid': 0.0, 'outstanding': 0.0,
+    'savingsTotal': 0.0, 'sharesTotal': 0.0, 'fixedDepositsTotal': 0.0,
   };
   bool _loading = true;
   List<Map<String, dynamic>> _recentLoans = [];
@@ -843,193 +837,124 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   Future<void> _load() async {
     if (mounted) setState(() => _loading = _cachedStats['totalLoans'] == 0);
     try {
-      final tenantId = FirebaseService.sessionTenantId;
-      final results = await Future.wait([
-        FirebaseService.getAllLoansOnce(),
-        FirebaseService.getAllFarmersOnce(),
-        DashboardService.getSavingsSummary(),
-        DashboardService.getTellerTransactionSummary(),
-        DashboardService.getDepositWithdrawalTrends(days: 7),
-        AlertsService.getAllAlerts(),
-        EnhancedMetricsService().getEnhancedMetrics(tenantId),
-        LoanRiskService().getLoanRiskAnalysis(tenantId),
-        LiquidityService().getLiquidityAnalysis(tenantId),
-      ]).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          print('⚠️  Dashboard: Load timeout after 30 seconds');
-          // Return empty/default data on timeout
-          return [
-            <Map<String, dynamic>>[],
-            <Map<String, dynamic>>[],
-            <String, dynamic>{},
-            <String, dynamic>{},
-            <Map<String, dynamic>>[],
-            <String, dynamic>{'total': 0, 'byType': {}},
-            EnhancedMetrics(
-              par30Rate: 0,
-              par60Rate: 0,
-              par90Rate: 0,
-              par30Amount: 0,
-              par60Amount: 0,
-              par90Amount: 0,
-              totalPortfolioValue: 0,
-              totalLoans: 0,
-              portfolioHealthScore: 0,
-              healthStatus: 'Unknown',
-              memberGrowthRate: 0,
-              newMembers30Days: 0,
-              totalMembers: 0,
-              collectionEfficiency: 0,
-              totalCollected30Days: 0,
-              liquidityRatio: 0,
-              totalCash: 0,
-            ),
-            LoanRiskAnalysis(
-              totalLoans: 0,
-              totalPortfolio: 0,
-              performingCount: 0,
-              watchCount: 0,
-              substandardCount: 0,
-              doubtfulCount: 0,
-              lossCount: 0,
-              performingAmount: 0,
-              watchAmount: 0,
-              substandardAmount: 0,
-              doubtfulAmount: 0,
-              lossAmount: 0,
-              performingPercent: 0,
-              watchPercent: 0,
-              substandardPercent: 0,
-              doubtfulPercent: 0,
-              lossPercent: 0,
-              currentCount: 0,
-              aging1_30Count: 0,
-              aging31_60Count: 0,
-              aging61_90Count: 0,
-              aging91_180Count: 0,
-              aging180PlusCount: 0,
-              currentAmount: 0,
-              aging1_30Amount: 0,
-              aging31_60Amount: 0,
-              aging61_90Amount: 0,
-              aging91_180Amount: 0,
-              aging180PlusAmount: 0,
-              riskScore: 0,
-              highRiskLoans: [],
-            ),
-            LiquidityAnalysis(
-              currentCashPosition: 0,
-              totalDeposits: 0,
-              totalWithdrawals: 0,
-              activeLoanBalance: 0,
-              totalLoansDisbursed: 0,
-              last7DaysDeposits: 0,
-              last7DaysWithdrawals: 0,
-              last7DaysRepayments: 0,
-              avgDailyInflow: 0,
-              avgDailyOutflow: 0,
-              netDailyFlow: 0,
-              liquidityRatio: 0,
-              cashCoverageDays: 0,
-              liquidityStatus: 'Unknown',
-              isHealthy: false,
-              recommendation: 'Data unavailable',
-              forecast: [],
-              alerts: [],
-            ),
-          ];
-        },
-      );
-      final loans = results[0] as List<Map<String, dynamic>>;
-      final farmers = results[1] as List<Map<String, dynamic>>;
-      final savingsData = results[2] as Map<String, dynamic>;
-      final tellerData = results[3] as Map<String, dynamic>;
-      final depositTrends = results[4] as List<Map<String, dynamic>>;
-      final alerts = results[5] as Map<String, dynamic>;
-      final enhancedMetrics = results[6] as EnhancedMetrics;
-      final riskAnalysis = results[7] as LoanRiskAnalysis;
-      final liquidityAnalysis = results[8] as LiquidityAnalysis;
-
-      int pending = 0, approved = 0, verifiedIds = 0, pendingIds = 0;
-      int totalDisbursed = 0, totalRepaid = 0, outstanding = 0, overdueAmount = 0;
+      print('🔄 Dashboard: Loading data...');
+      
+      // Load only essential data - simple and fast
+      final loans = await FirebaseService.getAllLoansOnce();
+      final members = await FirebaseService.getAllFarmersOnce();
+      
+      print('📊 Dashboard: Got ${loans.length} loans, ${members.length} members');
+      
+      // Calculate from REAL data
+      int totalLoans = loans.length;
+      int activeLoans = 0;
+      double totalDisbursed = 0;
+      double totalOutstanding = 0;
+      double overdueAmount = 0;
+      int overdueCount = 0;
       
       final now = DateTime.now();
       
-      for (final d in loans) {
-        final status = d['status'] as String? ?? '';
-        final amount = (d['amount'] as num?)?.toInt() ?? 0;
-        final repaid = (d['totalRepaid'] as num?)?.toInt() ?? 0;
-        final dueDate = d['dueDate'];
+      for (final loan in loans) {
+        final status = (loan['status'] ?? '').toString().toLowerCase();
+        final amount = (loan['amount'] ?? loan['loanAmount'] ?? 0).toDouble();
+        final outstanding = (loan['principalOutstanding'] ?? 0).toDouble();
         
-        if (status == AppConstants.statusPending) pending++;
-        if (status == AppConstants.statusApproved) {
-          approved++;
-          totalDisbursed += amount;
-          totalRepaid += repaid;
-          outstanding += (amount - repaid);
-          
-          // Check if overdue: due date passed and not fully repaid
-          if (dueDate != null) {
-            DateTime? due;
-            if (dueDate is Timestamp) {
-              due = dueDate.toDate();
-            } else if (dueDate is DateTime) {
-              due = dueDate;
-            }
-            
-            if (due != null && due.isBefore(now) && repaid < amount) {
-              overdueAmount += (amount - repaid);
-            }
-          }
+        if (status == 'active' || status == 'disbursed' || status == 'overdue') {
+          activeLoans++;
+          totalOutstanding += outstanding;
         }
-        if (status == AppConstants.statusPaid) {
+        
+        if (status == 'approved' || status == 'active' || status == 'disbursed' || status == 'paid' || status == 'overdue') {
           totalDisbursed += amount;
-          totalRepaid += amount;
+        }
+        
+        // Check for overdue
+        final dueDate = loan['dueDate'];
+        if (dueDate != null && outstanding > 0) {
+          DateTime? dueDateObj;
+          if (dueDate is Timestamp) {
+            dueDateObj = dueDate.toDate();
+          } else if (dueDate is String) {
+            dueDateObj = DateTime.tryParse(dueDate);
+          }
+          
+          if (dueDateObj != null && dueDateObj.isBefore(now)) {
+            overdueAmount += outstanding;
+            overdueCount++;
+          }
         }
       }
       
-      for (final d in farmers) {
-        final idStatus = d['idStatus'] as String? ?? '';
-        if (idStatus == 'approved') verifiedIds++;
-        if (idStatus == 'pending') pendingIds++;
+      // Calculate savings from members
+      double totalSavings = 0;
+      double totalShares = 0;
+      
+      for (final member in members) {
+        totalSavings += (member['savingsBalance'] ?? 0).toDouble();
+        totalShares += (member['sharesBalance'] ?? 0).toDouble();
       }
-
-      // Get recent loans for activity
-      _recentLoans = loans.take(5).toList();
-
-      // Generate monthly data for charts (last 6 months)
-      _monthlyData = _generateMonthlyData(loans);
-
-      if (!mounted) return;
-      setState(() {
-        _cachedStats = {
-          'totalFarmers': farmers.length,
-          'totalLoans': loans.length,
-          'pendingLoans': pending,
-          'approvedLoans': approved,
-          'verifiedIds': verifiedIds,
-          'pendingIds': pendingIds,
-          'totalDisbursed': totalDisbursed,
-          'totalRepaid': totalRepaid,
-          'outstanding': outstanding,
-          'overdueAmount': overdueAmount,
-          'savingsTotal': savingsData['totalSavings'] ?? 0,
-          'sharesTotal': savingsData['totalShares'] ?? 0,
-          'fixedDepositsTotal': 0,
-        };
-        _tellerData = tellerData;
-        _savingsData = savingsData;
-        _depositTrends = depositTrends;
-        _alerts = alerts;
-        _enhancedMetrics = enhancedMetrics;
-        _riskAnalysis = riskAnalysis;
-        _liquidityAnalysis = liquidityAnalysis;
-        _loading = false;
-      });
-    } catch (e) {
+      
+      // Update cache with REAL data
+      if (mounted) {
+        setState(() {
+          _cachedStats = {
+            'totalAssets': (totalSavings + totalShares).toDouble(),
+            'totalSavings': totalSavings.toDouble(),
+            'totalShares': totalShares.toDouble(),
+            'totalLoansOutstanding': totalOutstanding.toDouble(),
+            'activeLoans': activeLoans.toDouble(),
+            'totalDisbursed': totalDisbursed.toDouble(),
+            'totalPayout': 0.0,
+            'availableLiquidity': (totalSavings - totalOutstanding).toDouble(),
+            'cashBalance': 0.0,
+            'bankBalance': 0.0,
+            'mobileMoney': 0.0,
+            'overdueAmount': overdueAmount.toDouble(),
+            'totalLoans': totalLoans.toDouble(),
+            'totalMembers': members.length.toDouble(),
+            'overdueCount': overdueCount.toDouble(),
+          };
+          _loading = false;
+          
+          _tellerData = {'byAccountType': {}, 'netFlow': 0, 'recentTransactions': []};
+          _depositTrends = [];
+        });
+        
+        print('✅ Dashboard: Loaded successfully');
+        print('   Total Loans: $totalLoans');
+        print('   Active Loans: $activeLoans');
+        print('   Total Outstanding: ${totalOutstanding.toStringAsFixed(0)}');
+        print('   Total Savings: ${totalSavings.toStringAsFixed(0)}');
+        print('   Overdue: $overdueCount loans, ${overdueAmount.toStringAsFixed(0)}');
+      }
+    } catch (e, stackTrace) {
       print('❌ Dashboard: Error loading data: $e');
-      if (mounted) setState(() => _loading = false);
+      print('Stack: $stackTrace');
+      
+      // Check if it's a Firestore index error and print the link
+      final errorString = e.toString();
+      if (errorString.contains('index') || errorString.contains('Index')) {
+        debugPrint('');
+        debugPrint('⚠️  FIRESTORE INDEX REQUIRED!');
+        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        
+        // Extract and print the index URL if present
+        final urlMatch = RegExp(r'https://[^\s\)]+').firstMatch(errorString);
+        if (urlMatch != null) {
+          debugPrint('🔗 Click this link to create the index:');
+          debugPrint('   ${urlMatch.group(0)}');
+        } else {
+          debugPrint('🔗 Create indexes manually at:');
+          debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
+        }
+        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        debugPrint('');
+      }
+      
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -1372,7 +1297,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     return _buildBody(context, _cachedStats);
   }
 
-  Widget _buildBody(BuildContext context, Map<String, int> stats) {
+  Widget _buildBody(BuildContext context, Map<String, num> stats) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth > 900;
 
@@ -1641,19 +1566,19 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
   // Professional Metrics Grid with 12 cards
   Widget _buildProfessionalMetricsGrid(Map<String, dynamic> stats, bool isDesktop) {
-    final totalAssets = (stats['outstanding'] ?? 0) + (_savingsData['totalBalance'] ?? 0);
-    final totalSavings = _savingsData['totalBalance'] ?? 0;
+    final totalAssets = (stats['totalLoansOutstanding'] ?? 0.0) + (stats['totalSavings'] ?? 0.0);
+    final totalSavings = stats['totalSavings'] ?? 0.0;
     
-    // Get real shares from savings data
-    final totalShares = (_savingsData['totalShares'] ?? 0).toDouble();
+    // Get real shares from cached stats
+    final totalShares = (stats['totalShares'] ?? 0.0).toDouble();
     
-    final totalLoansOutstanding = stats['outstanding'] ?? 0;
-    final activeLoans = stats['approvedLoans'] ?? 0;
-    final totalDisbursed = stats['totalDisbursed'] ?? 0;
-    final totalRepaid = stats['totalRepaid'] ?? 0;
+    final totalLoansOutstanding = stats['totalLoansOutstanding'] ?? 0.0;
+    final activeLoans = stats['activeLoans'] ?? 0.0;
+    final totalDisbursed = stats['totalDisbursed'] ?? 0.0;
+    final totalRepaid = stats['totalRepaid'] ?? 0.0;
     
     // Calculate balances from teller data and account types
-    final byAccountType = _tellerData['byAccountType'] as Map<String, dynamic>? ?? {};
+    final byAccountType = Map<String, dynamic>.from(_tellerData['byAccountType'] as Map? ?? {});
     final netFlow = _tellerData['netFlow'] ?? 0;
     
     // Estimate cash balance as net flow (could be refined with actual balance tracking)
@@ -1665,7 +1590,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     final availableLiquidity = cashBalance + bankBalance + mobileMoneyBalance;
     
     // Calculate overdue amount: loans where dueDate has passed and amount not fully repaid
-    final overdueAmount = (stats['overdueAmount'] ?? 0).toDouble();
+    final overdueAmount = (stats['overdueAmount'] ?? 0.0).toDouble();
 
     final metrics = [
       {
@@ -2161,7 +2086,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                 : BarChart(
                     BarChartData(
                       alignment: BarChartAlignment.spaceAround,
-                      maxY: _monthlyData.map((e) => (e['loans'] as int).toDouble()).reduce((a, b) => a > b ? a : b) + 5,
+                      maxY: _monthlyData.isEmpty ? 10.0 : _monthlyData.map((e) => ((e['loans'] ?? 0) as num).toDouble()).reduce((a, b) => a > b ? a : b) + 5.0,
                       barTouchData: BarTouchData(enabled: true),
                       titlesData: FlTitlesData(
                         show: true,
@@ -2221,7 +2146,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                           x: index,
                           barRods: [
                             BarChartRodData(
-                              toY: (_monthlyData[index]['loans'] as int).toDouble(),
+                              toY: ((_monthlyData[index]['loans'] ?? 0) as num).toDouble(),
                               color: const Color(0xFF1E3A5F),
                               width: 20,
                               borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
@@ -2332,7 +2257,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                             _monthlyData.length,
                             (index) => FlSpot(
                               index.toDouble(),
-                              (_monthlyData[index]['loans'] as int).toDouble(),
+                              ((_monthlyData[index]['loans'] ?? 0) as num).toDouble(),
                             ),
                           ),
                           isCurved: true,
@@ -2364,10 +2289,10 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 
   // Pie chart for loan status
-  Widget _buildLoanStatusChart(Map<String, int> stats) {
-    final approved = stats['approvedLoans'] ?? 0;
-    final pending = stats['pendingLoans'] ?? 0;
-    final total = stats['totalLoans'] ?? 1;
+  Widget _buildLoanStatusChart(Map<String, num> stats) {
+    final approved = stats['approvedLoans'] ?? 0.0;
+    final pending = stats['pendingLoans'] ?? 0.0;
+    final total = stats['totalLoans'] ?? 1.0;
     final others = total - approved - pending;
 
     return Container(
@@ -2453,7 +2378,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     );
   }
 
-  Widget _buildLegendItem(String label, Color color, int count) {
+  Widget _buildLegendItem(String label, Color color, num count) {
     return Row(
       children: [
         Container(
@@ -2656,7 +2581,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 
   // Quick stats card
-  Widget _buildQuickStatsCard(Map<String, int> stats) {
+  Widget _buildQuickStatsCard(Map<String, num> stats) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -2682,19 +2607,19 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             ),
           ),
           const SizedBox(height: 20),
-          _buildPortfolioBar('Total Disbursed', stats['totalDisbursed'] ?? 0, const Color(0xFF1E3A5F)),
+          _buildPortfolioBar('Total Disbursed', stats['totalDisbursed'] ?? 0.0, const Color(0xFF1E3A5F)),
           const SizedBox(height: 12),
-          _buildPortfolioBar('Total Repaid', stats['totalRepaid'] ?? 0, const Color(0xFF5B8CC6)),
+          _buildPortfolioBar('Total Repaid', stats['totalRepaid'] ?? 0.0, const Color(0xFF5B8CC6)),
           const SizedBox(height: 12),
-          _buildPortfolioBar('Outstanding', stats['outstanding'] ?? 0, const Color(0xFF87CEEB)),
+          _buildPortfolioBar('Outstanding', stats['outstanding'] ?? 0.0, const Color(0xFF87CEEB)),
         ],
       ),
     );
   }
 
-  Widget _buildPortfolioBar(String label, int value, Color color) {
-    final maxValue = _cachedStats.values.reduce((a, b) => a > b ? a : b).toDouble();
-    final percentage = maxValue > 0 ? (value / maxValue * 100) : 0.0;
+  Widget _buildPortfolioBar(String label, num value, Color color) {
+    final maxValue = _cachedStats.values.isEmpty ? 1.0 : _cachedStats.values.reduce((a, b) => a > b ? a : b).toDouble();
+    final percentage = maxValue > 0 ? (value.toDouble() / maxValue * 100) : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2781,7 +2706,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
           Row(
             children: [
               Text(
-                'Total Deposits: UGX ${DashboardService.formatAmount((_tellerData['totalDeposits'] as int?) ?? 0)}',
+                'Total Deposits: UGX ${DashboardService.formatAmount(((_tellerData['totalDeposits'] as num?) ?? 0.0).toInt())}',
                 style: GoogleFonts.poppins(
                   color: Colors.green[700],
                   fontSize: 11,
@@ -2790,7 +2715,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
               ),
               const SizedBox(width: 16),
               Text(
-                'Total Withdrawals: UGX ${DashboardService.formatAmount((_tellerData['totalWithdrawals'] as int?) ?? 0)}',
+                'Total Withdrawals: UGX ${DashboardService.formatAmount(((_tellerData['totalWithdrawals'] as num?) ?? 0.0).toInt())}',
                 style: GoogleFonts.poppins(
                   color: Colors.red[700],
                   fontSize: 11,
@@ -2933,9 +2858,9 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildLegendItem('Deposits', Colors.green[600]!, (_tellerData['depositCount'] as int?) ?? 0),
+              _buildLegendItem('Deposits', Colors.green[600]!, (_tellerData['depositCount'] as num?) ?? 0.0),
               const SizedBox(width: 24),
-              _buildLegendItem('Withdrawals', Colors.red[600]!, (_tellerData['withdrawalCount'] as int?) ?? 0),
+              _buildLegendItem('Withdrawals', Colors.red[600]!, (_tellerData['withdrawalCount'] as num?) ?? 0.0),
             ],
           ),
         ],
@@ -2945,8 +2870,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
   // Transactions by Account Type Pie Chart
   Widget _buildTransactionsByTypeChart() {
-    final byAccountType = _tellerData['byAccountType'] as Map<String, int>? ?? {};
-    final total = byAccountType.values.fold(0, (sum, val) => sum + val);
+    final byAccountType = Map<String, dynamic>.from(_tellerData['byAccountType'] as Map? ?? {});
+    final total = byAccountType.values.fold(0, (sum, val) => sum + (val as num).toInt());
 
     if (total == 0) {
       return Container(
@@ -2985,9 +2910,9 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       );
     }
 
-    final wallet = byAccountType['wallet'] ?? 0;
-    final savings = byAccountType['savings'] ?? 0;
-    final shares = byAccountType['shares'] ?? 0;
+    final wallet = (byAccountType['wallet'] as num?)?.toInt() ?? 0;
+    final savings = (byAccountType['savings'] as num?)?.toInt() ?? 0;
+    final shares = (byAccountType['shares'] as num?)?.toInt() ?? 0;
 
     final colors = {
       'wallet': const Color(0xFF1E3A5F),
@@ -3348,9 +3273,9 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 
   // Bottom stats row - Enhanced professional version
-  Widget _buildBottomStatsRow(Map<String, int> stats, bool isDesktop) {
-    final totalDisbursed = stats['totalDisbursed'] ?? 1;
-    final totalRepaid = stats['totalRepaid'] ?? 0;
+  Widget _buildBottomStatsRow(Map<String, num> stats, bool isDesktop) {
+    final totalDisbursed = stats['totalDisbursed'] ?? 1.0;
+    final totalRepaid = stats['totalRepaid'] ?? 0.0;
     final repaymentRate = totalDisbursed > 0 ? (totalRepaid / totalDisbursed * 100) : 0.0;
     final now = DateTime.now();
     final formattedDate = DateFormat('dd MMM yyyy').format(now);
@@ -3378,7 +3303,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       {
         'icon': Icons.badge_outlined,
         'label': 'Pending KYC',
-        'value': '${stats['pendingIds'] ?? 0}',
+        'value': '${stats['pendingIds'] ?? 0.0}',
         'subtitle': '0% verification',
         'color': const Color(0xFFF59E0B),
         'showIndicator': false,
@@ -3792,9 +3717,9 @@ class _PlaceholderScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'This feature is under development',
+                'Portfolio analysis tools ready.',
                 style: GoogleFonts.poppins(
-                  fontSize: 16,
+                  fontSize: 14,
                   color: Colors.grey[600],
                 ),
                 textAlign: TextAlign.center,

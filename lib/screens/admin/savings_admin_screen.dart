@@ -8,7 +8,8 @@ import '../../core/theme.dart';
 import '../../widgets/app_widgets.dart';
 
 class SavingsAdminScreen extends StatefulWidget {
-  const SavingsAdminScreen({super.key});
+  final bool embedded;
+  const SavingsAdminScreen({super.key, this.embedded = false});
   @override
   State<SavingsAdminScreen> createState() => _SavingsAdminScreenState();
 }
@@ -36,10 +37,13 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
         title: const Text('Savings Management'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: !widget.embedded,
+        leading: widget.embedded
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_ios_rounded),
+                onPressed: () => Navigator.pop(context),
+              ),
         bottom: TabBar(
           controller: _tabs,
           labelColor: Colors.white,

@@ -134,7 +134,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Kikole mu ngeri ennungi',
+                    'Poverty Must Go',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       color: ModernTheme.textSecondary,
@@ -373,7 +373,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                         ),
                         padding: const EdgeInsets.all(12),
                         child: Image.asset(
-                          'assets/images/logo2.png',
+                          'assets/images/mbadifa-logo.png',
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -381,7 +381,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                       const SizedBox(height: 20),
                       
                       const Text(
-                        'SACCOPLUS',
+                        'MBADIFA SACCO',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 42,
@@ -399,7 +399,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                       const SizedBox(height: 12),
                       
                       const Text(
-                        'Complete SACCO Management',
+                        'Poverty Must Go',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 17,
@@ -489,7 +489,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                   ),
                   padding: const EdgeInsets.all(20),
                   child: Image.asset(
-                    'assets/images/logo2.png',
+                    'assets/images/mbadifa-logo.png',
                     fit: BoxFit.contain,
                   ),
                 ),
@@ -498,7 +498,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 
                 // Premium title
                 const Text(
-                  'SACCOPLUS',
+                  'MBADIFA SACCO',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 64,
@@ -531,11 +531,11 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 const SizedBox(height: 24),
                 
                 const Text(
-                  'Complete SACCO Management Solution',
+                  'Poverty Must Go',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w300,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
                     height: 1.4,
                     shadows: [
@@ -551,7 +551,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                 const SizedBox(height: 12),
                 
                 const Text(
-                  'Loans • Savings • Members • Reports',
+                  'Empowering Communities • Building Futures',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 16,

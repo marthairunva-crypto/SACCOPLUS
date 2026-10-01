@@ -299,8 +299,9 @@ class _MigrateSharesScreenState extends State<MigrateSharesScreen> {
 
       if (char == '"') {
         inQuotes = !inQuotes;
+        // Don't add the quote character to the buffer
       } else if (char == ',' && !inQuotes) {
-        fields.add(buffer.toString());
+        fields.add(buffer.toString().trim());
         buffer.clear();
       } else {
         buffer.write(char);
@@ -308,7 +309,7 @@ class _MigrateSharesScreenState extends State<MigrateSharesScreen> {
     }
 
     // Add the last field
-    fields.add(buffer.toString());
+    fields.add(buffer.toString().trim());
 
     return fields;
   }

@@ -72,12 +72,12 @@ class BirthdayService {
 
     // In-app message — clean, no emojis, no age
     final inAppMessage =
-        'Dear $name, SACCOPLUS Pro wishes you a wonderful birthday! '
+        'Dear $name, MBADIFA SACCO wishes you a wonderful birthday! '
         'May this year bring you prosperity, good health, and financial success.';
 
     // SMS — plain ASCII only, EgoSMS gateway does not support Unicode or emojis
     final smsText =
-        'Happy Birthday $name! SACCOPLUS Pro wishes you a blessed birthday. '
+        'Happy Birthday $name! MBADIFA SACCO wishes you a blessed birthday. '
         'May this year be your best yet!';
 
     // 1. In-app Firestore notification

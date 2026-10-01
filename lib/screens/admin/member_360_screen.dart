@@ -651,26 +651,46 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     // Get savings balance from member document
     final savingsBalance = (_memberData!['savingsBalance'] ?? 0).toDouble();
     
+    print('💰 Loading savings for member: $_selectedMemberId');
+    print('💰 Member savings balance: $savingsBalance');
+    
     // Also check if there are transactions in the savings collection
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
           .collection('saccoplus-savings')
           .where('farmerId', isEqualTo: _selectedMemberId)
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .orderBy('createdAt', descending: true)
           .get(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print('❌ Savings query error: ${snapshot.error}');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                const SizedBox(height: 16),
+                Text('Error loading savings', style: GoogleFonts.poppins(color: Colors.red)),
+                Text('${snapshot.error}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+          );
+        }
+        
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         
         final savingsTransactions = snapshot.data!.docs;
+        print('💰 Found ${savingsTransactions.length} savings transactions');
         
         // Calculate total from transactions if any exist
         final transactionsTotal = savingsTransactions.fold<double>(
           0,
           (sum, doc) => sum + ((doc.data() as Map)['amount'] ?? 0).toDouble(),
         );
+        
+        print('💰 Transactions total: $transactionsTotal');
         
         // Use the higher of the two (member document balance or transaction sum)
         final displayBalance = savingsBalance > 0 ? savingsBalance : transactionsTotal;
@@ -718,11 +738,16 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     children: [
                       Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade300),
                       const SizedBox(height: 16),
-                      Text('No transaction history', style: GoogleFonts.poppins(color: Colors.grey)),
+                      Text('No savings transactions found', style: GoogleFonts.poppins(color: Colors.grey)),
                       const SizedBox(height: 8),
                       Text(
-                        'Balance: ${_currencyFormat.format(displayBalance)}',
+                        'Balance from member: ${_currencyFormat.format(displayBalance)}',
                         style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Member ID: $_selectedMemberId',
+                        style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 10),
                       ),
                     ],
                   ),
@@ -755,26 +780,46 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     // Get shares balance from member document
     final sharesBalance = (_memberData!['sharesBalance'] ?? 0).toDouble();
     
+    print('📊 Loading shares for member: $_selectedMemberId');
+    print('📊 Member shares balance: $sharesBalance');
+    
     // Also check if there are transactions in the shares collection
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
           .collection('saccoplus-shares')
           .where('farmerId', isEqualTo: _selectedMemberId)
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .orderBy('createdAt', descending: true)
           .get(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          print('❌ Shares query error: ${snapshot.error}');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                const SizedBox(height: 16),
+                Text('Error loading shares', style: GoogleFonts.poppins(color: Colors.red)),
+                Text('${snapshot.error}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+          );
+        }
+        
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         
         final sharesTransactions = snapshot.data!.docs;
+        print('📊 Found ${sharesTransactions.length} shares transactions');
         
         // Calculate total from transactions if any exist
         final transactionsTotal = sharesTransactions.fold<double>(
           0,
           (sum, doc) => sum + ((doc.data() as Map)['amount'] ?? 0).toDouble(),
         );
+        
+        print('📊 Transactions total: $transactionsTotal');
         
         // Use the higher of the two (member document balance or transaction sum)
         final displayBalance = sharesBalance > 0 ? sharesBalance : transactionsTotal;
@@ -822,11 +867,16 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     children: [
                       Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey.shade300),
                       const SizedBox(height: 16),
-                      Text('No transaction history', style: GoogleFonts.poppins(color: Colors.grey)),
+                      Text('No shares transactions found', style: GoogleFonts.poppins(color: Colors.grey)),
                       const SizedBox(height: 8),
                       Text(
-                        'Balance: ${_currencyFormat.format(displayBalance)}',
+                        'Balance from member: ${_currencyFormat.format(displayBalance)}',
                         style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Member ID: $_selectedMemberId',
+                        style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 10),
                       ),
                     ],
                   ),
@@ -842,9 +892,9 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                     return _buildTransactionTile(
                       share['createdAt'],
                       share['amount'],
-                      share['description'] ?? 'Shares Purchase',
+                      share['description'] ?? 'Share Purchase',
                       Icons.pie_chart,
-                      Colors.green,
+                      Colors.blue,
                     );
                   },
                 ),
@@ -1123,7 +1173,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
   Widget _buildInfoCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1136,17 +1186,158 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow('Account Number', _memberData!['accountNumber'] ?? 'N/A'),
-          _buildInfoRow('Member Number', _memberData!['memberNumber'] ?? 'N/A'),
-          const Divider(height: 20),
-          _buildInfoRow('Phone', _memberData!['phone'] ?? 'N/A'),
-          _buildInfoRow('National ID', _memberData!['nationalId'] ?? 'N/A'),
-          _buildInfoRow('Village', _memberData!['village'] ?? 'N/A'),
-          _buildInfoRow('District', _memberData!['district'] ?? 'N/A'),
-          _buildInfoRow('Next of Kin', _memberData!['nextOfKin'] ?? 'N/A'),
-          _buildInfoRow('Next of Kin Phone', _memberData!['nextOfKinPhone'] ?? 'N/A'),
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Member Details',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primary,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit, size: 20),
+                onPressed: _showEditMemberDialog,
+                tooltip: 'Edit Member',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Detailed information table
+          Table(
+            columnWidths: const {
+              0: FlexColumnWidth(2),
+              1: FlexColumnWidth(3),
+            },
+            children: [
+              _buildTableRow('Member ID', _memberData!['memberId'] ?? 'N/A'),
+              _buildTableRow('Account Number', _memberData!['accountNumber'] ?? 'N/A'),
+              _buildTableRow('Member Number', _memberData!['memberNumber'] ?? 'N/A'),
+              const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
+              
+              // Personal Info
+              _buildTableRow('Full Name', _memberData!['name'] ?? _memberData!['fullName'] ?? 'N/A', bold: true),
+              _buildTableRow('Gender', _memberData!['gender'] ?? 'N/A'),
+              _buildTableRow('Phone', _memberData!['phone'] ?? 'N/A'),
+              _buildTableRow('National ID', _memberData!['nationalId'] ?? 'N/A'),
+              _buildTableRow('Village', _memberData!['village'] ?? 'N/A'),
+              _buildTableRow('District', _memberData!['district'] ?? 'N/A'),
+              const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
+              
+              // Member Classification
+              _buildTableRow('Member Type', _memberData!['memberType'] ?? 'Individual'),
+              _buildTableRow('Branch', _memberData!['branch'] ?? 'Main Branch'),
+              _buildTableRow('Manager', _memberData!['manager'] ?? 'N/A'),
+              _buildTableRow('Group', _memberData!['group'] ?? 'N/A'),
+              const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
+              
+              // Next of Kin
+              _buildTableRow('Next of Kin', _memberData!['nextOfKin'] ?? 'N/A'),
+              _buildTableRow('Next of Kin Phone', _memberData!['nextOfKinPhone'] ?? 'N/A'),
+              const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
+              
+              // Account Status
+              _buildTableRow('Status', _memberData!['status'] ?? 'active', 
+                valueWidget: _buildStatusBadge(_memberData!['status'] ?? 'active')),
+              _buildTableRow('KYC Status', _memberData!['kycStatus'] ?? 'pending',
+                valueWidget: _buildKycBadge(_memberData!['kycStatus'] ?? 'pending')),
+              _buildTableRow('Joined Date', _formatDate(_memberData!['createdAt'])),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  TableRow _buildTableRow(String label, String value, {bool bold = false, Widget? valueWidget}) {
+    return TableRow(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            label,
+            style: GoogleFonts.poppins(
+              color: Colors.grey.shade600,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: valueWidget ?? Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+              fontSize: 13,
+              color: Colors.grey.shade800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    final isActive = status.toLowerCase() == 'active';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: (isActive ? Colors.green : Colors.grey).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (isActive ? Colors.green : Colors.grey).withOpacity(0.3),
+        ),
+      ),
+      child: Text(
+        isActive ? 'Active' : 'Inactive',
+        style: GoogleFonts.poppins(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: isActive ? Colors.green : Colors.grey,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKycBadge(String status) {
+    Color color;
+    String label;
+    
+    switch (status.toLowerCase()) {
+      case 'approved':
+        color = Colors.green;
+        label = 'Approved';
+        break;
+      case 'rejected':
+        color = Colors.red;
+        label = 'Rejected';
+        break;
+      default:
+        color = Colors.orange;
+        label = 'Pending';
+    }
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.poppins(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
       ),
     );
   }

@@ -248,32 +248,69 @@ class ReportService {
   }) async {
     final cutoffDate = asOfDate ?? DateTime.now();
     
-    // Get trial balance first
-    final trialBalance = await generateTrialBalance(asOfDate: cutoffDate);
-
-    // Get additional cash and bank balances
-    final walletTransactions = await _db
-        .collection('wallet_transactions')
+    // Get all members and their balances
+    final membersSnapshot = await _db
+        .collection('saccoplus-members')
         .where('tenantId', isEqualTo: _tenantId)
-        .where('timestamp', isLessThanOrEqualTo: cutoffDate)
         .get();
 
-    int cashInHand = 0;
-    for (var doc in walletTransactions.docs) {
-      final type = doc['type'] as String? ?? '';
-      final amount = (doc['amount'] as num?)?.toInt() ?? 0;
-      
-      if (type == 'deposit' || type == 'loan_repayment') {
-        cashInHand += amount;
-      } else if (type == 'withdrawal' || type == 'loan_disbursement') {
-        cashInHand -= amount;
+    int totalSavings = 0;
+    int totalShares = 0;
+    int totalFixedDeposits = 0;
+    int totalWalletBalance = 0;
+
+    for (var doc in membersSnapshot.docs) {
+      final data = doc.data();
+      totalSavings += (data['savingsBalance'] as num?)?.toInt() ?? 0;
+      totalShares += (data['sharesValue'] as num?)?.toInt() ?? 0;
+      totalWalletBalance += (data['walletBalance'] as num?)?.toInt() ?? 0;
+    }
+
+    // Get all active loans (money we lent out = our asset)
+    final loansSnapshot = await _db
+        .collection(AppConstants.loansCol)
+        .where('tenantId', isEqualTo: _tenantId)
+        .where('status', whereIn: ['approved', 'active', 'disbursed', 'overdue'])
+        .get();
+
+    int totalLoansOutstanding = 0;
+    for (var doc in loansSnapshot.docs) {
+      final data = doc.data();
+      final principal = (data['amount'] as num?)?.toInt() ?? 0;
+      final repaid = (data['totalRepaid'] as num?)?.toInt() ?? 
+                     (data['amountPaid'] as num?)?.toInt() ?? 0;
+      final outstanding = principal - repaid;
+      if (outstanding > 0) {
+        totalLoansOutstanding += outstanding;
       }
     }
 
-    // Recalculate totals including cash
-    final totalAssets = cashInHand + trialBalance['assets']['total'];
-    final totalLiabilities = trialBalance['liabilities']['total'];
-    // Equity must equal Assets - Liabilities to balance
+    // Get fixed deposits
+    final fdsSnapshot = await _db
+        .collection('fixedDeposits')
+        .where('tenantId', isEqualTo: _tenantId)
+        .where('status', isEqualTo: 'active')
+        .get();
+
+    for (var doc in fdsSnapshot.docs) {
+      totalFixedDeposits += (doc['amount'] as num?)?.toInt() ?? 0;
+    }
+
+    // CORRECT ACCOUNTING:
+    // ASSETS (What we own):
+    //   - Cash in hand/wallet
+    //   - Loans outstanding (money members owe us)
+    //
+    // LIABILITIES (What we owe):
+    //   - Member savings (we owe this back to members)
+    //   - Member shares (we owe this back to members)
+    //   - Fixed deposits (we owe this back to members)
+    //
+    // EQUITY = ASSETS - LIABILITIES
+
+    final cashInHand = totalWalletBalance;
+    final totalAssets = cashInHand + totalLoansOutstanding;
+    final totalLiabilities = totalSavings + totalShares + totalFixedDeposits;
     final totalEquity = totalAssets - totalLiabilities;
 
     return {
@@ -281,16 +318,16 @@ class ReportService {
       'assets': {
         'currentAssets': {
           'cashInHand': cashInHand,
-          'loansReceivable': trialBalance['assets']['loansReceivable']['total'],
-          'total': cashInHand + trialBalance['assets']['loansReceivable']['total'],
+          'loansReceivable': totalLoansOutstanding,
+          'total': totalAssets,
         },
         'total': totalAssets,
       },
       'liabilities': {
         'currentLiabilities': {
-          'memberSavings': trialBalance['liabilities']['memberSavings'],
-          'memberShares': trialBalance['liabilities']['memberShares'],
-          'fixedDeposits': trialBalance['liabilities']['fixedDeposits'],
+          'memberSavings': totalSavings,
+          'memberShares': totalShares,
+          'fixedDeposits': totalFixedDeposits,
           'total': totalLiabilities,
         },
         'total': totalLiabilities,

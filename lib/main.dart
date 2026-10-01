@@ -20,6 +20,42 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Print Firebase console links to CMD
+  debugPrint('');
+  debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  debugPrint('🔥 FIREBASE CONSOLE:');
+  debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore');
+  debugPrint('');
+  debugPrint('📊 FIRESTORE INDEXES:');
+  debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
+  debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  debugPrint('');
+
+  // Catch Flutter framework errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    
+    // Check if it's a Firestore index error
+    final errorString = details.exception.toString();
+    if (errorString.contains('index') && errorString.contains('firebase')) {
+      debugPrint('');
+      debugPrint('⚠️  FIRESTORE INDEX REQUIRED!');
+      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
+      // Extract and print the index URL if present
+      final urlMatch = RegExp(r'https://[^\s]+').firstMatch(errorString);
+      if (urlMatch != null) {
+        debugPrint('🔗 Click this link to create the index:');
+        debugPrint('   ${urlMatch.group(0)}');
+      } else {
+        debugPrint('🔗 Create indexes manually:');
+        debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
+      }
+      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      debugPrint('');
+    }
+  };
+
   // DevicePreview disabled for production builds
   runApp(const SaccoPlusApp());
 }

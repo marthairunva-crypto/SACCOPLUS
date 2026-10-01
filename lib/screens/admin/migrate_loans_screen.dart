@@ -336,8 +336,9 @@ class _MigrateLoansScreenState extends State<MigrateLoansScreen> {
 
       if (char == '"') {
         inQuotes = !inQuotes;
+        // Don't add the quote character to the buffer
       } else if (char == ',' && !inQuotes) {
-        fields.add(buffer.toString());
+        fields.add(buffer.toString().trim());
         buffer.clear();
       } else {
         buffer.write(char);
@@ -345,7 +346,7 @@ class _MigrateLoansScreenState extends State<MigrateLoansScreen> {
     }
 
     // Add the last field
-    fields.add(buffer.toString());
+    fields.add(buffer.toString().trim());
 
     return fields;
   }

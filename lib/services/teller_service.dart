@@ -218,6 +218,29 @@ class TellerService {
             'loanReference': loanData['referenceNumber'] ?? '',
           });
           
+          // Send in-app notification for loan repayment
+          await FirebaseService.sendNotification(
+            memberId,
+            '💳 Loan Payment Received',
+            'Payment of UGX ${_formatAmount(amount)} received. '
+            'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
+            'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
+            'Outstanding: UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
+            'Receipt: ${transaction['receiptNumber']}',
+            type: 'loan_payment',
+          );
+
+          // Send SMS notification for loan repayment
+          final loanSmsMessage = 
+              'Dear $memberName, your loan payment of UGX ${_formatAmount(amount)} has been received. '
+              'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
+              'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
+              'Outstanding balance: UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
+              'Receipt: ${transaction['receiptNumber']}. '
+              'Thank you.';
+          
+          await FirebaseService.sendSmsToPhone(memberPhone, loanSmsMessage);
+          
           transaction['loanId'] = loanId;
           transaction['loanReference'] = loanData['referenceNumber'] ?? '';
           transaction['principalPayment'] = principalPayment;

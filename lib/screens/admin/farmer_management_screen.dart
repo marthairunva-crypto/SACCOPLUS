@@ -416,10 +416,18 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen> {
                               labelText: 'Phone Number *',
                               prefixIcon: const Icon(Icons.phone),
                               hintText: '256XXXXXXXXX',
+                              helperText: 'Format: 256XXXXXXXXX (12 digits)',
+                              helperStyle: TextStyle(fontSize: 11, color: Colors.grey[600]),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                             keyboardType: TextInputType.phone,
-                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return 'Required';
+                              if (!RegExp(r'^256\d{9}$').hasMatch(v.trim())) {
+                                return 'Must be 256 followed by 9 digits';
+                              }
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 16),
                           

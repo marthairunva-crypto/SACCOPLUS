@@ -80,9 +80,9 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
   Widget _buildSummaryCards() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('loanRepayments')
+          .collection('saccoplus-repayments')
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .where('createdAt', isGreaterThan: Timestamp.fromDate(DateTime.now().subtract(const Duration(days: 30))))
+          .where('paidAt', isGreaterThan: Timestamp.fromDate(DateTime.now().subtract(const Duration(days: 30))))
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -100,7 +100,9 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
 
         for (var doc in payments) {
           final data = doc.data() as Map<String, dynamic>;
-          final timestamp = (data['createdAt'] as Timestamp).toDate();
+          final timestamp = data['paidAt'] != null 
+              ? (data['paidAt'] as Timestamp).toDate() 
+              : (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
           final amount = (data['amount'] ?? 0).toDouble();
 
           if (timestamp.isAfter(today)) todayTotal += amount;
@@ -177,19 +179,24 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('loanRepayments')
+          .collection('saccoplus-repayments')
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .where('createdAt', isGreaterThan: Timestamp.fromDate(startDate))
-          .orderBy('createdAt', descending: true)
+          .where('paidAt', isGreaterThan: Timestamp.fromDate(startDate))
+          .orderBy('paidAt', descending: true)
+          .limit(100)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-
-        final payments = snapshot.data!.docs;
-
-        if (payments.isEmpty) {
+        
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Error loading data: ${snapshot.error}'),
+          );
+        }
+        
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -201,6 +208,8 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
             ),
           );
         }
+
+        final payments = snapshot.data!.docs;
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -237,11 +246,13 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
             children: [
               Expanded(
                 child: FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance.collection('farmers').doc(payment['farmerId']).get(),
+                  future: FirebaseFirestore.instance
+                      .collection('saccoplus-members')
+                      .doc(payment['memberId'] ?? payment['farmerId'])
+                      .get(),
                   builder: (context, snapshot) {
-                    final memberName = snapshot.hasData 
-                        ? ((snapshot.data!.data() as Map?)?['name'] ?? 'Unknown')
-                        : 'Loading...';
+                    final data = snapshot.hasData ? (snapshot.data!.data() as Map?) : null;
+                    final memberName = data?['name'] ?? data?['fullName'] ?? 'Unknown Member';
                     return Text(
                       memberName,
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
@@ -308,8 +319,10 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
     final amountController = TextEditingController();
     final receiptController = TextEditingController();
     final notesController = TextEditingController();
+    final phoneController = TextEditingController();
     String? selectedMemberId;
     String? selectedLoanId;
+    String paymentMethod = 'Cash';
 
     showDialog(
       context: context,
@@ -320,21 +333,28 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Member Dropdown
                 StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
-                      .collection('farmers')
+                      .collection('saccoplus-members')
                       .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
                       .snapshots(),
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const CircularProgressIndicator();
+                    if (!snapshot.hasData) {
+                      return const SizedBox(
+                        height: 50,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
                     
                     return DropdownButtonFormField<String>(
                       value: selectedMemberId,
                       decoration: const InputDecoration(labelText: 'Select Member'),
                       items: snapshot.data!.docs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
                         return DropdownMenuItem(
                           value: doc.id,
-                          child: Text((doc.data() as Map)['name']),
+                          child: Text(data['name'] ?? data['fullName'] ?? 'Unknown'),
                         );
                       }).toList(),
                       onChanged: (value) {
@@ -346,29 +366,45 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
                     );
                   },
                 ),
+                
+                // Loan Dropdown (shows when member selected)
                 if (selectedMemberId != null) ...[
                   const SizedBox(height: 12),
                   StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
-                        .collection('loans')
-                        .where('farmerId', isEqualTo: selectedMemberId)
-                        .where('status', whereIn: ['approved', 'disbursed'])
+                        .collection('saccoplus-loans')
+                        .where('memberId', isEqualTo: selectedMemberId)
+                        .where('status', whereIn: ['active', 'disbursed', 'overdue', 'approved'])
                         .snapshots(),
                     builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const CircularProgressIndicator();
+                      if (!snapshot.hasData) {
+                        return const SizedBox(
+                          height: 50,
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
                       
                       if (snapshot.data!.docs.isEmpty) {
-                        return const Text('No active loans for this member');
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('No active loans for this member'),
+                        );
                       }
                       
                       return DropdownButtonFormField<String>(
                         value: selectedLoanId,
                         decoration: const InputDecoration(labelText: 'Select Loan'),
                         items: snapshot.data!.docs.map((doc) {
-                          final data = doc.data() as Map;
+                          final data = doc.data() as Map<String, dynamic>;
+                          final amount = data['amount'] ?? data['loanAmount'] ?? 0;
+                          final outstanding = data['principalOutstanding'] ?? 0;
                           return DropdownMenuItem(
                             value: doc.id,
-                            child: Text('Loan - ${NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0).format(data['amount'])}'),
+                            child: Text('Loan UGX ${NumberFormat('#,##0').format(amount)} (Outstanding: ${NumberFormat('#,##0').format(outstanding)})'),
                           );
                         }).toList(),
                         onChanged: (value) => setDialogState(() => selectedLoanId = value),
@@ -376,10 +412,48 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
                     },
                   ),
                 ],
+                
+                const SizedBox(height: 16),
+                
+                // Payment Method
+                DropdownButtonFormField<String>(
+                  value: paymentMethod,
+                  decoration: const InputDecoration(labelText: 'Payment Method'),
+                  items: const [
+                    DropdownMenuItem(value: 'Cash', child: Text('💵 Cash')),
+                    DropdownMenuItem(value: 'MTN Money', child: Text('📱 MTN Money')),
+                    DropdownMenuItem(value: 'Airtel Money', child: Text('📱 Airtel Money')),
+                    DropdownMenuItem(value: 'Bank Transfer', child: Text('🏦 Bank Transfer')),
+                  ],
+                  onChanged: (value) => setDialogState(() => paymentMethod = value!),
+                ),
+                
+                // Phone number for mobile money
+                if (paymentMethod == 'MTN Money' || paymentMethod == 'Airtel Money') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: phoneController,
+                    decoration: InputDecoration(
+                      labelText: 'Phone Number',
+                      hintText: '256XXXXXXXXX',
+                      helperText: 'Format: 256XXXXXXXXX (12 digits)',
+                      helperStyle: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      prefixIcon: const Icon(Icons.phone),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    keyboardType: TextInputType.phone,
+                  ),
+                ],
+                
                 const SizedBox(height: 12),
                 TextField(
                   controller: amountController,
-                  decoration: const InputDecoration(labelText: 'Payment Amount'),
+                  decoration: const InputDecoration(
+                    labelText: 'Payment Amount',
+                    prefixText: 'UGX ',
+                  ),
                   keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 12),
@@ -417,23 +491,47 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
                   );
                   return;
                 }
+                
+                // Validate phone for mobile money
+                if ((paymentMethod == 'MTN Money' || paymentMethod == 'Airtel Money') && phoneController.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter phone number for mobile money')),
+                  );
+                  return;
+                }
 
-                await FirebaseFirestore.instance.collection('loanRepayments').add({
-                  'tenantId': FirebaseService.sessionTenantId,
-                  'farmerId': selectedMemberId,
-                  'loanId': selectedLoanId,
-                  'amount': amount,
-                  'receiptNumber': receiptController.text.isEmpty ? null : receiptController.text,
-                  'notes': notesController.text.isEmpty ? null : notesController.text,
-                  'createdAt': FieldValue.serverTimestamp(),
-                  'createdBy': FirebaseService.sessionUid,
-                });
+                try {
+                  await FirebaseFirestore.instance.collection('saccoplus-repayments').add({
+                    'tenantId': FirebaseService.sessionTenantId,
+                    'memberId': selectedMemberId,
+                    'loanId': selectedLoanId,
+                    'amount': amount,
+                    'paymentMethod': paymentMethod,
+                    'phoneNumber': phoneController.text.isEmpty ? null : phoneController.text,
+                    'transactionRef': receiptController.text.isEmpty ? null : receiptController.text,
+                    'notes': notesController.text.isEmpty ? null : notesController.text,
+                    'paidAt': FieldValue.serverTimestamp(),
+                    'createdAt': FieldValue.serverTimestamp(),
+                    'recordedBy': FirebaseService.sessionUid,
+                  });
 
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment recorded'), backgroundColor: Colors.green),
-                );
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Payment recorded successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               child: const Text('Record'),
             ),
           ],

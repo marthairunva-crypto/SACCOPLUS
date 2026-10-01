@@ -825,7 +825,7 @@ class _BalanceSheetTabState extends State<_BalanceSheetTab> {
     if (_report == null) return;
 
     final csv = StringBuffer();
-    csv.writeln('SACCO PLUS PRO');
+    csv.writeln('MBADIFA SACCO');
     csv.writeln('BALANCE SHEET');
     csv.writeln('As of ${DateFormat('MMMM d, yyyy').format(_report!['asOfDate'])}');
     csv.writeln('');
@@ -891,7 +891,7 @@ class _BalanceSheetTabState extends State<_BalanceSheetTab> {
                 child: pw.Column(
                   children: [
                     pw.Text(
-                      'SACCO PLUS PRO',
+                      'MBADIFA SACCO',
                       style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
                     ),
                     pw.SizedBox(height: 8),
@@ -1055,7 +1055,7 @@ class _BalanceSheetTabState extends State<_BalanceSheetTab> {
             child: Column(
               children: [
                 Text(
-                  'SACCO PLUS PRO',
+                  'MBADIFA SACCO',
                   style: GoogleFonts.poppins(
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
@@ -2899,17 +2899,22 @@ class _ExpenseReportTabState extends State<_ExpenseReportTab> {
           padding: const EdgeInsets.all(32),
           child: Column(
             children: [
-              Icon(Icons.info_outline, size: 64, color: Colors.blue.shade300),
+              Icon(Icons.trending_down, size: 64, color: Colors.grey.shade300),
               const SizedBox(height: 16),
               Text(
-                'Expense Tracking',
+                'Expense Report',
                 style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               Text(
-                'Detailed expense categorization and reporting will be available in future updates.',
+                'Track expenses like salaries, rent, utilities, and operational costs.',
                 style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'No expense data available yet.',
+                style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey),
               ),
             ],
           ),

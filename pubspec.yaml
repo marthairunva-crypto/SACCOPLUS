@@ -39,6 +39,8 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.1
   path_provider: ^2.1.4
+  csv: ^6.0.0
+  msix: ^3.18.0
 
 dev_dependencies:
   flutter_test:
@@ -51,12 +53,22 @@ flutter:
   assets:
     - assets/images/
 
+msix_config:
+  display_name: Mbadifa SACCO Pro
+  publisher_display_name: Infinitech Innovations Ltd
+  identity_name: InfinitechInnovations.MbadifaSACCO
+  msix_version: 2.0.0.0
+  logo_path: assets\images\mbadifa-logo.png
+  capabilities: internetClient
+  install_certificate: false
+  publisher: CN=Infinitech Innovations Ltd
+
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo2.png"
+  image_path: "assets/images/mbadifa-logo.png"
   min_sdk_android: 21
   adaptive_icon_background: "#0D2B6B"
-  adaptive_icon_foreground: "assets/images/logo2.png"
+  adaptive_icon_foreground: "assets/images/mbadifa-logo.png"
   web:
     generate: false

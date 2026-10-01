@@ -1,8 +1,8 @@
 class AppConstants {
   // ── Branding ──────────────────────────────────────────────────────────────
-  static const String appName     = 'SACCOPLUS Pro';
-  static const String appSubtitle = 'Kikole mu ngeri ennyangu';
-  static const String appTagline  = 'Banking Made Simple for Every SACCO';
+  static const String appName     = 'MBADIFA SACCO';
+  static const String appSubtitle = 'Poverty Must Go';
+  static const String appTagline  = 'Empowering Communities • Building Futures';
   static const String appVersion  = '2.0.0';
   static const String logoPath    = 'assets/images/logo2.png';
 

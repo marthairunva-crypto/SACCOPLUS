@@ -130,51 +130,84 @@ class DashboardService {
   // ─── Get Savings Summary ──────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getSavingsSummary() async {
     try {
-      final snapshot = await _db
+      print('📊 DashboardService.getSavingsSummary:');
+      
+      // Query actual savings transactions
+      final savingsSnapshot = await _db
+          .collection('saccoplus-savings')
+          .where('tenantId', isEqualTo: _tenantId)
+          .get();
+
+      // Query actual shares transactions
+      final sharesSnapshot = await _db
+          .collection('saccoplus-shares')
+          .where('tenantId', isEqualTo: _tenantId)
+          .get();
+
+      // Query members for count
+      final membersSnapshot = await _db
           .collection('saccoplus-members')
           .where('tenantId', isEqualTo: _tenantId)
           .get();
 
-      int totalSavings = 0;
-      int totalShares = 0;
-      int totalWallet = 0;
-      int totalLoans = 0;
-      int membersWithSavings = 0;
-      int membersWithShares = 0;
+      print('   - Found ${savingsSnapshot.docs.length} savings records');
+      print('   - Found ${sharesSnapshot.docs.length} shares records');
+      print('   - Found ${membersSnapshot.docs.length} members');
 
-      print('📊 DashboardService.getSavingsSummary:');
-      print('   - Found ${snapshot.docs.length} members');
-
-      for (var doc in snapshot.docs) {
+      // Calculate total savings
+      double totalSavingsDouble = 0;
+      Set<String> membersWithSavings = {};
+      for (var doc in savingsSnapshot.docs) {
         final data = doc.data();
-        final savings = (data['savingsBalance'] as num?)?.toInt() ?? 0;
-        final shares = (data['sharesBalance'] as num?)?.toInt() ?? 0;
-        final wallet = (data['walletBalance'] as num?)?.toInt() ?? 0;
+        final amount = (data['amount'] ?? data['availableBalance'] ?? 0).toDouble();
+        totalSavingsDouble += amount;
+        
+        final memberId = data['memberId'] ?? data['farmerId'] ?? '';
+        if (memberId.isNotEmpty) {
+          membersWithSavings.add(memberId);
+        }
+      }
+      int totalSavings = totalSavingsDouble.toInt();
+
+      // Calculate total shares
+      double totalSharesDouble = 0;
+      Set<String> membersWithSharesSet = {};
+      for (var doc in sharesSnapshot.docs) {
+        final data = doc.data();
+        final amount = (data['amount'] ?? 0).toDouble();
+        totalSharesDouble += amount;
+        
+        final memberId = data['memberId'] ?? data['farmerId'] ?? '';
+        if (memberId.isNotEmpty) {
+          membersWithSharesSet.add(memberId);
+        }
+      }
+      int totalShares = totalSharesDouble.toInt();
+
+      // Calculate loans from member balances
+      int totalLoans = 0;
+      for (var doc in membersSnapshot.docs) {
+        final data = doc.data();
         final loans = (data['loanBalance'] as num?)?.toInt() ?? 0;
-
-        totalSavings += savings;
-        totalShares += shares;
-        totalWallet += wallet;
         totalLoans += loans;
-
-        if (savings > 0) membersWithSavings++;
-        if (shares > 0) membersWithShares++;
       }
 
       print('   - Total Savings: UGX $totalSavings');
       print('   - Total Shares: UGX $totalShares');
-      print('   - Total Wallet: UGX $totalWallet');
       print('   - Total Loans: UGX $totalLoans');
+      print('   - Members with savings: ${membersWithSavings.length}');
+      print('   - Members with shares: ${membersWithSharesSet.length}');
 
       return {
         'totalSavings': totalSavings,
         'totalShares': totalShares,
-        'totalWallet': totalWallet,
+        'totalWallet': 0,
         'totalLoans': totalLoans,
-        'totalAssets': totalSavings + totalShares + totalWallet,
-        'membersWithSavings': membersWithSavings,
-        'membersWithShares': membersWithShares,
-        'totalMembers': snapshot.docs.length,
+        'totalBalance': totalSavings, // For dashboard display
+        'totalAssets': totalSavings + totalShares,
+        'membersWithSavings': membersWithSavings.length,
+        'membersWithShares': membersWithSharesSet.length,
+        'totalMembers': membersSnapshot.docs.length,
       };
     } catch (e) {
       print('❌ Error in getSavingsSummary: $e');
@@ -183,6 +216,7 @@ class DashboardService {
         'totalShares': 0,
         'totalWallet': 0,
         'totalLoans': 0,
+        'totalBalance': 0,
         'totalAssets': 0,
         'membersWithSavings': 0,
         'membersWithShares': 0,

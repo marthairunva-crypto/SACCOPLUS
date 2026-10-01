@@ -19,7 +19,7 @@ class LoanApprovalScreen extends StatefulWidget {
 }
 
 class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
-  final fmt = NumberFormat('#,###', 'en_US');
+  final fmt = NumberFormat('#,##0', 'en_US');
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +65,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
           }).toList();
 
           return Container(
-            margin: const EdgeInsets.all(16),
+            margin: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
@@ -79,64 +79,50 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
             ),
             child: ProfessionalDataTable(
               columns: [
-                DataTableColumn(
+                const DataTableColumn(
                   key: 'memberName',
-                  label: 'Member',
+                  label: 'Member Name',
                   width: 200,
-                  builder: (row) => Text(
-                    row['memberName'] ?? '-',
-                    style: const TextStyle(fontSize: 13),
-                  ),
                 ),
-                DataTableColumn(
+                const DataTableColumn(
                   key: 'referenceNumber',
-                  label: 'Loan Ref',
+                  label: 'Reference',
                   width: 130,
-                  builder: (row) => Text(
-                    row['referenceNumber'] ?? '-',
-                    style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
                 ),
                 DataTableColumn(
                   key: 'amount',
                   label: 'Amount',
-                  width: 150,
+                  width: 120,
                   builder: (row) => Text(
-                    'UGX ${fmt.format(row['amount'] ?? 0)}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
+                    fmt.format(row['amount'] ?? 0),
+                    style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.primary,
                     ),
-                  ),
-                ),
-                DataTableColumn(
-                  key: 'loanProduct',
-                  label: 'Product',
-                  width: 160,
-                  builder: (row) => Text(
-                    row['loanProduct'] ?? '-',
-                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
                 DataTableColumn(
                   key: 'principalOutstanding',
                   label: 'Outstanding',
-                  width: 150,
+                  width: 120,
                   builder: (row) => Text(
-                    'UGX ${fmt.format(row['principalOutstanding'] ?? 0)}',
-                    style: GoogleFonts.poppins(fontSize: 13, color: Colors.red.shade700),
+                    fmt.format(row['principalOutstanding'] ?? 0),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFD32F2F),
+                    ),
                   ),
                 ),
                 DataTableColumn(
                   key: 'createdAt',
-                  label: 'Applied',
-                  width: 130,
+                  label: 'Created',
+                  width: 105,
                   builder: (row) {
                     final createdAt = row['createdAt'];
                     if (createdAt is Timestamp) {
                       return Text(
-                        DateFormat('MMM d, yyyy').format(createdAt.toDate()),
+                        DateFormat('dd MMM yy').format(createdAt.toDate()),
                         style: const TextStyle(fontSize: 13),
                       );
                     }
@@ -144,82 +130,133 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                   },
                 ),
                 DataTableColumn(
+                  key: 'disbursementDate',
+                  label: 'Disbursed',
+                  width: 105,
+                  builder: (row) {
+                    // Try multiple possible field names
+                    final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'] ?? row['Disbursement Date'];
+                    
+                    if (disbursementDate is Timestamp) {
+                      return Text(
+                        DateFormat('dd MMM yy').format(disbursementDate.toDate()),
+                        style: const TextStyle(fontSize: 13),
+                      );
+                    } else if (disbursementDate is String && disbursementDate.isNotEmpty) {
+                      try {
+                        final date = DateFormat('MMMM d, yyyy').parse(disbursementDate);
+                        return Text(
+                          DateFormat('dd MMM yy').format(date),
+                          style: const TextStyle(fontSize: 13),
+                        );
+                      } catch (e) {
+                        return Text(disbursementDate, style: const TextStyle(fontSize: 11));
+                      }
+                    }
+                    return const Text('-', style: TextStyle(fontSize: 13, color: Colors.grey));
+                  },
+                ),
+                DataTableColumn(
                   key: 'dueDate',
                   label: 'Due Date',
-                  width: 140,
+                  width: 115,
                   builder: (row) {
-                    final dueDate = row['dueDate'];
-                    final outstandingDays = row['outstandingDays'] ?? 0;
+                    // Try multiple possible field names
+                    final dueDate = row['dueDate'] ?? row['Due Date'];
+                    final outstandingDays = row['outstandingDays'] ?? row['overdueDays'] ?? row['Overdue Days'] ?? 0;
+                    
+                    DateTime? parsedDate;
                     
                     if (dueDate is Timestamp) {
-                      final isOverdue = outstandingDays > 0;
+                      parsedDate = dueDate.toDate();
+                    } else if (dueDate is String && dueDate.isNotEmpty) {
+                      try {
+                        parsedDate = DateFormat('MMMM d, yyyy').parse(dueDate);
+                      } catch (e) {
+                        // Try other formats
+                        try {
+                          parsedDate = DateTime.parse(dueDate);
+                        } catch (e2) {
+                          return Text(dueDate, style: const TextStyle(fontSize: 11));
+                        }
+                      }
+                    }
+                    
+                    if (parsedDate != null) {
+                      final isOverdue = (outstandingDays is int && outstandingDays > 0) || 
+                                       (outstandingDays is String && int.tryParse(outstandingDays) != null && int.parse(outstandingDays) > 0);
+                      final days = outstandingDays is int ? outstandingDays : (int.tryParse(outstandingDays.toString()) ?? 0);
+                      
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            DateFormat('MMM d, yyyy').format(dueDate.toDate()),
-                            style: GoogleFonts.poppins(
+                            DateFormat('dd MMM yy').format(parsedDate),
+                            style: TextStyle(
                               fontSize: 13,
-                              color: isOverdue ? Colors.red.shade700 : Colors.black87,
+                              color: isOverdue ? const Color(0xFFD32F2F) : Colors.black87,
                               fontWeight: isOverdue ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
-                          if (isOverdue) ...[
+                          if (isOverdue && days > 0) ...[
                             const SizedBox(height: 2),
                             Text(
-                              '$outstandingDays days overdue',
-                              style: GoogleFonts.poppins(
+                              '+$days days',
+                              style: const TextStyle(
                                 fontSize: 10,
-                                color: Colors.red.shade600,
-                                fontWeight: FontWeight.w500,
+                                color: Color(0xFFD32F2F),
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ],
                       );
                     }
-                    return Text(
-                      '-',
-                      style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
-                    );
+                    return const Text('-', style: TextStyle(fontSize: 13));
                   },
                 ),
                 DataTableColumn(
                   key: 'status',
                   label: 'Status',
-                  width: 130,
+                  width: 95,
                   builder: (row) {
                     final status = row['status'] ?? '';
                     Color bgColor;
                     Color textColor;
+                    String label;
                     
                     if (status == 'paid' || status == 'cleared') {
-                      bgColor = Colors.green.shade50;
-                      textColor = Colors.green.shade700;
+                      bgColor = const Color(0xFFE8F5E9);
+                      textColor = const Color(0xFF2E7D32);
+                      label = 'Paid';
                     } else if (status == AppConstants.statusPending) {
-                      bgColor = AppTheme.warning.withOpacity(0.1);
-                      textColor = AppTheme.warning;
+                      bgColor = const Color(0xFFFFF3E0);
+                      textColor = const Color(0xFFE65100);
+                      label = 'Pending';
                     } else if (status == AppConstants.statusApproved || status == 'active') {
-                      bgColor = AppTheme.success.withOpacity(0.1);
-                      textColor = AppTheme.success;
+                      bgColor = const Color(0xFFE3F2FD);
+                      textColor = const Color(0xFF1565C0);
+                      label = status == 'active' ? 'Active' : 'Approved';
                     } else if (status == 'overdue') {
-                      bgColor = AppTheme.error.withOpacity(0.1);
-                      textColor = AppTheme.error;
+                      bgColor = const Color(0xFFFFEBEE);
+                      textColor = const Color(0xFFD32F2F);
+                      label = 'Overdue';
                     } else {
-                      bgColor = Colors.grey.shade100;
-                      textColor = Colors.grey.shade700;
+                      bgColor = const Color(0xFFEEEEEE);
+                      textColor = const Color(0xFF757575);
+                      label = status;
                     }
                     
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: bgColor,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        status.toUpperCase(),
-                        style: GoogleFonts.poppins(
+                        label,
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: textColor,
@@ -232,38 +269,59 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'actions',
                   label: 'Actions',
-                  width: 170,
+                  width: 140,
                   builder: (row) {
                     final loanId = row['id'];
                     
                     return Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.visibility_outlined, size: 20),
-                          color: Colors.blue,
-                          onPressed: () => _showLoanDetails(context, loanId, row),
-                          tooltip: 'View',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6),
+                            onTap: () => _showLoanDetails(context, loanId, row),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE3F2FD),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF1565C0)),
+                            ),
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                          color: Colors.orange,
-                          onPressed: () => _editLoan(loanId, row),
-                          tooltip: 'Edit',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                        const SizedBox(width: 6),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6),
+                            onTap: () => _editLoan(loanId, row),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF3E0),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFFE65100)),
+                            ),
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          color: Colors.red,
-                          onPressed: () => _deleteLoan(loanId, row),
-                          tooltip: 'Delete',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                        const SizedBox(width: 6),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6),
+                            onTap: () => _deleteLoan(loanId, row),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFEBEE),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFD32F2F)),
+                            ),
+                          ),
                         ),
                       ],
                     );
@@ -624,7 +682,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 700),
+          constraints: const BoxConstraints(maxWidth: 650, maxHeight: 750),
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,19 +703,58 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildDetailRow('Member Name', loan['memberName'] ?? loan['farmerName'] ?? 'N/A'),
-                      _buildDetailRow('Amount', 'UGX ${fmt.format(loan['amount'] ?? 0)}'),
-                      _buildDetailRow('Loan Type', loan['loanType'] ?? 'N/A'),
+                      // Member Information
+                      Text('Member Information', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                      const SizedBox(height: 8),
+                      _buildDetailRow('Member Name', loan['memberName'] ?? loan['farmerName'] ?? loan['clientName'] ?? 'N/A'),
+                      _buildDetailRow('Account Number', loan['accountNumber'] ?? loan['memberNumber'] ?? 'N/A'),
+                      _buildDetailRow('Phone', loan['phone'] ?? loan['memberPhone'] ?? 'N/A'),
+                      
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      
+                      // Loan Information
+                      Text('Loan Information', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                      const SizedBox(height: 8),
+                      _buildDetailRow('Reference Number', loan['referenceNumber'] ?? 'N/A'),
+                      _buildDetailRow('Loan Product', loan['loanProduct'] ?? loan['loanType'] ?? 'N/A'),
                       _buildDetailRow('Purpose', loan['purpose'] ?? 'N/A'),
-                      _buildDetailRow('Period', loan['repaymentPeriod'] ?? loan['period'] ?? 'N/A'),
                       _buildDetailRow('Status', loan['status'] ?? 'N/A'),
-                      _buildDetailRow('Applied On', loan['createdAt'] is Timestamp
-                          ? DateFormat('MMM d, yyyy').format((loan['createdAt'] as Timestamp).toDate())
-                          : 'N/A'),
-                      if (loan['dueDate'] != null)
-                        _buildDetailRow('Due Date', loan['dueDate'] is Timestamp
-                            ? DateFormat('MMM d, yyyy').format((loan['dueDate'] as Timestamp).toDate())
-                            : 'N/A'),
+                      
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      
+                      // Financial Details
+                      Text('Financial Details', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                      const SizedBox(height: 8),
+                      _buildDetailRow('Total Loan Amount', 'UGX ${fmt.format(loan['amount'] ?? loan['loanAmount'] ?? 0)}', 
+                          color: AppTheme.primary),
+                      _buildDetailRow('Interest Amount', 'UGX ${fmt.format(loan['interestAmount'] ?? loan['totalInterestAmount'] ?? 0)}'),
+                      _buildDetailRow('Total Amount', 'UGX ${fmt.format(loan['totalAmount'] ?? 0)}', 
+                          color: Colors.black87),
+                      _buildDetailRow('Outstanding Principal', 'UGX ${fmt.format(loan['principalOutstanding'] ?? 0)}', 
+                          color: AppTheme.error),
+                      _buildDetailRow('Outstanding Interest', 'UGX ${fmt.format(loan['outstandingInterest'] ?? loan['interestOriginalBalance'] ?? 0)}'),
+                      
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      
+                      // Repayment Terms
+                      Text('Repayment Terms', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                      const SizedBox(height: 8),
+                      _buildDetailRow('Tenure', '${loan['tenure'] ?? loan['duration'] ?? 'N/A'}'),
+                      _buildDetailRow('Tenure Type', loan['tenureType'] ?? loan['paymentFrequency'] ?? 'N/A'),
+                      
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      
+                      // Important Dates
+                      Text('Important Dates', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                      const SizedBox(height: 8),
+                      _buildDetailRow('Applied On', _formatDate(loan['createdAt'] ?? loan['creationDate'])),
+                      _buildDetailRow('Disbursed On', _formatDate(loan['disbursedAt'] ?? loan['disbursementDate'])),
+                      _buildDetailRow('Due Date', _formatDate(loan['dueDate'] ?? loan['expiryDate']), 
+                          color: _calculateDaysOverdue(loan) > 0 ? AppTheme.error : null),
                       if (_calculateDaysOverdue(loan) > 0)
                         _buildDetailRow('Days Overdue', '${_calculateDaysOverdue(loan)} days',
                             color: AppTheme.error),
@@ -708,6 +805,30 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
         ),
       ),
     );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return 'N/A';
+    
+    try {
+      if (date is Timestamp) {
+        return DateFormat('MMM d, yyyy').format(date.toDate());
+      } else if (date is String) {
+        // Try parsing string date
+        final parsedDate = DateTime.tryParse(date);
+        if (parsedDate != null) {
+          return DateFormat('MMM d, yyyy').format(parsedDate);
+        }
+        // Return as-is if can't parse
+        return date;
+      } else if (date is DateTime) {
+        return DateFormat('MMM d, yyyy').format(date);
+      }
+    } catch (e) {
+      // Ignore parsing errors
+    }
+    
+    return 'N/A';
   }
 
   Widget _buildDetailRow(String label, String value, {Color? color}) {
