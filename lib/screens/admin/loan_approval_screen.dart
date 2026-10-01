@@ -9,6 +9,7 @@ import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../utils/csv_export.dart';
+import 'loan_card_screen.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
   final bool embedded;
@@ -677,131 +678,13 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
   }
 
   void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 650, maxHeight: 750),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Loan Details', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const Divider(),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Member Information
-                      Text('Member Information', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
-                      const SizedBox(height: 8),
-                      _buildDetailRow('Member Name', loan['memberName'] ?? loan['farmerName'] ?? loan['clientName'] ?? 'N/A'),
-                      _buildDetailRow('Account Number', loan['accountNumber'] ?? loan['memberNumber'] ?? 'N/A'),
-                      _buildDetailRow('Phone', loan['phone'] ?? loan['memberPhone'] ?? 'N/A'),
-                      
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      
-                      // Loan Information
-                      Text('Loan Information', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
-                      const SizedBox(height: 8),
-                      _buildDetailRow('Reference Number', loan['referenceNumber'] ?? 'N/A'),
-                      _buildDetailRow('Loan Product', loan['loanProduct'] ?? loan['loanType'] ?? 'N/A'),
-                      _buildDetailRow('Purpose', loan['purpose'] ?? 'N/A'),
-                      _buildDetailRow('Status', loan['status'] ?? 'N/A'),
-                      
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      
-                      // Financial Details
-                      Text('Financial Details', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
-                      const SizedBox(height: 8),
-                      _buildDetailRow('Total Loan Amount', 'UGX ${fmt.format(loan['amount'] ?? loan['loanAmount'] ?? 0)}', 
-                          color: AppTheme.primary),
-                      _buildDetailRow('Interest Amount', 'UGX ${fmt.format(loan['interestAmount'] ?? loan['totalInterestAmount'] ?? 0)}'),
-                      _buildDetailRow('Total Amount', 'UGX ${fmt.format(loan['totalAmount'] ?? 0)}', 
-                          color: Colors.black87),
-                      _buildDetailRow('Outstanding Principal', 'UGX ${fmt.format(loan['principalOutstanding'] ?? 0)}', 
-                          color: AppTheme.error),
-                      _buildDetailRow('Outstanding Interest', 'UGX ${fmt.format(loan['outstandingInterest'] ?? loan['interestOriginalBalance'] ?? 0)}'),
-                      
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      
-                      // Repayment Terms
-                      Text('Repayment Terms', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
-                      const SizedBox(height: 8),
-                      _buildDetailRow('Tenure', '${loan['tenure'] ?? loan['duration'] ?? 'N/A'}'),
-                      _buildDetailRow('Tenure Type', loan['tenureType'] ?? loan['paymentFrequency'] ?? 'N/A'),
-                      
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      
-                      // Important Dates
-                      Text('Important Dates', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primary)),
-                      const SizedBox(height: 8),
-                      _buildDetailRow('Applied On', _formatDate(loan['createdAt'] ?? loan['creationDate'])),
-                      _buildDetailRow('Disbursed On', _formatDate(loan['disbursedAt'] ?? loan['disbursementDate'])),
-                      _buildDetailRow('Due Date', _formatDate(loan['dueDate'] ?? loan['expiryDate']), 
-                          color: _calculateDaysOverdue(loan) > 0 ? AppTheme.error : null),
-                      if (_calculateDaysOverdue(loan) > 0)
-                        _buildDetailRow('Days Overdue', '${_calculateDaysOverdue(loan)} days',
-                            color: AppTheme.error),
-                    ],
-                  ),
-                ),
-              ),
-              if (loan['status'] == AppConstants.statusPending) ...[
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _handleAction(loanId, AppConstants.statusRejected,
-                              loan['memberName'] ?? 'Member');
-                        },
-                        icon: const Icon(Icons.close),
-                        label: const Text('Reject'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.error,
-                          padding: const EdgeInsets.all(16),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _handleAction(loanId, AppConstants.statusApproved,
-                              loan['memberName'] ?? 'Member');
-                        },
-                        icon: const Icon(Icons.check),
-                        label: const Text('Approve'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.success,
-                          padding: const EdgeInsets.all(16),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
+  void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LoanCardScreen(
+          loanId: loanId,
+          loanData: loan,
         ),
       ),
     );
