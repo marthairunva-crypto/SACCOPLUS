@@ -573,17 +573,16 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
   }
 
   void _editLoan(String loanId, Map<String, dynamic> loanData) {
-    // Show edit dialog with loan fields
-    showDialog(
-      context: context,
-      builder: (context) => _EditLoanDialog(loanId: loanId, loanData: loanData),
-    ).then((updated) {
-      if (updated == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Loan updated successfully')),
-        );
-      }
-    });
+    // Navigate to loan card screen for editing
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LoanCardScreen(
+          loanId: loanId,
+          loanData: loanData,
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteLoan(String loanId, Map<String, dynamic> loanData) async {
@@ -747,3 +746,4 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
   }
 }
 
+}
