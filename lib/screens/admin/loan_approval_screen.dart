@@ -9,7 +9,7 @@ import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../utils/csv_export.dart';
-import 'loan_card_screen.dart';
+import 'loan_card_dialog.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
   final bool embedded;
@@ -573,14 +573,12 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
   }
 
   void _editLoan(String loanId, Map<String, dynamic> loanData) {
-    // Navigate to loan card screen for editing
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LoanCardScreen(
-          loanId: loanId,
-          loanData: loanData,
-        ),
+    // Show loan card dialog for editing
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: LoanCardDialog(loanId: loanId, loanData: loanData),
       ),
     );
   }
@@ -678,13 +676,11 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
 
   void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
   void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LoanCardScreen(
-          loanId: loanId,
-          loanData: loan,
-        ),
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: LoanCardDialog(loanId: loanId, loanData: loan),
       ),
     );
   }
