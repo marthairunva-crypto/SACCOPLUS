@@ -82,7 +82,7 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
         'interest': interest,
         'totalAmount': totalAmount,
         'updatedAt': FieldValue.serverTimestamp(),
-        'updatedBy': FirebaseService.sessionUsername,
+        'updatedBy': FirebaseService.sessionProfile?['fullName'] ?? 'Admin',
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
