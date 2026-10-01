@@ -40,16 +40,20 @@ jobs:
       - name: List build output (for debugging)
         run: |
           Write-Host "Build output structure:"
-          Get-ChildItem -Path build\windows -Recurse -Depth 3 | Select-Object FullName
+          Get-ChildItem -Path build\windows -Recurse -Depth 4 | Where-Object { $_.Name -eq "saccoplus_pro.exe" -or $_.PSIsContainer } | Select-Object FullName
       
       - name: Create Portable ZIP
         run: |
-          $releasePath = Get-ChildItem -Path "build\windows" -Recurse -Filter "Release" -Directory | Select-Object -First 1 -ExpandProperty FullName
-          if ($releasePath) {
-            Write-Host "Found Release folder at: $releasePath"
-            Compress-Archive -Path "$releasePath\*" -DestinationPath "MBADIFA_SACCO_Portable.zip" -Force
+          # Find the actual Release folder containing the EXE
+          $exePath = Get-ChildItem -Path "build\windows" -Recurse -Filter "saccoplus_pro.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if ($exePath) {
+            $releaseFolder = Split-Path $exePath -Parent
+            Write-Host "Found EXE at: $exePath"
+            Write-Host "Release folder: $releaseFolder"
+            Compress-Archive -Path "$releaseFolder\*" -DestinationPath "MBADIFA_SACCO_Portable.zip" -Force
+            Write-Host "ZIP created successfully"
           } else {
-            Write-Error "Release folder not found"
+            Write-Error "saccoplus_pro.exe not found in build output"
             exit 1
           }
       
@@ -60,30 +64,3 @@ jobs:
           name: MBADIFA-SACCO-Portable
           path: MBADIFA_SACCO_Portable.zip
           retention-days: 90
-      
-      - name: Create Release
-        if: success() && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: MBADIFA SACCO v1.0.${{ github.run_number }}
-          body: |
-            ## MBADIFA SACCO - Portable Windows Version
-            
-            **Installation Instructions:**
-            1. Download `MBADIFA_SACCO_Portable.zip`
-            2. Extract to any folder (e.g., `C:\MBADIFA SACCO\`)
-            3. Run `saccoplus_pro.exe`
-            4. (Optional) Create a desktop shortcut by right-clicking `saccoplus_pro.exe` → Send to → Desktop
-            
-            **Features:**
-            - No installation required
-            - Run from any location
-            - All dependencies included
-            
-            **Version:** v1.0.${{ github.run_number }}
-          files: MBADIFA_SACCO_Portable.zip
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
