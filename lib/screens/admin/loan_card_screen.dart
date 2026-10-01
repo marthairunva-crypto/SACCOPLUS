@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'dart:math' show pow;
 import '../../core/firebase_service.dart';
 import '../../theme/modern_theme.dart';
 
@@ -30,6 +31,10 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
   late TextEditingController _interestRateController;
   late TextEditingController _durationController;
   late TextEditingController _purposeController;
+  late TextEditingController _penaltyRateController;
+  late TextEditingController _arrearsController;
+  
+  String _interestMethod = 'flat'; // 'flat' or 'reducing'
 
   @override
   void initState() {
@@ -46,6 +51,13 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
     _purposeController = TextEditingController(
       text: widget.loanData['purpose']?.toString() ?? 'N/A'
     );
+    _penaltyRateController = TextEditingController(
+      text: widget.loanData['penaltyRate']?.toString() ?? '2'
+    );
+    _arrearsController = TextEditingController(
+      text: widget.loanData['arrears']?.toString() ?? '0'
+    );
+    _interestMethod = widget.loanData['interestMethod'] ?? 'flat';
   }
 
   @override
@@ -54,6 +66,8 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
     _interestRateController.dispose();
     _durationController.dispose();
     _purposeController.dispose();
+    _penaltyRateController.dispose();
+    _arrearsController.dispose();
     super.dispose();
   }
 
@@ -66,10 +80,26 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
       final principal = double.parse(_principalController.text);
       final interestRate = double.parse(_interestRateController.text);
       final duration = int.parse(_durationController.text);
+      final penaltyRate = double.parse(_penaltyRateController.text);
+      final arrears = double.parse(_arrearsController.text);
 
-      // Recalculate interest and total
-      final interest = (principal * interestRate * duration) / (100 * 12);
+      // Calculate interest based on method
+      double interest;
+      if (_interestMethod == 'reducing') {
+        // Reducing Balance: Interest calculated on remaining balance
+        // Formula: P * r * (1 + r)^n / ((1 + r)^n - 1) * n - P
+        final r = interestRate / (100 * 12); // Monthly rate
+        final n = duration; // Number of months
+        final monthlyPayment = principal * r * pow(1 + r, n) / (pow(1 + r, n) - 1);
+        interest = (monthlyPayment * n) - principal;
+      } else {
+        // Flat Rate: Interest on full principal for entire duration
+        interest = (principal * interestRate * duration) / (100 * 12);
+      }
+
       final totalAmount = principal + interest;
+      final penalties = arrears > 0 ? (arrears * penaltyRate / 100) : 0;
+      final totalWithPenalties = totalAmount + penalties;
 
       await FirebaseFirestore.instance
           .collection('saccoplus-loans')
@@ -77,10 +107,15 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
           .update({
         'loanAmount': principal,
         'interestRate': interestRate,
+        'interestMethod': _interestMethod,
         'duration': duration,
         'purpose': _purposeController.text,
         'interest': interest,
         'totalAmount': totalAmount,
+        'penaltyRate': penaltyRate,
+        'arrears': arrears,
+        'penalties': penalties,
+        'totalWithPenalties': totalWithPenalties,
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': FirebaseService.sessionProfile?['fullName'] ?? 'Admin',
       });
@@ -96,10 +131,15 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
         _isEditing = false;
         widget.loanData['loanAmount'] = principal;
         widget.loanData['interestRate'] = interestRate;
+        widget.loanData['interestMethod'] = _interestMethod;
         widget.loanData['duration'] = duration;
         widget.loanData['purpose'] = _purposeController.text;
         widget.loanData['interest'] = interest;
         widget.loanData['totalAmount'] = totalAmount;
+        widget.loanData['penaltyRate'] = penaltyRate;
+        widget.loanData['arrears'] = arrears;
+        widget.loanData['penalties'] = penalties;
+        widget.loanData['totalWithPenalties'] = totalWithPenalties;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -125,6 +165,10 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
     final totalAmount = (widget.loanData['totalAmount'] ?? 0).toDouble();
     final outstanding = (widget.loanData['outstandingBalance'] ?? totalAmount).toDouble();
     final status = widget.loanData['status'] ?? 'pending';
+    final interestMethod = widget.loanData['interestMethod'] ?? 'flat';
+    final penaltyRate = (widget.loanData['penaltyRate'] ?? 2).toDouble();
+    final arrears = (widget.loanData['arrears'] ?? 0).toDouble();
+    final penalties = (widget.loanData['penalties'] ?? 0).toDouble();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -290,6 +334,63 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
                                 _interestRateController,
                                 _isEditing,
                               ),
+                              // Interest Method Dropdown
+                              if (_isEditing)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 140,
+                                        child: Text(
+                                          'Interest Method:',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFF4A3428),
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          value: _interestMethod,
+                                          isDense: true,
+                                          decoration: InputDecoration(
+                                            filled: true,
+                                            fillColor: Colors.white,
+                                            contentPadding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 8,
+                                            ),
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'flat',
+                                              child: Text('Flat Rate'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'reducing',
+                                              child: Text('Reducing Balance'),
+                                            ),
+                                          ],
+                                          onChanged: (value) {
+                                            if (value != null) {
+                                              setState(() => _interestMethod = value);
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                _buildCardRow(
+                                  'Interest Method:',
+                                  interestMethod == 'reducing' ? 'Reducing Balance' : 'Flat Rate',
+                                ),
                               _buildCardRow(
                                 'Interest Amount:',
                                 'UGX ${_currencyFormat.format(interest)}',
@@ -329,6 +430,40 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
                                   fontSize: 16,
                                 ),
                               ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Arrears & Penalties Section
+                          _buildCardSection(
+                            title: 'ARREARS & PENALTIES',
+                            children: [
+                              _buildEditableAmountRow(
+                                'Arrears:',
+                                _arrearsController,
+                                _isEditing,
+                              ),
+                              _buildEditablePercentageRow(
+                                'Penalty Rate:',
+                                _penaltyRateController,
+                                _isEditing,
+                              ),
+                              _buildCardRow(
+                                'Penalties:',
+                                'UGX ${_currencyFormat.format(penalties)}',
+                                valueColor: penalties > 0 ? Colors.red.shade700 : null,
+                              ),
+                              if (penalties > 0)
+                                _buildCardRow(
+                                  'Total (with Penalties):',
+                                  'UGX ${_currencyFormat.format(totalAmount + penalties)}',
+                                  valueStyle: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.red.shade800,
+                                    fontSize: 16,
+                                  ),
+                                ),
                             ],
                           ),
                         ],
