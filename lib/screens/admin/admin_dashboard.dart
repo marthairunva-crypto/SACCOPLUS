@@ -444,7 +444,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   {'icon': Icons.tune_rounded, 'label': 'Settings', 'route': 'settings'},
                   {'icon': Icons.history_rounded, 'label': 'Audit Trail', 'route': 'audit'},
                   {'icon': Icons.description_rounded, 'label': 'Reports', 'route': 'reports'},
-                  {'icon': Icons.sync_rounded, 'label': 'Data Reconciliation', 'route': 'data_reconciliation'},
+                  // DISABLED: Data reconciliation caused issues
+                  // {'icon': Icons.sync_rounded, 'label': 'Data Reconciliation', 'route': 'data_reconciliation'},
                 ],
               ),
               
