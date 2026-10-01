@@ -39,21 +39,33 @@ jobs:
       
       - name: List build output (for debugging)
         run: |
-          Write-Host "Build output structure:"
-          Get-ChildItem -Path build\windows -Recurse -Depth 4 | Where-Object { $_.Name -eq "saccoplus_pro.exe" -or $_.PSIsContainer } | Select-Object FullName
+          Write-Host "=== Build output structure ==="
+          Get-ChildItem -Path build\windows\x64\runner\Release -Force | Select-Object Name, Length
+          Write-Host ""
+          Write-Host "=== Searching for EXE files ==="
+          Get-ChildItem -Path build\windows -Recurse -Filter "*.exe" | Select-Object FullName
       
       - name: Create Portable ZIP
         run: |
-          # Find the actual Release folder containing the EXE
-          $exePath = Get-ChildItem -Path "build\windows" -Recurse -Filter "saccoplus_pro.exe" | Select-Object -First 1 -ExpandProperty FullName
-          if ($exePath) {
-            $releaseFolder = Split-Path $exePath -Parent
-            Write-Host "Found EXE at: $exePath"
-            Write-Host "Release folder: $releaseFolder"
+          # The Release folder should be here
+          $releaseFolder = "build\windows\x64\runner\Release"
+          
+          if (Test-Path $releaseFolder) {
+            Write-Host "Release folder exists at: $releaseFolder"
+            Write-Host "Contents:"
+            Get-ChildItem $releaseFolder | Select-Object Name
+            
+            # Create ZIP from Release folder
             Compress-Archive -Path "$releaseFolder\*" -DestinationPath "MBADIFA_SACCO_Portable.zip" -Force
             Write-Host "ZIP created successfully"
+            
+            # Verify ZIP was created
+            if (Test-Path "MBADIFA_SACCO_Portable.zip") {
+              $zipSize = (Get-Item "MBADIFA_SACCO_Portable.zip").Length / 1MB
+              Write-Host "ZIP file size: $([math]::Round($zipSize, 2)) MB"
+            }
           } else {
-            Write-Error "saccoplus_pro.exe not found in build output"
+            Write-Error "Release folder not found at: $releaseFolder"
             exit 1
           }
       
