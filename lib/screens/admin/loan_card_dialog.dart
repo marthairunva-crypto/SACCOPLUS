@@ -108,7 +108,7 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     }
     
     final totalAmount = principal + interest;
-    final monthlyPayment = duration > 0 ? totalAmount / duration : 0;
+    final monthlyPayment = duration > 0 ? (totalAmount / duration).toDouble() : 0.0;
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 1200, maxHeight: 800),
