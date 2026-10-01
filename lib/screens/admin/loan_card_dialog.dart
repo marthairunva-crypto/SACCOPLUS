@@ -3,6 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' show pow;
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 class LoanCardDialog extends StatefulWidget {
   final String loanId;
@@ -28,6 +31,9 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
   late TextEditingController _disbursementDateCtrl;
   String _interestMethod = 'flat';
   DateTime? _disbursementDate;
+  
+  // Guarantor controllers
+  final List<Map<String, TextEditingController>> _guarantors = [];
   
   @override
   void initState() {
@@ -55,6 +61,27 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         ? DateFormat('MMM dd, yyyy').format(_disbursementDate!)
         : 'Not set'
     );
+    
+    // Initialize guarantors
+    final guarantorsList = widget.loanData['guarantors'] as List? ?? [];
+    if (guarantorsList.isEmpty) {
+      // Add 2 empty guarantor slots
+      for (int i = 0; i < 2; i++) {
+        _guarantors.add({
+          'name': TextEditingController(),
+          'account': TextEditingController(),
+          'savings': TextEditingController(),
+        });
+      }
+    } else {
+      for (var g in guarantorsList) {
+        _guarantors.add({
+          'name': TextEditingController(text: g['name'] ?? ''),
+          'account': TextEditingController(text: g['account'] ?? ''),
+          'savings': TextEditingController(text: g['savings']?.toString() ?? ''),
+        });
+      }
+    }
   }
 
   @override
@@ -63,6 +90,11 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     _interestRateCtrl.dispose();
     _durationCtrl.dispose();
     _disbursementDateCtrl.dispose();
+    for (var g in _guarantors) {
+      g['name']?.dispose();
+      g['account']?.dispose();
+      g['savings']?.dispose();
+    }
     super.dispose();
   }
 
@@ -187,11 +219,46 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Member Particulars
-                    _buildSectionHeader('MEMBER PARTICULARS'),
-                    _buildInfoRow('NAME:', memberName),
-                    _buildInfoRow('ADDRESS:', 'MBARARA'),
-                    _buildInfoRow('A/C No:', accountNumber),
+                    // Member Particulars with Passport Photo
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Left: Member Details
+                        Expanded(
+                          flex: 3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSectionHeader('MEMBER PARTICULARS'),
+                              _buildInfoRow('NAME:', memberName),
+                              _buildInfoRow('ADDRESS:', 'MBARARA'),
+                              _buildInfoRow('A/C No:', accountNumber),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Right: Passport Photo
+                        Container(
+                          width: 100,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: const Color(0xFF2C1810), width: 2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: widget.loanData['memberPhoto'] != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    widget.loanData['memberPhoto'],
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => _buildDefaultAvatar(),
+                                  ),
+                                )
+                              : _buildDefaultAvatar(),
+                        ),
+                      ],
+                    ),
                     
                     const SizedBox(height: 16),
                     
@@ -219,37 +286,65 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                     
                     const SizedBox(height: 20),
                     
-                    // Edit/Save Buttons
+                    // Edit/Save/Print Buttons
                     if (_isEditing)
                       Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton(
+                            child: OutlinedButton.icon(
                               onPressed: () => setState(() => _isEditing = false),
-                              child: const Text('Cancel'),
+                              icon: const Icon(Icons.close, size: 18),
+                              label: const Text('Cancel'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF2C1810),
+                                side: const BorderSide(color: Color(0xFF2C1810)),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: ElevatedButton(
+                            child: ElevatedButton.icon(
                               onPressed: _saveChanges,
+                              icon: const Icon(Icons.save, size: 18),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF2C1810),
+                                foregroundColor: Colors.white,
                               ),
-                              child: const Text('Save Changes'),
+                              label: const Text('Save Changes'),
                             ),
                           ),
                         ],
                       )
                     else
-                      ElevatedButton.icon(
-                        onPressed: () => setState(() => _isEditing = true),
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Edit Loan Details'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2C1810),
-                          minimumSize: const Size(double.infinity, 45),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => setState(() => _isEditing = true),
+                              icon: const Icon(Icons.edit, size: 18),
+                              label: const Text('Edit Loan'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2C1810),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(double.infinity, 45),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _printLoanCard,
+                              icon: const Icon(Icons.print, size: 18),
+                              label: const Text('Print Card'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: const Color(0xFF2C1810),
+                                side: const BorderSide(color: Color(0xFF2C1810), width: 2),
+                                minimumSize: const Size(double.infinity, 45),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                   ],
                 ),
@@ -313,18 +408,137 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
   }
 
   Widget _buildGuarantorsTable() {
-    return Table(
-      border: TableBorder.all(color: const Color(0xFF2C1810), width: 1),
-      columnWidths: const {
-        0: FlexColumnWidth(0.5),
-        1: FlexColumnWidth(2),
-        2: FlexColumnWidth(1),
-        3: FlexColumnWidth(1),
-      },
+    return Column(
       children: [
-        _buildTableHeaderRow(['No.', 'NAME', 'A/C No.', 'SAVINGS']),
-        _buildTableDataRow(['1', '', '', '']),
-        _buildTableDataRow(['2', '', '', '']),
+        Table(
+          border: TableBorder.all(color: const Color(0xFF2C1810), width: 1.5),
+          columnWidths: const {
+            0: FixedColumnWidth(40),
+            1: FlexColumnWidth(2.5),
+            2: FlexColumnWidth(1.5),
+            3: FlexColumnWidth(1.2),
+          },
+          children: [
+            _buildTableHeaderRow(['No.', 'NAME', 'A/C No.', 'SAVINGS']),
+            ..._guarantors.asMap().entries.map((entry) {
+              final index = entry.key;
+              final g = entry.value;
+              
+              if (_isEditing) {
+                return TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(
+                        '${index + 1}',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(fontSize: 10),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: TextFormField(
+                        controller: g['name'],
+                        style: GoogleFonts.poppins(fontSize: 10),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: EdgeInsets.all(6),
+                          border: OutlineInputBorder(),
+                          hintText: 'Name',
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: TextFormField(
+                        controller: g['account'],
+                        style: GoogleFonts.poppins(fontSize: 10),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: EdgeInsets.all(6),
+                          border: OutlineInputBorder(),
+                          hintText: 'A/C No.',
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: TextFormField(
+                        controller: g['savings'],
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.poppins(fontSize: 10),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: EdgeInsets.all(6),
+                          border: OutlineInputBorder(),
+                          hintText: 'Amount',
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                final name = g['name']!.text;
+                final account = g['account']!.text;
+                final savings = g['savings']!.text;
+                
+                return _buildTableDataRow([
+                  '${index + 1}',
+                  name.isEmpty ? 'Missing' : name,
+                  account.isEmpty ? '-' : account,
+                  savings.isEmpty ? '-' : savings,
+                ]);
+              }
+            }).toList(),
+          ],
+        ),
+        if (_isEditing && _guarantors.length < 4)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _guarantors.add({
+                    'name': TextEditingController(),
+                    'account': TextEditingController(),
+                    'savings': TextEditingController(),
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add Guarantor'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF2C1810),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+  
+  Widget _buildDefaultAvatar() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.person_outline,
+          size: 50,
+          color: Colors.grey.shade400,
+        ),
+        Text(
+          'PHOTO',
+          style: GoogleFonts.poppins(
+            fontSize: 9,
+            color: Colors.grey.shade500,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ],
     );
   }
@@ -536,6 +750,13 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       }
       
       final totalAmount = principal + interest;
+      
+      // Prepare guarantors data
+      final guarantorsData = _guarantors.map((g) => {
+        'name': g['name']!.text,
+        'account': g['account']!.text,
+        'savings': double.tryParse(g['savings']!.text) ?? 0,
+      }).where((g) => (g['name'] as String).isNotEmpty).toList();
 
       await FirebaseFirestore.instance
           .collection('saccoplus-loans')
@@ -548,13 +769,14 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         'interest': interest,
         'totalAmount': totalAmount,
         'disbursementDate': _disbursementDate,
+        'guarantors': guarantorsData,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Loan updated successfully'),
+            content: Text('✅ Loan card updated successfully'),
             backgroundColor: Colors.green,
           ),
         );
@@ -570,5 +792,92 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         );
       }
     }
+  }
+  
+  Future<void> _printLoanCard() async {
+    final pdf = pw.Document();
+    final currencyFormat = NumberFormat('#,###', 'en_US');
+    
+    final memberName = widget.loanData['memberName'] ?? 'N/A';
+    final accountNumber = widget.loanData['accountNumber'] ?? 'N/A';
+    final principal = double.tryParse(_principalCtrl.text) ?? 0;
+    final interestRate = double.tryParse(_interestRateCtrl.text) ?? 0;
+    final duration = int.tryParse(_durationCtrl.text) ?? 12;
+    
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (context) {
+          return pw.Container(
+            padding: const pw.EdgeInsets.all(40),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // Header
+                pw.Center(
+                  child: pw.Column(
+                    children: [
+                      pw.Text(
+                        'MBADIFA SACCO',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.Text('P.O. BOX 1592, MBARARA', style: const pw.TextStyle(fontSize: 10)),
+                      pw.SizedBox(height: 8),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(),
+                        ),
+                        child: pw.Text('LOAN CARD', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                
+                // Member Particulars
+                pw.Text('MEMBER PARTICULARS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                pw.SizedBox(height: 8),
+                pw.Text('NAME: $memberName'),
+                pw.Text('A/C No: $accountNumber'),
+                pw.SizedBox(height: 16),
+                
+                // Guarantors
+                pw.Text('GUARANTORS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                pw.Table.fromTextArray(
+                  border: pw.TableBorder.all(),
+                  headers: ['No.', 'NAME', 'A/C No.', 'SAVINGS'],
+                  data: _guarantors.asMap().entries.map((e) => [
+                    '${e.key + 1}',
+                    e.value['name']!.text.isEmpty ? 'Missing' : e.value['name']!.text,
+                    e.value['account']!.text,
+                    e.value['savings']!.text,
+                  ]).toList(),
+                ),
+                pw.SizedBox(height: 16),
+                
+                // Financial Details
+                pw.Text('DISBURSEMENTS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                pw.Table.fromTextArray(
+                  border: pw.TableBorder.all(),
+                  headers: ['Principal', 'Interest Rate', 'Duration', 'Total'],
+                  data: [[
+                    currencyFormat.format(principal),
+                    '$interestRate%',
+                    '$duration months',
+                    currencyFormat.format(principal * (1 + interestRate / 100)),
+                  ]],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 }
