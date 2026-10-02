@@ -28,6 +28,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   String? _selectedMemberPhone;
   String _loanType = 'personal';
   String _paymentFrequency = 'monthly';
+  String _interestMethod = 'flat';
   bool _isLoading = false;
   bool _autoApprove = true;
 
@@ -318,11 +319,26 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
               prefixIcon: Icon(Icons.schedule),
             ),
             items: [
-              DropdownMenuItem(value: 'monthly', child: Text('Monthly', style: GoogleFonts.poppins())),
+              DropdownMenuItem(value: 'daily', child: Text('Daily (Emergency)', style: GoogleFonts.poppins())),
               DropdownMenuItem(value: 'weekly', child: Text('Weekly', style: GoogleFonts.poppins())),
               DropdownMenuItem(value: 'biweekly', child: Text('Bi-Weekly', style: GoogleFonts.poppins())),
+              DropdownMenuItem(value: 'monthly', child: Text('Monthly', style: GoogleFonts.poppins())),
             ],
             onChanged: (value) => setState(() => _paymentFrequency = value!),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _interestMethod,
+            decoration: const InputDecoration(
+              labelText: 'Interest Calculation Method',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.calculate),
+            ),
+            items: [
+              DropdownMenuItem(value: 'flat', child: Text('Flat Rate (Simple Interest)', style: GoogleFonts.poppins())),
+              DropdownMenuItem(value: 'reducing', child: Text('Reducing Balance (Amortized)', style: GoogleFonts.poppins())),
+            ],
+            onChanged: (value) => setState(() => _interestMethod = value!),
           ),
           const SizedBox(height: 16),
           SwitchListTile(
@@ -351,9 +367,52 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
     if (principal == 0 || months == 0) return const SizedBox.shrink();
 
-    final interest = (principal * rate * months) / 100;
-    final total = principal + interest;
-    final monthlyPayment = total / months;
+    // Calculate interest based on method
+    double interest;
+    double totalAmount;
+    double periodicPayment;
+    
+    if (_interestMethod == 'reducing') {
+      // Reducing Balance (Amortized) - using compound interest formula
+      final monthlyRate = rate / (100 * 12);
+      if (monthlyRate > 0) {
+        final pow = (1 + monthlyRate);
+        double powN = 1;
+        for (int i = 0; i < months; i++) {
+          powN *= pow;
+        }
+        periodicPayment = (principal * monthlyRate * powN) / (powN - 1);
+        totalAmount = periodicPayment * months;
+        interest = totalAmount - principal;
+      } else {
+        interest = 0;
+        totalAmount = principal.toDouble();
+        periodicPayment = principal / months;
+      }
+    } else {
+      // Flat Rate (Simple Interest)
+      interest = (principal * rate * months) / 100;
+      totalAmount = principal + interest;
+      periodicPayment = totalAmount / months;
+    }
+
+    // Adjust payment label based on frequency
+    String paymentLabel;
+    switch (_paymentFrequency) {
+      case 'daily':
+        paymentLabel = 'Daily Payment';
+        break;
+      case 'weekly':
+        paymentLabel = 'Weekly Payment';
+        break;
+      case 'biweekly':
+        paymentLabel = 'Bi-Weekly Payment';
+        break;
+      case 'monthly':
+      default:
+        paymentLabel = 'Monthly Payment';
+        break;
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -376,10 +435,13 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
           ),
           const Divider(height: 24),
           _buildSummaryRow('Principal Amount', _currencyFormat.format(principal)),
-          _buildSummaryRow('Interest ($rate% for $months months)', _currencyFormat.format(interest)),
+          _buildSummaryRow(
+            'Interest (${_interestMethod == 'reducing' ? 'Reducing' : 'Flat'} $rate% for $months months)', 
+            _currencyFormat.format(interest)
+          ),
           const Divider(height: 16),
-          _buildSummaryRow('Total Repayment', _currencyFormat.format(total), isTotal: true),
-          _buildSummaryRow('${_paymentFrequency.capitalize()} Payment', _currencyFormat.format(monthlyPayment), isHighlight: true),
+          _buildSummaryRow('Total Repayment', _currencyFormat.format(totalAmount), isTotal: true),
+          _buildSummaryRow(paymentLabel, _currencyFormat.format(periodicPayment), isHighlight: true),
         ],
       ),
     );
@@ -446,8 +508,32 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       final principal = int.parse(_amountController.text);
       final rate = double.parse(_interestRateController.text);
       final months = int.parse(_durationController.text);
-      final interest = (principal * rate * months) / 100;
-      final total = principal + interest;
+      
+      // Calculate interest based on method
+      double interest;
+      double totalAmount;
+      
+      if (_interestMethod == 'reducing') {
+        // Reducing Balance calculation
+        final monthlyRate = rate / (100 * 12);
+        if (monthlyRate > 0) {
+          final pow = (1 + monthlyRate);
+          double powN = 1;
+          for (int i = 0; i < months; i++) {
+            powN *= pow;
+          }
+          final periodicPayment = (principal * monthlyRate * powN) / (powN - 1);
+          totalAmount = periodicPayment * months;
+          interest = totalAmount - principal;
+        } else {
+          interest = 0;
+          totalAmount = principal.toDouble();
+        }
+      } else {
+        // Flat Rate calculation
+        interest = (principal * rate * months) / 100;
+        totalAmount = principal + interest;
+      }
 
       final loanData = {
         'tenantId': FirebaseService.sessionTenantId,
@@ -455,15 +541,21 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         'farmerName': _selectedMemberName,
         'farmerPhone': _selectedMemberPhone,
         'amount': principal,
+        'loanAmount': principal,
         'interestRate': rate,
+        'interestMethod': _interestMethod,
         'duration': months,
         'purpose': _purposeController.text.trim(),
         'loanType': _loanType,
         'paymentFrequency': _paymentFrequency,
         'interestAmount': interest.round(),
-        'totalAmount': total.round(),
+        'interest': interest.round(),
+        'totalAmount': totalAmount.round(),
         'status': _autoApprove ? 'approved' : 'pending',
-        'balance': total.round(),
+        'balance': totalAmount.round(),
+        'principalOutstanding': principal.toDouble(),
+        'interestOutstanding': interest,
+        'interestOriginalBalance': interest,
         'amountPaid': 0,
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': FirebaseService.sessionUid,
