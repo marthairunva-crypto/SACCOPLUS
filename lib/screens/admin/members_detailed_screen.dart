@@ -1233,8 +1233,6 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
     }
   }
 
-}
-
   void _showAddMemberDialog() {
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController();
@@ -1252,7 +1250,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
     bool isLoading = false;
 
     showDialog(
-      context: this.context,
+      context: context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (builderContext, setState) => Dialog(
@@ -1561,3 +1559,5 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
     debugPrint('📱 SMS would be sent to $phone:');
     debugPrint('Account: $accountNumber, Member: $memberNumber, PIN: $pin, Password: $tempPassword');
   }
+
+}
