@@ -1252,7 +1252,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
     bool isLoading = false;
 
     showDialog(
-      context: context,
+      context: this.context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (builderContext, setState) => Dialog(
