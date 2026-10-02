@@ -6,6 +6,7 @@ import '../core/firebase_service.dart';
 import '../core/sacco_service.dart';
 import '../core/constants.dart';
 import 'audit_service.dart';
+import 'arrears_service.dart';
 
 /// Teller service for handling deposits and withdrawals
 class TellerService {
@@ -221,7 +222,7 @@ class TellerService {
           // Send in-app notification for loan repayment
           await FirebaseService.sendNotification(
             memberId,
-            '💳 Loan Payment Received',
+            'Loan Payment Received',
             'Payment of UGX ${_formatAmount(amount)} received. '
             'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
             'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
@@ -240,6 +241,9 @@ class TellerService {
               'Thank you.';
           
           await FirebaseService.sendSmsToPhone(memberPhone, loanSmsMessage);
+          
+          // Update arrears and penalties after payment
+          await ArrearsService.updateLoanArrears(loanId);
           
           transaction['loanId'] = loanId;
           transaction['loanReference'] = loanData['referenceNumber'] ?? '';
@@ -261,7 +265,7 @@ class TellerService {
       // Send in-app notification to member
       await FirebaseService.sendNotification(
         memberId,
-        '💰 Deposit Successful',
+        'Deposit Successful',
         'Your $accountType account has been credited with UGX ${_formatAmount(amount)}. '
         'New balance: UGX ${_formatAmount(updateData.values.first as int)}. '
         'Receipt: ${transaction['receiptNumber']}',

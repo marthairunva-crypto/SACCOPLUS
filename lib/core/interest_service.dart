@@ -65,7 +65,8 @@ class InterestService {
   }) {
     final rate = annualRate / 100;
     final time = termMonths / 12.0;
-    final amount = principal * pow(1 + (rate / compoundingFrequency), compoundingFrequency * time);
+    final powValue = pow(1 + (rate / compoundingFrequency), compoundingFrequency * time).toDouble();
+    final amount = principal * powValue;
     return amount - principal; // Return only the interest
   }
 

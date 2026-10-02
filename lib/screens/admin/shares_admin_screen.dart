@@ -570,21 +570,28 @@ class _MemberSharesListState extends State<_MemberSharesList> {
 
                 // Data Table
                 Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    width: constraints.maxWidth - 32,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 20,
-                          offset: const Offset(0, 4),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final availableWidth = constraints.maxWidth - 32;
+                      
+                      return Container(
+                        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        constraints: BoxConstraints(maxWidth: availableWidth),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: _buildSharesTable(membersList, totalShares),
+                        clipBehavior: Clip.hardEdge,
+                        child: _buildSharesTable(membersList, totalShares),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -599,20 +606,11 @@ class _MemberSharesListState extends State<_MemberSharesList> {
     return ProfessionalDataTable(
       columns: [
         const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 120),
-        const DataTableColumn(key: 'memberName', label: 'Member Name', width: 200),
-        DataTableColumn(
-          key: 'totalShares',
-          label: 'Shares Count',
-          width: 120,
-          builder: (row) => Text(
-            widget.fmt.format(row['totalShares']),
-            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-        ),
+        const DataTableColumn(key: 'memberName', label: 'Member Name', width: 220),
         DataTableColumn(
           key: 'shareValue',
           label: 'Share Value (UGX)',
-          width: 150,
+          width: 160,
           builder: (row) => Text(
             'UGX ${widget.fmt.format(row['shareValue'])}',
             style: GoogleFonts.poppins(
@@ -682,6 +680,20 @@ class _MemberSharesListState extends State<_MemberSharesList> {
       ],
       data: membersList,
       searchPlaceholder: 'Search by member name or account number...',
+      filters: [
+        TableFilter(
+          key: 'shareValue',
+          label: 'Share Range',
+          options: const [
+            FilterOption(value: 'zero', label: 'Zero Shares (0)'),
+            FilterOption(value: 'below_150k', label: 'Below 150K'),
+            FilterOption(value: '150k_500k', label: '150K - 500K'),
+            FilterOption(value: '500k_1m', label: '500K - 1M'),
+            FilterOption(value: '1m_2m', label: '1M - 2M'),
+            FilterOption(value: 'above_2m', label: 'Above 2M'),
+          ],
+        ),
+      ],
     );
   }
 
@@ -821,18 +833,29 @@ class _MemberSharesListState extends State<_MemberSharesList> {
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 onChanged: (value) => setState(() {}),
                 decoration: InputDecoration(
-                  labelText: 'Number of Shares *',
-                  hintText: 'e.g., 100',
-                  suffixText: '@ UGX ${widget.fmt.format(sharePrice)}/share',
+                  labelText: 'Share Amount (UGX) *',
+                  hintText: 'e.g., 10000, 15000, 35000',
+                  helperText: 'Standard: ${widget.fmt.format(sharePrice)} per share, but any amount is accepted',
+                  helperMaxLines: 2,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: Colors.white,
                 ),
               ),
               const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _QuickAmountChip(amount: sharePrice, fmt: widget.fmt, onTap: (amt) => setState(() => sharesCtrl.text = amt.toString())),
+                  _QuickAmountChip(amount: sharePrice * 2, fmt: widget.fmt, onTap: (amt) => setState(() => sharesCtrl.text = amt.toString())),
+                  _QuickAmountChip(amount: sharePrice * 3, fmt: widget.fmt, onTap: (amt) => setState(() => sharesCtrl.text = amt.toString())),
+                  _QuickAmountChip(amount: sharePrice * 5, fmt: widget.fmt, onTap: (amt) => setState(() => sharesCtrl.text = amt.toString())),
+                ],
+              ),
+              const SizedBox(height: 12),
               Text(
-                'Total Value: UGX ${widget.fmt.format((int.tryParse(sharesCtrl.text) ?? 0) * sharePrice)}',
-                style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+                'Entered Value: UGX ${widget.fmt.format(int.tryParse(sharesCtrl.text) ?? 0)}',
+                style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -850,16 +873,16 @@ class _MemberSharesListState extends State<_MemberSharesList> {
                   return;
                 }
                 
-                final shares = int.tryParse(sharesCtrl.text) ?? 0;
-                if (shares <= 0) {
+                final shareAmount = int.tryParse(sharesCtrl.text) ?? 0;
+                if (shareAmount <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter valid number of shares'), backgroundColor: Colors.red),
+                    const SnackBar(content: Text('Please enter a valid share amount'), backgroundColor: Colors.red),
                   );
                   return;
                 }
 
                 Navigator.pop(ctx);
-                await _saveShares(selectedMemberId!, selectedMemberName, shares, sharePrice, isEdit);
+                await _saveShares(selectedMemberId!, selectedMemberName, shareAmount, isEdit);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
@@ -873,26 +896,24 @@ class _MemberSharesListState extends State<_MemberSharesList> {
     );
   }
 
-  Future<void> _saveShares(String memberId, String memberName, int shares, int sharePrice, bool isEdit) async {
+  Future<void> _saveShares(String memberId, String memberName, int shareAmount, bool isEdit) async {
     try {
-      final totalValue = shares * sharePrice;
-      
       // Update shares in members collection
       await FirebaseFirestore.instance
           .collection('saccoplus-members')
           .doc(memberId)
           .update({
-        'sharesBalance': totalValue.toDouble(),
+        'sharesBalance': shareAmount.toDouble(),
         'lastUpdated': FieldValue.serverTimestamp(),
       });
 
       // Log the action
       await AuditService.log(
         action: isEdit ? 'SHARES_UPDATED' : 'SHARES_ADDED',
-        description: '${isEdit ? 'Updated' : 'Added'} $shares shares (UGX ${widget.fmt.format(totalValue)}) for $memberName',
+        description: '${isEdit ? 'Updated' : 'Added'} shares worth UGX ${widget.fmt.format(shareAmount)} for $memberName',
         targetId: memberId,
         targetName: memberName,
-        meta: {'shares': shares, 'sharePrice': sharePrice, 'totalValue': totalValue},
+        meta: {'shareAmount': shareAmount},
       );
 
       if (mounted) {
@@ -997,6 +1018,43 @@ class _MemberSharesListState extends State<_MemberSharesList> {
             child: const Text('Close'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Quick amount selection chip widget
+class _QuickAmountChip extends StatelessWidget {
+  final int amount;
+  final NumberFormat fmt;
+  final Function(int) onTap;
+
+  const _QuickAmountChip({
+    required this.amount,
+    required this.fmt,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onTap(amount),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+        ),
+        child: Text(
+          fmt.format(amount),
+          style: GoogleFonts.poppins(
+            fontSize: 11,
+            color: AppTheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

@@ -57,6 +57,45 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
         final selectedValue = _selectedFilters[filter.key];
         if (selectedValue != null && selectedValue != 'all') {
           filtered = filtered.where((row) {
+            // Handle numeric range filters for shareValue
+            if (filter.key == 'shareValue' && row.containsKey('shareValue')) {
+              final value = (row['shareValue'] as num?)?.toDouble() ?? 0.0;
+              switch (selectedValue) {
+                case 'zero':
+                  return value == 0;
+                case 'below_150k':
+                  return value > 0 && value < 150000;
+                case '150k_500k':
+                  return value >= 150000 && value < 500000;
+                case '500k_1m':
+                  return value >= 500000 && value < 1000000;
+                case '1m_2m':
+                  return value >= 1000000 && value < 2000000;
+                case 'above_2m':
+                  return value >= 2000000;
+                default:
+                  return true;
+              }
+            }
+            // Handle numeric range filters for savingsBalance
+            if (filter.key == 'savingsBalance' && row.containsKey('savingsBalance')) {
+              final value = (row['savingsBalance'] as num?)?.toDouble() ?? 0.0;
+              switch (selectedValue) {
+                case 'zero':
+                  return value == 0;
+                case 'below_100k':
+                  return value > 0 && value < 100000;
+                case '100k_500k':
+                  return value >= 100000 && value < 500000;
+                case '500k_1m':
+                  return value >= 500000 && value < 1000000;
+                case 'above_1m':
+                  return value >= 1000000;
+                default:
+                  return true;
+              }
+            }
+            // Default string comparison for other filters
             return row[filter.key]?.toString() == selectedValue;
           }).toList();
         }

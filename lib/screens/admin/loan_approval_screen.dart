@@ -324,9 +324,11 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
+                    final availableWidth = constraints.maxWidth - 24;
+                    
                     return Container(
                       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      width: constraints.maxWidth - 24,
+                      constraints: BoxConstraints(maxWidth: availableWidth),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
@@ -338,6 +340,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                           ),
                         ],
                       ),
+                      clipBehavior: Clip.hardEdge,
                       child: ProfessionalDataTable(
               columns: [
                 const DataTableColumn(
@@ -628,10 +631,10 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
               ],
               searchPlaceholder: 'Search by member name, purpose...',
                   ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
             ],
           );
         },

@@ -10,6 +10,7 @@ import '../../core/firebase_service.dart';
 import '../../core/constants.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../widgets/sweet_alert.dart';
+import '../../widgets/firebase_index_error.dart';
 import '../../utils/csv_export.dart';
 
 class MembersDetailedScreen extends StatefulWidget {
@@ -138,7 +139,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return FirebaseIndexError(error: snapshot.error.toString());
           }
 
           if (!snapshot.hasData) {
@@ -194,10 +195,15 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
 
           return LayoutBuilder(
             builder: (context, constraints) {
+              // Calculate available width
+              final availableWidth = constraints.maxWidth - 32;
+              
               return Container(
                 margin: const EdgeInsets.all(16),
-                width: constraints.maxWidth - 32, // Account for margin
-                height: constraints.maxHeight - 32, // Account for margin
+                constraints: BoxConstraints(
+                  maxWidth: availableWidth,
+                  maxHeight: constraints.maxHeight - 32,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -209,6 +215,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                     ),
                   ],
                 ),
+                clipBehavior: Clip.hardEdge,
                 child: ProfessionalDataTable(
               columns: [
                 const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 85),

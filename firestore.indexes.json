@@ -9,27 +9,13 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "role",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "saccoplus-teller-transactions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tenantId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "timestamp",
+          "fieldPath": "savingsBalance",
           "order": "DESCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "loanRepayments",
+      "collectionGroup": "saccoplus-members",
       "queryScope": "COLLECTION",
       "fields": [
         {
@@ -37,13 +23,13 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "timestamp",
+          "fieldPath": "sharesBalance",
           "order": "DESCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "payments",
+      "collectionGroup": "saccoplus-members",
       "queryScope": "COLLECTION",
       "fields": [
         {
@@ -51,77 +37,17 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
+          "fieldPath": "name",
+          "order": "ASCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "mobileMoneyTransactions",
+      "collectionGroup": "saccoplus-loans",
       "queryScope": "COLLECTION",
       "fields": [
         {
           "fieldPath": "tenantId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "bankTransfers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tenantId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "notifications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tenantId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "fixedDeposits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tenantId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "fixedDeposits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tenantId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
@@ -140,20 +66,6 @@
         },
         {
           "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "saccoplus-savings",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "accountNumber",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "timestamp",
           "order": "ASCENDING"
         }
       ]

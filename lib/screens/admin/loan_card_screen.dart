@@ -2,25 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'dart:math' show pow;
 import '../../core/firebase_service.dart';
 import '../../theme/modern_theme.dart';
 
-class LoanCardScreen extends StatefulWidget {
+class LoanCardDialog extends StatefulWidget {
   final String loanId;
   final Map<String, dynamic> loanData;
 
-  const LoanCardScreen({
+  const LoanCardDialog({
     Key? key,
     required this.loanId,
     required this.loanData,
   }) : super(key: key);
 
   @override
-  State<LoanCardScreen> createState() => _LoanCardScreenState();
+  State<LoanCardDialog> createState() => _LoanCardDialogState();
 }
 
-class _LoanCardScreenState extends State<LoanCardScreen> {
+class _LoanCardDialogState extends State<LoanCardDialog> {
   final _formKey = GlobalKey<FormState>();
   final _currencyFormat = NumberFormat('#,###', 'en_US');
   bool _isEditing = false;
@@ -90,7 +89,8 @@ class _LoanCardScreenState extends State<LoanCardScreen> {
         // Formula: P * r * (1 + r)^n / ((1 + r)^n - 1) * n - P
         final r = interestRate / (100 * 12); // Monthly rate
         final n = duration; // Number of months
-        final monthlyPayment = principal * r * pow(1 + r, n) / (pow(1 + r, n) - 1);
+        final powValue = pow(1 + r, n).toDouble();
+        final monthlyPayment = principal * r * powValue / (powValue - 1);
         interest = (monthlyPayment * n) - principal;
       } else {
         // Flat Rate: Interest on full principal for entire duration

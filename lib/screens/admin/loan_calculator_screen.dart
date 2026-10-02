@@ -55,8 +55,8 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
     if (monthlyRate == 0) {
       monthlyPayment = principal / months;
     } else {
-      monthlyPayment = principal * (monthlyRate * pow(1 + monthlyRate, months)) / 
-                      (pow(1 + monthlyRate, months) - 1);
+      final powValue = pow(1 + monthlyRate, months).toDouble();
+      monthlyPayment = principal * (monthlyRate * powValue) / (powValue - 1);
     }
 
     final totalPayment = monthlyPayment * months;
