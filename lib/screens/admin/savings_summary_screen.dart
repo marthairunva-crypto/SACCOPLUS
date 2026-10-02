@@ -75,20 +75,24 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
             );
           }
 
-          return Container(
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return Container(
+                margin: const EdgeInsets.all(16),
+                width: constraints.maxWidth - 32, // Account for margin
+                height: constraints.maxHeight - 32, // Account for margin
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: ProfessionalDataTable(
+                child: ProfessionalDataTable(
               columns: [
                 const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 120),
                 const DataTableColumn(key: 'memberName', label: 'Client Name', width: 170),
@@ -136,6 +140,8 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
               data: savings,
               searchPlaceholder: 'Search by member name, ID, or account number...',
             ),
+              );
+            },
           );
         },
       ),

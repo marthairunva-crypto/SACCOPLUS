@@ -16,6 +16,8 @@ class AuditService {
   static const String kWithdrawal      = 'WALLET_WITHDRAWAL';
   static const String kRepayment       = 'LOAN_REPAYMENT';
   static const String kSavingsDeposit  = 'SAVINGS_DEPOSIT';
+  static const String kSavingsEdit     = 'SAVINGS_EDIT';
+  static const String kSavingsDelete   = 'SAVINGS_DELETE';
   static const String kSharePurchase   = 'SHARE_PURCHASE';
   static const String kFdApproved      = 'FD_APPROVED';
   static const String kFdRejected      = 'FD_REJECTED';

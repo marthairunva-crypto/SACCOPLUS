@@ -27,6 +27,7 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   Map<String, String?> _selectedFilters = {};
   int _currentPage = 0;
   final int _rowsPerPage = 25;
+  late ScrollController _horizontalScrollController;
 
   // Clean modern color palette
   static const _headerColor = Color(0xFF00BFA6); // Teal accent
@@ -86,6 +87,18 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   }
 
   int get _totalPages => _filteredData.isEmpty ? 1 : (_filteredData.length / _rowsPerPage).ceil();
+
+  @override
+  void initState() {
+    super.initState();
+    _horizontalScrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _horizontalScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -227,12 +240,16 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                 )
               : Container(
                   width: double.infinity,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minWidth: MediaQuery.of(context).size.width - 150,
-                      ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _borderColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Scrollbar(
+                    controller: _horizontalScrollController,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _horizontalScrollController,
+                      scrollDirection: Axis.horizontal,
                       child: _buildTable(),
                     ),
                   ),
@@ -347,79 +364,91 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   }
 
   Widget _buildTable() {
-    return Table(
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      columnWidths: {
-        for (int i = 0; i < widget.columns.length; i++)
-          i: IntrinsicColumnWidth(flex: widget.columns[i].width / 10),
-      },
-      children: [
-        // Clean Header Row with teal accent
-        TableRow(
-          decoration: const BoxDecoration(
-            color: _headerColor,
-          ),
-          children: widget.columns.map((column) {
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
-                ),
-              ),
-              child: Text(
-                column.label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: _headerText,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-
-        // Clean Data Rows with subtle borders
-        ..._paginatedData.asMap().entries.map((entry) {
-          final row = entry.value;
-          
-          return TableRow(
+    // Calculate total width to determine if we need horizontal scroll
+    final totalFixedWidth = widget.columns.fold<double>(
+      0, 
+      (sum, col) => sum + (col.width)
+    );
+    
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: totalFixedWidth,
+      ),
+      child: Table(
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        columnWidths: {
+          for (int i = 0; i < widget.columns.length; i++)
+            i: FixedColumnWidth(widget.columns[i].width),
+        },
+        defaultColumnWidth: const FixedColumnWidth(100),
+        children: [
+          // Clean Header Row with teal accent
+          TableRow(
             decoration: const BoxDecoration(
-              color: Colors.white,
+              color: _headerColor,
             ),
             children: widget.columns.map((column) {
-              final cellWidget = column.builder != null
-                  ? column.builder!(row)
-                  : Text(
-                      row[column.key]?.toString() ?? '-',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: _bodyText,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    );
-
-              return InkWell(
-                onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
-                hoverColor: _hoverColor,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: _borderColor,
-                        width: 1,
-                      ),
-                    ),
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
                   ),
-                  child: cellWidget,
+                ),
+                child: Text(
+                  column.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: _headerText,
+                    letterSpacing: 0.2,
+                  ),
                 ),
               );
             }).toList(),
-          );
-        }).toList(),
-      ],
+          ),
+
+          // Clean Data Rows with subtle borders
+          ..._paginatedData.asMap().entries.map((entry) {
+            final row = entry.value;
+            
+            return TableRow(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+              ),
+              children: widget.columns.map((column) {
+                final cellWidget = column.builder != null
+                    ? column.builder!(row)
+                    : Text(
+                        row[column.key]?.toString() ?? '-',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: _bodyText,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      );
+
+                return InkWell(
+                  onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
+                  hoverColor: _hoverColor,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: _borderColor,
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                    child: cellWidget,
+                  ),
+                );
+              }).toList(),
+            );
+          }).toList(),
+        ],
+      ),
     );
   }
 }

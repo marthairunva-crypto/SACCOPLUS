@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
@@ -27,7 +28,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Loan Applications'),
+        title: const Text('Loan Center'),
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.embedded
             ? null
@@ -65,39 +66,293 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
             };
           }).toList();
 
-          return Container(
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+          // Calculate loan statistics
+          int totalLoans = loans.length;
+          int clearedLoans = 0;
+          int ongoingLoans = 0;
+          int overdueLoans = 0;
+          double totalLoanAmount = 0;
+          double totalOutstanding = 0;
+
+          for (var loan in loans) {
+            final amount = (loan['amount'] ?? loan['loanAmount'] ?? 0) as num;
+            final principalOutstanding = (loan['principalOutstanding'] ?? 0) as num;
+            final interestOutstanding = (loan['interestOriginalBalance'] ?? 0) as num;
+            final disbursementDate = loan['disbursementDate'] ?? loan['disbursedAt'];
+            final duration = loan['duration'] ?? 12;
+
+            totalLoanAmount += amount.toDouble();
+            // Total outstanding = Principal outstanding + Interest outstanding
+            totalOutstanding += (principalOutstanding.toDouble() + interestOutstanding.toDouble());
+
+            if (principalOutstanding <= 0 && interestOutstanding <= 0) {
+              clearedLoans++;
+            } else if (disbursementDate is Timestamp) {
+              final disbursed = disbursementDate.toDate();
+              final dueDate = DateTime(
+                disbursed.year,
+                disbursed.month + (duration as int),
+                disbursed.day,
+              );
+              final now = DateTime.now();
+              
+              if (now.isAfter(dueDate)) {
+                overdueLoans++;
+              } else {
+                ongoingLoans++;
+              }
+            } else {
+              ongoingLoans++;
+            }
+          }
+
+          // Recovered = Total Disbursed - Outstanding
+          final totalRecovered = totalLoanAmount - totalOutstanding;
+
+          return Column(
+            children: [
+              // Stats Cards Row
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isSmallScreen = constraints.maxWidth < 600;
+                    
+                    if (isSmallScreen) {
+                      return Column(
+                        children: [
+                          _buildStatCard('Total Loans', 'UGX ${fmt.format(totalLoanAmount.round())}', Icons.account_balance_wallet, const Color(0xFF1565C0)),
+                          const SizedBox(height: 8),
+                          _buildStatCard('Outstanding', 'UGX ${fmt.format(totalOutstanding.round())}', Icons.pending_actions, const Color(0xFFD32F2F)),
+                          const SizedBox(height: 8),
+                          _buildStatCard('Recovered', 'UGX ${fmt.format(totalRecovered.round())}', Icons.check_circle, const Color(0xFF2E7D32)),
+                        ],
+                      );
+                    }
+                    
+                    return Row(
+                      children: [
+                        Expanded(child: _buildStatCard('Total Loans', 'UGX ${fmt.format(totalLoanAmount.round())}', Icons.account_balance_wallet, const Color(0xFF1565C0))),
+                        const SizedBox(width: 8),
+                        Expanded(child: _buildStatCard('Outstanding', 'UGX ${fmt.format(totalOutstanding.round())}', Icons.pending_actions, const Color(0xFFD32F2F))),
+                        const SizedBox(width: 8),
+                        Expanded(child: _buildStatCard('Recovered', 'UGX ${fmt.format(totalRecovered.round())}', Icons.check_circle, const Color(0xFF2E7D32))),
+                      ],
+                    );
+                  },
                 ),
-              ],
-            ),
-            child: ProfessionalDataTable(
+              ),
+              // Chart Section
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Use column layout for small screens
+                    final isSmallScreen = constraints.maxWidth < 600;
+                    
+                    if (isSmallScreen) {
+                      return Column(
+                        children: [
+                          // Chart
+                          SizedBox(
+                            width: 130,
+                            height: 130,
+                            child: PieChart(
+                              PieChartData(
+                                sectionsSpace: 2,
+                                centerSpaceRadius: 38,
+                                sections: [
+                                  PieChartSectionData(
+                                    color: const Color(0xFF2E7D32),
+                                    value: clearedLoans.toDouble(),
+                                    title: '$clearedLoans',
+                                    radius: 28,
+                                    titleStyle: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  PieChartSectionData(
+                                    color: const Color(0xFF1565C0),
+                                    value: ongoingLoans.toDouble(),
+                                    title: '$ongoingLoans',
+                                    radius: 28,
+                                    titleStyle: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  PieChartSectionData(
+                                    color: const Color(0xFFD32F2F),
+                                    value: overdueLoans.toDouble(),
+                                    title: '$overdueLoans',
+                                    radius: 28,
+                                    titleStyle: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Legend
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Portfolio Overview',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _buildLegendItem('Total Loans', totalLoans, Colors.grey.shade700),
+                              const SizedBox(height: 6),
+                              _buildLegendItem('Cleared', clearedLoans, const Color(0xFF2E7D32)),
+                              const SizedBox(height: 6),
+                              _buildLegendItem('Ongoing', ongoingLoans, const Color(0xFF1565C0)),
+                              const SizedBox(height: 6),
+                              _buildLegendItem('Overdue', overdueLoans, const Color(0xFFD32F2F)),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    
+                    // Row layout for larger screens
+                    return Row(
+                      children: [
+                        // Doughnut Chart
+                        SizedBox(
+                          width: 140,
+                          height: 140,
+                          child: PieChart(
+                            PieChartData(
+                              sectionsSpace: 2,
+                              centerSpaceRadius: 42,
+                              sections: [
+                                PieChartSectionData(
+                                  color: const Color(0xFF2E7D32),
+                                  value: clearedLoans.toDouble(),
+                                  title: '$clearedLoans',
+                                  radius: 32,
+                                  titleStyle: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                PieChartSectionData(
+                                  color: const Color(0xFF1565C0),
+                                  value: ongoingLoans.toDouble(),
+                                  title: '$ongoingLoans',
+                                  radius: 32,
+                                  titleStyle: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                PieChartSectionData(
+                                  color: const Color(0xFFD32F2F),
+                                  value: overdueLoans.toDouble(),
+                                  title: '$overdueLoans',
+                                  radius: 32,
+                                  titleStyle: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        // Legend
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Portfolio Overview',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildLegendItem('Total Loans', totalLoans, Colors.grey.shade700),
+                              const SizedBox(height: 8),
+                              _buildLegendItem('Cleared', clearedLoans, const Color(0xFF2E7D32)),
+                              const SizedBox(height: 8),
+                              _buildLegendItem('Ongoing', ongoingLoans, const Color(0xFF1565C0)),
+                              const SizedBox(height: 8),
+                              _buildLegendItem('Overdue', overdueLoans, const Color(0xFFD32F2F)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              // Table Section
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Container(
+                      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      width: constraints.maxWidth - 24,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ProfessionalDataTable(
               columns: [
                 const DataTableColumn(
                   key: 'memberName',
                   label: 'Member Name',
-                  width: 200,
-                ),
-                const DataTableColumn(
-                  key: 'referenceNumber',
-                  label: 'Reference',
-                  width: 130,
+                  width: 140,
                 ),
                 DataTableColumn(
                   key: 'amount',
                   label: 'Amount',
-                  width: 120,
+                  width: 90,
                   builder: (row) => Text(
                     fmt.format(row['amount'] ?? 0),
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -105,11 +360,11 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'principalOutstanding',
                   label: 'Outstanding',
-                  width: 120,
+                  width: 90,
                   builder: (row) => Text(
                     fmt.format(row['principalOutstanding'] ?? 0),
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFFD32F2F),
                     ),
@@ -118,22 +373,27 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'createdAt',
                   label: 'Created',
-                  width: 105,
+                  width: 85,
                   builder: (row) {
+                    // Show disbursement date if available, otherwise creation date
+                    final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'];
                     final createdAt = row['createdAt'];
-                    if (createdAt is Timestamp) {
+                    
+                    final dateToShow = disbursementDate ?? createdAt;
+                    
+                    if (dateToShow is Timestamp) {
                       return Text(
-                        DateFormat('dd MMM yy').format(createdAt.toDate()),
-                        style: const TextStyle(fontSize: 13),
+                        DateFormat('dd MMM yy').format(dateToShow.toDate()),
+                        style: const TextStyle(fontSize: 12),
                       );
                     }
-                    return const Text('-', style: TextStyle(fontSize: 13));
+                    return const Text('-', style: TextStyle(fontSize: 12));
                   },
                 ),
                 DataTableColumn(
                   key: 'disbursementDate',
                   label: 'Disbursed',
-                  width: 105,
+                  width: 85,
                   builder: (row) {
                     // Try multiple possible field names
                     final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'] ?? row['Disbursement Date'];
@@ -141,69 +401,60 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                     if (disbursementDate is Timestamp) {
                       return Text(
                         DateFormat('dd MMM yy').format(disbursementDate.toDate()),
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: 12),
                       );
                     } else if (disbursementDate is String && disbursementDate.isNotEmpty) {
                       try {
                         final date = DateFormat('MMMM d, yyyy').parse(disbursementDate);
                         return Text(
                           DateFormat('dd MMM yy').format(date),
-                          style: const TextStyle(fontSize: 13),
+                          style: const TextStyle(fontSize: 12),
                         );
                       } catch (e) {
                         return Text(disbursementDate, style: const TextStyle(fontSize: 11));
                       }
                     }
-                    return const Text('-', style: TextStyle(fontSize: 13, color: Colors.grey));
+                    return const Text('-', style: TextStyle(fontSize: 12, color: Colors.grey));
                   },
                 ),
                 DataTableColumn(
                   key: 'dueDate',
                   label: 'Due Date',
-                  width: 115,
+                  width: 85,
                   builder: (row) {
-                    // Try multiple possible field names
-                    final dueDate = row['dueDate'] ?? row['Due Date'];
-                    final outstandingDays = row['outstandingDays'] ?? row['overdueDays'] ?? row['Overdue Days'] ?? 0;
+                    // Calculate due date from disbursement + duration
+                    final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'];
+                    final duration = row['duration'] ?? 12;
                     
-                    DateTime? parsedDate;
-                    
-                    if (dueDate is Timestamp) {
-                      parsedDate = dueDate.toDate();
-                    } else if (dueDate is String && dueDate.isNotEmpty) {
-                      try {
-                        parsedDate = DateFormat('MMMM d, yyyy').parse(dueDate);
-                      } catch (e) {
-                        // Try other formats
-                        try {
-                          parsedDate = DateTime.parse(dueDate);
-                        } catch (e2) {
-                          return Text(dueDate, style: const TextStyle(fontSize: 11));
-                        }
-                      }
-                    }
-                    
-                    if (parsedDate != null) {
-                      final isOverdue = (outstandingDays is int && outstandingDays > 0) || 
-                                       (outstandingDays is String && int.tryParse(outstandingDays) != null && int.parse(outstandingDays) > 0);
-                      final days = outstandingDays is int ? outstandingDays : (int.tryParse(outstandingDays.toString()) ?? 0);
+                    if (disbursementDate is Timestamp) {
+                      final disbursed = disbursementDate.toDate();
+                      final dueDate = DateTime(
+                        disbursed.year,
+                        disbursed.month + (duration as int),
+                        disbursed.day,
+                      );
+                      
+                      // Calculate days overdue
+                      final now = DateTime.now();
+                      final isOverdue = now.isAfter(dueDate);
+                      final daysOverdue = isOverdue ? now.difference(dueDate).inDays : 0;
                       
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            DateFormat('dd MMM yy').format(parsedDate),
+                            DateFormat('dd MMM yy').format(dueDate),
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: 12,
                               color: isOverdue ? const Color(0xFFD32F2F) : Colors.black87,
                               fontWeight: isOverdue ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
-                          if (isOverdue && days > 0) ...[
+                          if (isOverdue && daysOverdue > 0) ...[
                             const SizedBox(height: 2),
                             Text(
-                              '+$days days',
+                              '+$daysOverdue d',
                               style: const TextStyle(
                                 fontSize: 10,
                                 color: Color(0xFFD32F2F),
@@ -214,39 +465,60 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                         ],
                       );
                     }
-                    return const Text('-', style: TextStyle(fontSize: 13));
+                    return const Text('-', style: TextStyle(fontSize: 12));
                   },
                 ),
                 DataTableColumn(
                   key: 'status',
                   label: 'Status',
-                  width: 95,
+                  width: 85,
                   builder: (row) {
-                    final status = row['status'] ?? '';
+                    // Calculate smart status based on payment and due date
+                    final outstanding = (row['principalOutstanding'] ?? 0) as num;
+                    final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'];
+                    final duration = row['duration'] ?? 12;
+                    
                     Color bgColor;
                     Color textColor;
                     String label;
                     
-                    if (status == 'paid' || status == 'cleared') {
+                    // Check if cleared/paid
+                    if (outstanding <= 0) {
                       bgColor = const Color(0xFFE8F5E9);
                       textColor = const Color(0xFF2E7D32);
-                      label = 'Paid';
-                    } else if (status == AppConstants.statusPending) {
-                      bgColor = const Color(0xFFFFF3E0);
-                      textColor = const Color(0xFFE65100);
-                      label = 'Pending';
-                    } else if (status == AppConstants.statusApproved || status == 'active') {
-                      bgColor = const Color(0xFFE3F2FD);
-                      textColor = const Color(0xFF1565C0);
-                      label = status == 'active' ? 'Active' : 'Approved';
-                    } else if (status == 'overdue') {
-                      bgColor = const Color(0xFFFFEBEE);
-                      textColor = const Color(0xFFD32F2F);
-                      label = 'Overdue';
+                      label = 'Cleared';
+                    } else if (disbursementDate is Timestamp) {
+                      // Calculate if overdue
+                      final disbursed = disbursementDate.toDate();
+                      final dueDate = DateTime(
+                        disbursed.year,
+                        disbursed.month + (duration as int),
+                        disbursed.day,
+                      );
+                      final now = DateTime.now();
+                      final isOverdue = now.isAfter(dueDate);
+                      
+                      if (isOverdue) {
+                        bgColor = const Color(0xFFFFEBEE);
+                        textColor = const Color(0xFFD32F2F);
+                        label = 'Overdue';
+                      } else {
+                        bgColor = const Color(0xFFE3F2FD);
+                        textColor = const Color(0xFF1565C0);
+                        label = 'Ongoing';
+                      }
                     } else {
-                      bgColor = const Color(0xFFEEEEEE);
-                      textColor = const Color(0xFF757575);
-                      label = status;
+                      // Fallback to stored status
+                      final status = row['status'] ?? '';
+                      if (status == AppConstants.statusPending) {
+                        bgColor = const Color(0xFFFFF3E0);
+                        textColor = const Color(0xFFE65100);
+                        label = 'Pending';
+                      } else {
+                        bgColor = const Color(0xFFE3F2FD);
+                        textColor = const Color(0xFF1565C0);
+                        label = 'Ongoing';
+                      }
                     }
                     
                     return Container(
@@ -270,7 +542,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'actions',
                   label: 'Actions',
-                  width: 140,
+                  width: 130,
                   builder: (row) {
                     final loanId = row['id'];
                     
@@ -283,44 +555,44 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                             borderRadius: BorderRadius.circular(6),
                             onTap: () => _showLoanDetails(context, loanId, row),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFE3F2FD),
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF1565C0)),
+                              child: const Icon(Icons.visibility_outlined, size: 16, color: Color(0xFF1565C0)),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Material(
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(6),
                             onTap: () => _editLoan(loanId, row),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFFF3E0),
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFFE65100)),
+                              child: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFFE65100)),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Material(
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(6),
                             onTap: () => _deleteLoan(loanId, row),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFFEBEE),
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFD32F2F)),
+                              child: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFD32F2F)),
                             ),
                           ),
                         ),
@@ -355,7 +627,12 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 ),
               ],
               searchPlaceholder: 'Search by member name, purpose...',
-            ),
+                  ),
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -572,15 +849,20 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     );
   }
 
-  void _editLoan(String loanId, Map<String, dynamic> loanData) {
+  Future<void> _editLoan(String loanId, Map<String, dynamic> loanData) async {
     // Show loan card dialog for editing
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: LoanCardDialog(loanId: loanId, loanData: loanData),
       ),
     );
+    
+    // Refresh the list after dialog closes
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _deleteLoan(String loanId, Map<String, dynamic> loanData) async {
@@ -674,15 +956,108 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     }
   }
 
-  void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
-  void _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) {
-    showDialog(
+  Widget _buildLegendItem(String label, int count, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ),
+        Text(
+          count.toString(),
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showLoanDetails(BuildContext context, String loanId, Map<String, dynamic> loan) async {
+    // Debug logging
+    print('=== OPENING LOAN CARD ===');
+    print('LoanID: $loanId');
+    print('Member Name: ${loan['memberName']}');
+    print('Amount: ${loan['amount']}');
+    print('Outstanding: ${loan['principalOutstanding']}');
+    print('========================');
+    
+    await showDialog(
       context: context,
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: LoanCardDialog(loanId: loanId, loanData: loan),
       ),
     );
+    
+    // Refresh the list after dialog closes
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   String _formatDate(dynamic date) {
@@ -740,6 +1115,4 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
       ),
     );
   }
-}
-
 }

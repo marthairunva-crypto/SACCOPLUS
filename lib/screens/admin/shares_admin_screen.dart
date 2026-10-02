@@ -5,8 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/audit_service.dart';
+import '../../core/firebase_service.dart';
 import '../../core/theme.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/professional_data_table.dart';
 
 class SharesAdminScreen extends StatefulWidget {
   final bool embedded;
@@ -46,6 +48,11 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
                 onPressed: () => Navigator.pop(context),
               ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: Colors.white),
+            tooltip: 'Share Settings',
+            onPressed: () => _showShareSettingsDialog(context),
+          ),
           IconButton(
             icon: const Icon(Icons.monetization_on_rounded, color: Colors.white),
             tooltip: 'Process Dividends',
@@ -106,6 +113,93 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
       });
       _snack('Share purchase rejected.', AppTheme.error);
     }
+  }
+
+  void _showShareSettingsDialog(BuildContext context) async {
+    final db = FirebaseFirestore.instance;
+    final settingsDoc = await db.collection('saccoplus-settings')
+        .doc('${FirebaseService.sessionTenantId}_shares')
+        .get();
+    
+    final currentPrice = (settingsDoc.data()?['sharePrice'] ?? 10000).toInt();
+    final priceCtrl = TextEditingController(text: currentPrice.toString());
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.settings, color: AppTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text('Share Settings', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Set the price per share. This will be used when adding or purchasing shares.',
+              style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: priceCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Price per Share (UGX)',
+                prefixIcon: const Icon(Icons.attach_money_rounded),
+                hintText: 'e.g., 10000',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final price = int.tryParse(priceCtrl.text.trim());
+              if (price == null || price < 100) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid price (minimum 100)'), backgroundColor: Colors.red),
+                );
+                return;
+              }
+
+              await db.collection('saccoplus-settings')
+                  .doc('${FirebaseService.sessionTenantId}_shares')
+                  .set({
+                'sharePrice': price,
+                'updatedAt': FieldValue.serverTimestamp(),
+                'tenantId': FirebaseService.sessionTenantId,
+              }, SetOptions(merge: true));
+
+              Navigator.pop(ctx);
+              _snack('Share price updated to UGX ${fmt.format(price)}', AppTheme.success);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Save', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showDividendDialog(BuildContext context) {
@@ -351,15 +445,21 @@ class _SharePurchaseList extends StatelessWidget {
 }
 
 // ─── All Members Shares ───────────────────────────────────────────────────────
-class _MemberSharesList extends StatelessWidget {
+class _MemberSharesList extends StatefulWidget {
   final NumberFormat fmt;
   const _MemberSharesList({required this.fmt});
 
   @override
+  State<_MemberSharesList> createState() => _MemberSharesListState();
+}
+
+class _MemberSharesListState extends State<_MemberSharesList> {
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection(AppConstants.sharesCol)
+          .collection('saccoplus-members')
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
           .snapshots(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
@@ -368,8 +468,6 @@ class _MemberSharesList extends StatelessWidget {
         
         final docs = snap.data?.docs ?? [];
         
-        print('📊 Shares query returned ${docs.length} documents');
-        
         if (docs.isEmpty) {
           return Center(
             child: Column(
@@ -377,10 +475,10 @@ class _MemberSharesList extends StatelessWidget {
               children: [
                 Icon(Icons.pie_chart_outline_rounded, size: 80, color: Colors.grey.shade300),
                 const SizedBox(height: 16),
-                Text('No share records yet', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600)),
+                Text('No members found', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600)),
                 const SizedBox(height: 8),
                 Text(
-                  'Share transactions will appear here once imported or created',
+                  'Add members first to manage their shares',
                   style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500),
                   textAlign: TextAlign.center,
                 ),
@@ -389,192 +487,517 @@ class _MemberSharesList extends StatelessWidget {
           );
         }
 
-        // Aggregate shares by member from transaction documents
-        final Map<String, Map<String, dynamic>> memberShares = {};
-        double totalSharesValue = 0;
-        
-        for (final doc in docs) {
-          try {
-            final data = doc.data() as Map<String, dynamic>?;
-            if (data == null) continue;
-            
-            // Handle both data structures:
-            // 1. Transaction format: {farmerId, amount, memberName, ...}
-            // 2. Summary format: {memberId, totalShares, ...}
-            
-            String? memberId;
-            double shareValue = 0;
-            String memberName = '';
-            
-            if (data.containsKey('farmerId')) {
-              // Transaction document
-              memberId = data['farmerId'] as String?;
-              shareValue = ((data['amount'] ?? 0) as num).toDouble();
-              memberName = data['memberName'] as String? ?? memberId ?? '';
-            } else if (data.containsKey('memberId')) {
-              // Summary document
-              memberId = data['memberId'] as String?;
-              shareValue = ((data['totalShares'] ?? 0) as num).toDouble() * 1000; // Assuming 1000 per share
-              memberName = memberId ?? '';
-            } else {
-              // Use doc ID as memberId
-              memberId = doc.id;
-              shareValue = ((data['totalShares'] ?? data['amount'] ?? 0) as num).toDouble();
-              memberName = memberId;
-            }
-            
-            if (memberId == null || memberId.isEmpty) continue;
-            
-            if (!memberShares.containsKey(memberId)) {
-              memberShares[memberId] = {
-                'memberId': memberId,
-                'memberName': memberName,
-                'totalValue': 0.0,
-                'count': 0,
-              };
-            }
-            
-            memberShares[memberId]!['totalValue'] = 
-                (memberShares[memberId]!['totalValue'] as double) + shareValue;
-            memberShares[memberId]!['count'] = 
-                (memberShares[memberId]!['count'] as int) + 1;
-            totalSharesValue += shareValue;
-            
-          } catch (e) {
-            print('Error processing share document ${doc.id}: $e');
-          }
-        }
-        
-        print('📊 Aggregated ${memberShares.length} unique members');
-        print('📊 Total shares value: UGX ${fmt.format(totalSharesValue)}');
-        
-        if (memberShares.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+        // Build member shares list from members collection
+        final membersList = docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final shares = (data['sharesBalance'] ?? 0).toDouble();
+          
+          return {
+            'id': doc.id,
+            'memberId': data['memberId'] ?? data['accountNumber'] ?? doc.id,
+            'memberName': data['name'] ?? data['fullName'] ?? 'Unknown',
+            'accountNumber': data['accountNumber'] ?? data['memberNumber'] ?? '',
+            'totalShares': shares.toInt(),
+            'shareValue': shares, // Already in currency value
+            'lastUpdated': data['lastUpdated'] ?? data['updatedAt'],
+          };
+        }).toList()
+          ..sort((a, b) => (b['shareValue'] as double).compareTo(a['shareValue'] as double));
+
+        final totalShares = membersList.fold<double>(0, (sum, m) => sum + (m['shareValue'] as double));
+        final totalMembers = membersList.where((m) => (m['totalShares'] as int) > 0).length;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return Column(
               children: [
-                Icon(Icons.pie_chart_outline_rounded, size: 80, color: Colors.grey.shade300),
-                const SizedBox(height: 16),
-                Text('No valid share records found', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600)),
-                const SizedBox(height: 8),
-                Text(
-                  '${docs.length} documents found but could not be processed',
-                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade500),
-                ),
-              ],
-            ),
-          );
-        }
-        
-        final membersList = memberShares.values.toList()
-          ..sort((a, b) => (b['totalValue'] as double).compareTo(a['totalValue'] as double));
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: membersList.length + 1,
-          itemBuilder: (_, i) {
-            if (i == 0) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppTheme.primary, AppTheme.primaryLight],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(children: [
-                  const Icon(Icons.pie_chart_rounded, color: Colors.white, size: 28),
-                  const SizedBox(width: 14),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Total Shares Value', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
-                    Text(
-                      'UGX ${fmt.format(totalSharesValue)}',
-                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                    ),
-                    Text(
-                      '${membersList.length} members  •  ${docs.length} transactions',
-                      style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
-                    ),
-                  ]),
-                ]),
-              );
-            }
-            
-            final member = membersList[i - 1];
-            final shareValue = member['totalValue'] as double;
-            final count = member['count'] as int;
-            final memberId = member['memberId'] as String;
-            final memberName = member['memberName'] as String;
-            final pct = totalSharesValue > 0 ? (shareValue / totalSharesValue * 100) : 0.0;
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  )
-                ],
-              ),
-              child: Row(children: [
+                // Summary Card
                 Container(
-                  width: 40,
-                  height: 40,
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Text(
-                      memberName.isNotEmpty ? memberName[0].toUpperCase() : 'M',
-                      style: GoogleFonts.poppins(
-                        color: AppTheme.primary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
+                    gradient: const LinearGradient(
+                      colors: [AppTheme.primary, AppTheme.primaryLight],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primary.withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        memberName,
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.pie_chart_rounded, color: Colors.white, size: 32),
                       ),
-                      Text(
-                        '$memberId  •  $count transaction${count > 1 ? 's' : ''}  •  ${pct.toStringAsFixed(1)}%',
-                        style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary),
-                        overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Total Shares Portfolio', 
+                                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
+                            Text(
+                              'UGX ${widget.fmt.format(totalShares)}',
+                              style: GoogleFonts.poppins(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$totalMembers members with shares',
+                              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => _showAddSharesDialog(null),
+                        icon: const Icon(Icons.add_circle, color: Colors.white, size: 32),
+                        tooltip: 'Add Member Shares',
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'UGX ${fmt.format(shareValue)}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w600,
+
+                // Data Table
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    width: constraints.maxWidth - 32,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 20,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: _buildSharesTable(membersList, totalShares),
                   ),
                 ),
-              ]),
+              ],
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildSharesTable(List<Map<String, dynamic>> membersList, double totalShares) {
+    return ProfessionalDataTable(
+      columns: [
+        const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 120),
+        const DataTableColumn(key: 'memberName', label: 'Member Name', width: 200),
+        DataTableColumn(
+          key: 'totalShares',
+          label: 'Shares Count',
+          width: 120,
+          builder: (row) => Text(
+            widget.fmt.format(row['totalShares']),
+            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+        DataTableColumn(
+          key: 'shareValue',
+          label: 'Share Value (UGX)',
+          width: 150,
+          builder: (row) => Text(
+            'UGX ${widget.fmt.format(row['shareValue'])}',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.primary,
+            ),
+          ),
+        ),
+        DataTableColumn(
+          key: 'actions',
+          label: 'Actions',
+          width: 120,
+          builder: (row) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => _showAddSharesDialog(row),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE3F2FD),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF1565C0)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => _showTransactionHistory(row),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Icon(Icons.history, size: 14, color: Color(0xFFE65100)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => _showDeleteDialog(row),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEBEE),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Icon(Icons.delete_outline, size: 14, color: Color(0xFFD32F2F)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+      data: membersList,
+      searchPlaceholder: 'Search by member name or account number...',
+    );
+  }
+
+  void _showAddSharesDialog(Map<String, dynamic>? existingMember) async {
+    final isEdit = existingMember != null;
+    
+    // Fetch current share price
+    final db = FirebaseFirestore.instance;
+    final settingsDoc = await db.collection('saccoplus-settings')
+        .doc('${FirebaseService.sessionTenantId}_shares')
+        .get();
+    final sharePrice = (settingsDoc.data()?['sharePrice'] ?? 10000).toInt();
+
+    // Fetch all members for dropdown
+    final membersSnapshot = await db.collection('saccoplus-members')
+        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+        .get();
+    
+    final allMembers = membersSnapshot.docs.map((doc) {
+      final data = doc.data();
+      return {
+        'id': doc.id,
+        'memberId': data['memberId'] ?? data['accountNumber'] ?? doc.id,
+        'memberName': data['name'] ?? data['fullName'] ?? 'Unknown',
+        'accountNumber': data['accountNumber'] ?? data['memberNumber'] ?? '',
+      };
+    }).toList();
+
+    String? selectedMemberId = existingMember?['id'];
+    String selectedMemberName = existingMember?['memberName'] ?? '';
+    String selectedAccountNumber = existingMember?['accountNumber'] ?? '';
+    
+    final sharesCtrl = TextEditingController(
+        text: existingMember != null ? existingMember['totalShares'].toString() : '');
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(isEdit ? Icons.edit : Icons.add, color: AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                isEdit ? 'Edit Member Shares' : 'Add Member Shares',
+                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Member Selector Dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12),
+                  color: isEdit ? Colors.grey.shade100 : Colors.white,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    hint: Text('Select Member *', style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
+                    value: selectedMemberId,
+                    icon: Icon(Icons.arrow_drop_down, color: isEdit ? Colors.grey : AppTheme.primary),
+                    style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
+                    items: allMembers.map((member) {
+                      return DropdownMenuItem<String>(
+                        value: member['id'] as String,
+                        child: Text(
+                          '${member['memberName']} (${member['accountNumber']})',
+                          style: GoogleFonts.poppins(fontSize: 13),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: isEdit ? null : (String? newValue) {
+                      if (newValue != null) {
+                        final selectedMember = allMembers.firstWhere((m) => m['id'] == newValue);
+                        setState(() {
+                          selectedMemberId = newValue;
+                          selectedMemberName = selectedMember['memberName'] as String;
+                          selectedAccountNumber = selectedMember['accountNumber'] as String;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              
+              // Display selected member details
+              if (selectedMemberId != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.person, color: AppTheme.primary, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              selectedMemberName,
+                              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              'Account: $selectedAccountNumber',
+                              style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              
+              TextField(
+                controller: sharesCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: (value) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Number of Shares *',
+                  hintText: 'e.g., 100',
+                  suffixText: '@ UGX ${widget.fmt.format(sharePrice)}/share',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Total Value: UGX ${widget.fmt.format((int.tryParse(sharesCtrl.text) ?? 0) * sharePrice)}',
+                style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (selectedMemberId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please select a member'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+                
+                final shares = int.tryParse(sharesCtrl.text) ?? 0;
+                if (shares <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter valid number of shares'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+
+                Navigator.pop(ctx);
+                await _saveShares(selectedMemberId!, selectedMemberName, shares, sharePrice, isEdit);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: Text(isEdit ? 'Update' : 'Add', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveShares(String memberId, String memberName, int shares, int sharePrice, bool isEdit) async {
+    try {
+      final totalValue = shares * sharePrice;
+      
+      // Update shares in members collection
+      await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .doc(memberId)
+          .update({
+        'sharesBalance': totalValue.toDouble(),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+
+      // Log the action
+      await AuditService.log(
+        action: isEdit ? 'SHARES_UPDATED' : 'SHARES_ADDED',
+        description: '${isEdit ? 'Updated' : 'Added'} $shares shares (UGX ${widget.fmt.format(totalValue)}) for $memberName',
+        targetId: memberId,
+        targetName: memberName,
+        meta: {'shares': shares, 'sharePrice': sharePrice, 'totalValue': totalValue},
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isEdit ? 'Shares updated successfully' : 'Shares added successfully'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
+  }
+
+  void _showDeleteDialog(Map<String, dynamic> member) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
+            SizedBox(width: 12),
+            Text('Delete Shares?'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete ${member['memberName']}\'s share record (${member['totalShares']} shares)?',
+          style: GoogleFonts.poppins(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deleteShares(member['id']);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteShares(String docId) async {
+    try {
+      // Set shares to 0 in members collection instead of deleting
+      await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .doc(docId)
+          .update({
+        'sharesBalance': 0,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Shares cleared successfully'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
+  }
+
+  void _showTransactionHistory(Map<String, dynamic> member) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Share History - ${member['memberName']}', 
+            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Transaction history coming soon...', 
+                  style: GoogleFonts.poppins(fontSize: 13)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

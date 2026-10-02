@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +6,8 @@ import 'dart:math' show pow;
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../../services/arrears_service.dart';
+import '../../core/firebase_service.dart';
 
 class LoanCardDialog extends StatefulWidget {
   final String loanId;
@@ -24,11 +26,22 @@ class LoanCardDialog extends StatefulWidget {
 class _LoanCardDialogState extends State<LoanCardDialog> {
   final _currencyFormat = NumberFormat('#,###', 'en_US');
   bool _isEditing = false;
+  bool _isLoadingArrears = true;
+  bool _showPenaltyManager = false;
+  Map<String, dynamic>? _arrearsData;
+  String _selectedFeeType = 'application';
   
   late TextEditingController _principalCtrl;
   late TextEditingController _interestRateCtrl;
   late TextEditingController _durationCtrl;
   late TextEditingController _disbursementDateCtrl;
+  late TextEditingController _manualArrearsCtrl;
+  late TextEditingController _manualPenaltyCtrl;
+  late TextEditingController _penaltyReasonCtrl;
+  late TextEditingController _feeAmountCtrl;
+  late TextEditingController _feeRateCtrl;
+  late TextEditingController _customFeeTypeCtrl;
+  late TextEditingController _paymentAmountCtrl;
   String _interestMethod = 'flat';
   DateTime? _disbursementDate;
   
@@ -38,6 +51,15 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
   @override
   void initState() {
     super.initState();
+    
+    // Debug logging
+    print('=== LOAN CARD DIALOG INIT ===');
+    print('Received LoanID: ${widget.loanId}');
+    print('Received Member Name: ${widget.loanData['memberName']}');
+    print('Received Amount: ${widget.loanData['loanAmount']}');
+    print('Received Outstanding: ${widget.loanData['principalOutstanding']}');
+    print('============================');
+    
     _principalCtrl = TextEditingController(
       text: (widget.loanData['loanAmount'] ?? 0).toString()
     );
@@ -48,6 +70,28 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       text: (widget.loanData['duration'] ?? 12).toString()
     );
     _interestMethod = widget.loanData['interestMethod'] ?? 'flat';
+    
+    // Initialize fee controllers
+    _feeAmountCtrl = TextEditingController();
+    _feeRateCtrl = TextEditingController();
+    _customFeeTypeCtrl = TextEditingController();
+    
+    // Calculate and auto-fill expected payment based on frequency
+    final expectedPayment = _calculateExpectedPayment();
+    _paymentAmountCtrl = TextEditingController(
+      text: expectedPayment > 0 ? expectedPayment.round().toString() : ''
+    );
+    
+    // Initialize manual penalty controllers
+    _manualArrearsCtrl = TextEditingController(
+      text: (widget.loanData['manualArrears'] ?? 0).toString()
+    );
+    _manualPenaltyCtrl = TextEditingController(
+      text: (widget.loanData['manualPenalty'] ?? 0).toString()
+    );
+    _penaltyReasonCtrl = TextEditingController(
+      text: widget.loanData['penaltyReason'] ?? ''
+    );
     
     // Parse disbursement date
     if (widget.loanData['disbursementDate'] is Timestamp) {
@@ -82,6 +126,97 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         });
       }
     }
+    
+    // Load arrears data
+    _loadArrearsData();
+  }
+  
+  Future<void> _loadArrearsData() async {
+    setState(() => _isLoadingArrears = true);
+    final arrearsData = await ArrearsService.calculateLoanArrears(widget.loanId);
+    setState(() {
+      _arrearsData = arrearsData;
+      _isLoadingArrears = false;
+    });
+  }
+  
+  /// Calculate expected payment based on loan amount, interest, duration, and payment frequency
+  double _calculateExpectedPayment() {
+    try {
+      final principal = (widget.loanData['loanAmount'] ?? widget.loanData['amount'] ?? 0).toDouble();
+      final interestRate = (widget.loanData['interestRate'] ?? 0).toDouble();
+      final duration = (widget.loanData['duration'] ?? 12).toInt();
+      final interestMethod = widget.loanData['interestMethod'] ?? 'flat';
+      final paymentFrequency = widget.loanData['paymentFrequency'] ?? 'monthly';
+      
+      if (principal <= 0 || duration <= 0) return 0;
+      
+      double totalInterest = 0;
+      
+      // Calculate interest based on method
+      if (interestMethod == 'reducing') {
+        // Reducing balance: use amortization formula
+        final r = interestRate / 100;
+        if (r > 0) {
+          final powValue = pow(1.0 + r, duration);
+          final monthlyPayment = principal * r * powValue / (powValue - 1);
+          totalInterest = (monthlyPayment * duration) - principal;
+        }
+      } else {
+        // Flat rate: simple interest
+        totalInterest = principal * (interestRate / 100) * duration;
+      }
+      
+      final totalLoanAmount = principal + totalInterest;
+      
+      // Calculate payment based on frequency
+      switch (paymentFrequency.toLowerCase()) {
+        case 'daily':
+          return totalLoanAmount / duration; // duration in days
+        case 'weekly':
+          return totalLoanAmount / duration; // duration in weeks
+        case 'biweekly':
+          return totalLoanAmount / (duration / 2); // duration in bi-weeks
+        case 'monthly':
+        default:
+          return totalLoanAmount / duration; // duration in months
+      }
+    } catch (e) {
+      print('Error calculating expected payment: $e');
+      return 0;
+    }
+  }
+  
+  /// Get payment recording title based on frequency
+  String _getPaymentRecordingTitle() {
+    final frequency = widget.loanData['paymentFrequency'] ?? 'monthly';
+    switch (frequency.toLowerCase()) {
+      case 'daily':
+        return 'Record Daily Payment';
+      case 'weekly':
+        return 'Record Weekly Payment';
+      case 'biweekly':
+        return 'Record Bi-Weekly Payment';
+      case 'monthly':
+      default:
+        return 'Record Monthly Payment';
+    }
+  }
+  
+  /// Get payment frequency label for badge
+  String _getPaymentFrequencyLabel() {
+    final frequency = widget.loanData['paymentFrequency'] ?? 'monthly';
+    switch (frequency.toLowerCase()) {
+      case 'daily':
+        return 'DAILY';
+      case 'weekly':
+        return 'WEEKLY';
+      case 'biweekly':
+        return 'BI-WEEKLY';
+      case 'monthly':
+      default:
+        return 'MONTHLY';
+    }
   }
 
   @override
@@ -90,6 +225,13 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     _interestRateCtrl.dispose();
     _durationCtrl.dispose();
     _disbursementDateCtrl.dispose();
+    _manualArrearsCtrl.dispose();
+    _manualPenaltyCtrl.dispose();
+    _penaltyReasonCtrl.dispose();
+    _feeAmountCtrl.dispose();
+    _feeRateCtrl.dispose();
+    _customFeeTypeCtrl.dispose();
+    _paymentAmountCtrl.dispose();
     for (var g in _guarantors) {
       g['name']?.dispose();
       g['account']?.dispose();
@@ -130,7 +272,8 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       final r = interestRate / (100 * 12);
       final n = duration.toDouble();
       if (r > 0) {
-        final monthlyPayment = principal * r * pow(1 + r, n) / (pow(1 + r, n) - 1);
+        final powValue = pow(1 + r, n).toDouble();
+        final monthlyPayment = principal * r * powValue / (powValue - 1);
         interest = (monthlyPayment * n) - principal;
       } else {
         interest = 0;
@@ -162,12 +305,13 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
-                        'MBADIFA SACCO',
+                        memberName.toUpperCase(),
                         style: GoogleFonts.poppins(
-                          fontSize: 24,
+                          fontSize: 20,
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF2C1810),
                         ),
+                        textAlign: TextAlign.center,
                       ),
                       Text(
                         'P.O. BOX 1592, MBARARA',
@@ -260,6 +404,17 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                       ],
                     ),
                     
+                    const SizedBox(height: 16),
+                    
+                    // Arrears & Penalties Section (if applicable)
+                    if (_arrearsData != null && !_arrearsData!.containsKey('error'))
+                      _buildArrearsSection(),
+                    
+                    if (_arrearsData != null && !_arrearsData!.containsKey('error'))
+                      const SizedBox(height: 16),
+                    
+                    // Penalties Management (Teller Function)
+                    _buildPenaltiesManagementSection(),
                     const SizedBox(height: 16),
                     
                     // Guarantors Section (Placeholder)
@@ -550,6 +705,30 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     int duration,
     double monthlyPayment,
   ) {
+    // Calculate due date (disbursement date + duration months)
+    DateTime? dueDate;
+    int? daysOverdue;
+    
+    if (_disbursementDate != null) {
+      dueDate = DateTime(
+        _disbursementDate!.year,
+        _disbursementDate!.month + duration,
+        _disbursementDate!.day,
+      );
+      
+      // Calculate days overdue if past due date
+      final now = DateTime.now();
+      if (now.isAfter(dueDate)) {
+        daysOverdue = now.difference(dueDate).inDays;
+      }
+    }
+    
+    // Get actual outstanding from database (same as loan table)
+    final principalOutstanding = (widget.loanData['principalOutstanding'] ?? 0).toDouble();
+    final interestOutstanding = (widget.loanData['interestOriginalBalance'] ?? 0).toDouble();
+    final totalOutstanding = principalOutstanding + interestOutstanding;
+    final totalPaid = total - totalOutstanding;
+    
     return Column(
       children: [
         // Input fields when editing
@@ -609,9 +788,257 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
           ),
         ],
         
+        // Outstanding Balance Summary Card (showing actual database values)
+        Container(
+          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue.shade700, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Total Loan:',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _currencyFormat.format(total),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 12, thickness: 1),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Principal Out:',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _currencyFormat.format(principalOutstanding),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Interest Out:',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _currencyFormat.format(interestOutstanding),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 12, thickness: 1),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'TOTAL OUTSTANDING:',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _currencyFormat.format(totalOutstanding),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 12, thickness: 1),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Total Paid:',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _currencyFormat.format(totalPaid),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        
+        // Date Information Banner (if dates exist)
+        if (_disbursementDate != null && dueDate != null) ...[
+          Container(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: daysOverdue != null && daysOverdue > 0 
+                ? Colors.red.shade50 
+                : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: daysOverdue != null && daysOverdue > 0 
+                  ? Colors.red.shade700 
+                  : Colors.green.shade700,
+                width: 2,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  daysOverdue != null && daysOverdue > 0 
+                    ? Icons.error_outline 
+                    : Icons.check_circle_outline,
+                  color: daysOverdue != null && daysOverdue > 0 
+                    ? Colors.red.shade700 
+                    : Colors.green.shade700,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Disbursed:',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            DateFormat('dd MMM yy').format(_disbursementDate!),
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Due Date:',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            DateFormat('dd MMM yy').format(dueDate),
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: daysOverdue != null && daysOverdue > 0 
+                                ? Colors.red.shade700 
+                                : Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (daysOverdue != null && daysOverdue > 0) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Overdue:',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red.shade900,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade700,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$daysOverdue days',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        
         // Summary Table
         Table(
-          border: TableBorder.all(color: const Color(0xFF2C1810), width: 1),
+          border: TableBorder.all(color: Colors.transparent, width: 0),
           columnWidths: const {
             0: FlexColumnWidth(2),
             1: FlexColumnWidth(2),
@@ -696,16 +1123,19 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
 
   TableRow _buildTableHeaderRow(List<String> headers) {
     return TableRow(
-      decoration: BoxDecoration(color: const Color(0xFF2C1810).withOpacity(0.15)),
-      children: headers.map((h) => Padding(
-        padding: const EdgeInsets.all(6),
+      decoration: const BoxDecoration(color: Color(0xFFF5F5F5)),
+      children: headers.map((h) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade400, width: 0.5),
+        ),
         child: Text(
           h,
           textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF2C1810),
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
           ),
         ),
       )).toList(),
@@ -714,14 +1144,17 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
 
   TableRow _buildTableDataRow(List<String> data) {
     return TableRow(
-      children: data.map((d) => Padding(
-        padding: const EdgeInsets.all(6),
+      children: data.map((d) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade400, width: 0.5),
+        ),
         child: Text(
           d,
           textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.inter(
             fontSize: 10,
-            color: const Color(0xFF1A0D08),
+            color: Colors.black87,
           ),
         ),
       )).toList(),
@@ -740,7 +1173,8 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         final r = interestRate / (100 * 12);
         final n = duration.toDouble();
         if (r > 0) {
-          final monthlyPayment = principal * r * pow(1 + r, n) / (pow(1 + r, n) - 1);
+          final powValue = pow(1 + r, n).toDouble();
+          final monthlyPayment = principal * r * powValue / (powValue - 1);
           interest = (monthlyPayment * n) - principal;
         } else {
           interest = 0;
@@ -774,20 +1208,117 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Loan card updated successfully'),
-            backgroundColor: Colors.green,
+        setState(() => _isEditing = false);
+        
+        // Show success dialog
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.check_circle,
+                    color: Colors.green.shade700,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Success',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Loan card updated successfully',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'OK',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
-        setState(() => _isEditing = false);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
+        // Show error dialog
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close,
+                    color: Colors.red.shade700,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Error',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Failed to update loan card: $e',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'OK',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red.shade700,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       }
@@ -879,5 +1410,700 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     );
     
     await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+  }
+  
+  // Build Arrears Section
+  Widget _buildArrearsSection() {
+    if (_isLoadingArrears) {
+      return const SizedBox.shrink();
+    }
+    
+    if (_arrearsData == null || _arrearsData!.containsKey('error')) {
+      return const SizedBox.shrink();
+    }
+    
+    // Calculate due date and days overdue
+    final duration = (widget.loanData['duration'] ?? 12) as int;
+    DateTime? dueDate;
+    int daysOverdue = 0;
+    String status = 'Active';
+    
+    if (_disbursementDate != null) {
+      dueDate = DateTime(
+        _disbursementDate!.year,
+        _disbursementDate!.month + duration,
+        _disbursementDate!.day,
+      );
+      
+      final now = DateTime.now();
+      final difference = now.difference(dueDate).inDays;
+      
+      if (difference > 0) {
+        daysOverdue = difference;
+        status = 'Overdue';
+      } else if (difference == -1) {
+        status = 'Due Tomorrow';
+      } else if (difference >= 0 && difference <= 7) {
+        status = 'Due Soon';
+      }
+      
+      // Check if cleared
+      final totalPaid = (_arrearsData!['totalPaid'] ?? 0).toDouble();
+      final totalLoanAmount = (_arrearsData!['totalLoanAmount'] ?? 0).toDouble();
+      if (totalPaid >= totalLoanAmount) {
+        status = 'Cleared/Settled';
+      }
+    }
+    
+    final arrearsAmount = (_arrearsData!['arrearsAmount'] ?? 0).toDouble();
+    final penaltyAmount = (_arrearsData!['penaltyAmount'] ?? 0).toDouble();
+    final totalDue = (_arrearsData!['totalDue'] ?? 0).toDouble();
+    
+    // Only show if overdue or important status
+    if (status == 'Active') {
+      return const SizedBox.shrink();
+    }
+    
+    // Color based on status
+    Color statusColor = Colors.green;
+    Color bgColor = Colors.green.shade50;
+    if (status == 'Overdue') {
+      statusColor = Colors.red.shade700;
+      bgColor = Colors.red.shade50;
+    } else if (status == 'Due Tomorrow' || status == 'Due Soon') {
+      statusColor = Colors.orange.shade700;
+      bgColor = Colors.orange.shade50;
+    }
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: statusColor, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                status == 'Cleared/Settled' ? Icons.check_circle : Icons.warning,
+                color: statusColor,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  status.toUpperCase(),
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Table with clean borders
+          Table(
+            border: TableBorder.all(color: Colors.transparent, width: 0),
+            columnWidths: const {
+              0: FlexColumnWidth(2),
+              1: FlexColumnWidth(3),
+            },
+            children: [
+              if (dueDate != null) ...[
+                _buildInfoTableRow('Due Date:', DateFormat('dd MMM yyyy').format(dueDate)),
+                if (daysOverdue > 0)
+                  _buildInfoTableRow('Days Overdue:', '$daysOverdue days', isRed: true),
+              ],
+              if (arrearsAmount > 0)
+                _buildInfoTableRow('Arrears:', 'UGX ${_currencyFormat.format(arrearsAmount.round())}'),
+              if (penaltyAmount > 0)
+                _buildInfoTableRow('Penalties:', 'UGX ${_currencyFormat.format(penaltyAmount.round())}'),
+              if (totalDue > 0)
+                _buildInfoTableRow('Total Due:', 'UGX ${_currencyFormat.format(totalDue.round())}', isBold: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  
+  TableRow _buildInfoTableRow(String label, String value, {bool isBold = false, bool isRed = false}) {
+    return TableRow(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+              color: isRed ? Colors.red.shade700 : Colors.black87,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  
+  // Build Penalties Management Section
+  Widget _buildPenaltiesManagementSection() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      child: Column(
+        children: [
+          // Header
+          InkWell(
+            onTap: () => setState(() => _showPenaltyManager = !_showPenaltyManager),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.payment, color: Colors.grey.shade700, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Record Payment & Manage Fees',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _showPenaltyManager ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.grey.shade600,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Expandable Content
+          if (_showPenaltyManager) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Payment Recording Section
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              _getPaymentRecordingTitle(),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade900,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade700,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: Text(
+                                _getPaymentFrequencyLabel(),
+                                style: GoogleFonts.inter(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _paymentAmountCtrl,
+                          keyboardType: TextInputType.number,
+                          style: GoogleFonts.inter(fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'Expected: ${_currencyFormat.format(_calculateExpectedPayment().round())}',
+                            hintStyle: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
+                            prefixText: 'UGX ',
+                            prefixStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 36,
+                          child: ElevatedButton(
+                            onPressed: _recordPayment,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              elevation: 0,
+                            ),
+                            child: Text('Record Payment', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  Divider(color: Colors.grey.shade300, height: 1),
+                  const SizedBox(height: 16),
+                  
+                  // Fee Type Dropdown
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Fee Type', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey.shade700)),
+                            const SizedBox(height: 4),
+                            DropdownButtonFormField<String>(
+                              value: _selectedFeeType,
+                              style: GoogleFonts.inter(fontSize: 12, color: Colors.black87),
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                              ),
+                              items: [
+                                DropdownMenuItem(value: 'application', child: Text('Application Fee', style: GoogleFonts.inter(fontSize: 12))),
+                                DropdownMenuItem(value: 'insurance', child: Text('Insurance', style: GoogleFonts.inter(fontSize: 12))),
+                                DropdownMenuItem(value: 'processing', child: Text('Processing Fee', style: GoogleFonts.inter(fontSize: 12))),
+                                DropdownMenuItem(value: 'late_penalty', child: Text('Late Penalty', style: GoogleFonts.inter(fontSize: 12))),
+                                DropdownMenuItem(value: 'default', child: Text('Default Penalty', style: GoogleFonts.inter(fontSize: 12))),
+                                DropdownMenuItem(value: 'others', child: Text('Others', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600))),
+                              ],
+                              onChanged: (v) => setState(() => _selectedFeeType = v!),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Rate %', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey.shade700)),
+                            const SizedBox(height: 4),
+                            TextField(
+                              controller: _feeRateCtrl,
+                              keyboardType: TextInputType.number,
+                              style: GoogleFonts.inter(fontSize: 12),
+                              decoration: InputDecoration(
+                                hintText: '%',
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  if (_selectedFeeType == 'others') ...[
+                    const SizedBox(height: 12),
+                    Text('Specify Fee', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey.shade700)),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _customFeeTypeCtrl,
+                      style: GoogleFonts.inter(fontSize: 12),
+                      decoration: InputDecoration(
+                        hintText: 'e.g., Valuation Fee',
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(4),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                    ),
+                  ],
+                  
+                  const SizedBox(height: 12),
+                  
+                  Text('Amount', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey.shade700)),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _feeAmountCtrl,
+                    keyboardType: TextInputType.number,
+                    style: GoogleFonts.inter(fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Enter amount',
+                      prefixText: 'UGX ',
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  Text('Notes', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey.shade700)),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _penaltyReasonCtrl,
+                    maxLines: 2,
+                    style: GoogleFonts.inter(fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Optional notes',
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    height: 36,
+                    child: ElevatedButton(
+                      onPressed: _applyFeeCharge,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey.shade800,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        elevation: 0,
+                      ),
+                      child: Text('Apply Fee', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+  
+  Future<void> _applyFeeCharge() async {
+    try {
+      final feeAmount = double.tryParse(_feeAmountCtrl.text) ?? 0;
+      final feeType = _selectedFeeType == 'others' ? _customFeeTypeCtrl.text.trim() : _selectedFeeType;
+      final notes = _penaltyReasonCtrl.text.trim();
+      
+      if (feeAmount <= 0) {
+        await _showErrorDialog('Please enter a valid fee amount');
+        return;
+      }
+      
+      if (_selectedFeeType == 'others' && _customFeeTypeCtrl.text.trim().isEmpty) {
+        await _showErrorDialog('Please specify the fee type');
+        return;
+      }
+      
+      // Get fee label
+      String feeLabel = '';
+      switch (_selectedFeeType) {
+        case 'application':
+          feeLabel = 'Application Fee';
+          break;
+        case 'insurance':
+          feeLabel = 'Insurance';
+          break;
+        case 'processing':
+          feeLabel = 'Processing Fee';
+          break;
+        case 'late_penalty':
+          feeLabel = 'Late Payment Penalty';
+          break;
+        case 'default':
+          feeLabel = 'Default Penalty';
+          break;
+        case 'others':
+          feeLabel = _customFeeTypeCtrl.text.trim();
+          break;
+        default:
+          feeLabel = _selectedFeeType;
+      }
+      
+      // Get existing fees or create empty array
+      final loanDoc = await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .doc(widget.loanId)
+          .get();
+      
+      final existingFees = List<Map<String, dynamic>>.from(
+        loanDoc.data()?['additionalFees'] ?? []
+      );
+      
+      // Add new fee
+      existingFees.add({
+        'type': feeType,
+        'label': feeLabel,
+        'amount': feeAmount,
+        'notes': notes,
+        'appliedAt': Timestamp.now(),
+        'appliedBy': FirebaseService.sessionProfile?['fullName'] ?? 'Admin',
+      });
+      
+      // Update Firebase with all fees
+      await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .doc(widget.loanId)
+          .update({
+        'additionalFees': existingFees,
+        'totalFees': existingFees.fold<double>(0, (sum, fee) => sum + (fee['amount'] as num).toDouble()),
+      });
+      
+      // Reload arrears data
+      await _loadArrearsData();
+      
+      // Clear form
+      _feeAmountCtrl.clear();
+      _customFeeTypeCtrl.clear();
+      _penaltyReasonCtrl.clear();
+      setState(() => _selectedFeeType = 'application');
+      
+      // Show success dialog
+      await _showSuccessDialog('Fee applied successfully');
+      
+    } catch (e) {
+      await _showErrorDialog('Failed to apply fee: $e');
+    }
+  }
+  
+  Future<void> _showSuccessDialog(String message) async {
+    if (!mounted) return;
+    
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle,
+                color: Colors.green.shade600,
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Success',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 36,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'OK',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Future<void> _showErrorDialog(String message) async {
+    if (!mounted) return;
+    
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.close,
+                color: Colors.red.shade600,
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 36,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'OK',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Future<void> _recordPayment() async {
+    try {
+      final amount = double.tryParse(_paymentAmountCtrl.text) ?? 0;
+      
+      if (amount <= 0) {
+        await _showErrorDialog('Please enter a valid payment amount');
+        return;
+      }
+      
+      // Add payment to subcollection
+      await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .doc(widget.loanId)
+          .collection('repayments')
+          .add({
+        'amount': amount,
+        'timestamp': Timestamp.now(),
+        'recordedBy': FirebaseService.sessionProfile?['fullName'] ?? 'Admin',
+        'method': 'teller',
+      });
+      
+      // Clear form
+      _paymentAmountCtrl.clear();
+      
+      // Reload arrears
+      await _loadArrearsData();
+      
+      await _showSuccessDialog('Payment recorded successfully');
+      
+    } catch (e) {
+      await _showErrorDialog('Failed to record payment: $e');
+    }
   }
 }

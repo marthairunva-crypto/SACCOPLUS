@@ -382,27 +382,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        child: SwitchListTile(
-          secondary: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          child: SwitchListTile(
+            secondary: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: AppTheme.primary, size: 18),
             ),
-            child: Icon(icon, color: AppTheme.primary, size: 18),
+            title: Text(title,
+                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
+            subtitle: Text(subtitle,
+                style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary)),
+            value: value,
+            onChanged: onChanged,
+            activeColor: AppTheme.primary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          title: Text(title,
-              style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
-          subtitle: Text(subtitle,
-              style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary)),
-          value: value,
-          onChanged: onChanged,
-          activeColor: AppTheme.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
 
@@ -415,26 +418,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        child: ListTile(
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: AppTheme.primary, size: 18),
             ),
-            child: Icon(icon, color: AppTheme.primary, size: 18),
+            title: Text(title,
+                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
+            subtitle: Text(subtitle,
+                style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary)),
+            trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey, size: 20),
+            onTap: onTap,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          title: Text(title,
-              style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
-          subtitle: Text(subtitle,
-              style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary)),
-          trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey, size: 20),
-          onTap: onTap,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
 

@@ -38,21 +38,28 @@ void main() async {
     // Check if it's a Firestore index error
     final errorString = details.exception.toString();
     if (errorString.contains('index') && errorString.contains('firebase')) {
-      debugPrint('');
-      debugPrint('⚠️  FIRESTORE INDEX REQUIRED!');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('');
+      print('╔═══════════════════════════════════════════════════════════════════════╗');
+      print('║  ⚠️  FIRESTORE COMPOSITE INDEX REQUIRED                                ║');
+      print('╚═══════════════════════════════════════════════════════════════════════╝');
+      print('');
       
       // Extract and print the index URL if present
-      final urlMatch = RegExp(r'https://[^\s]+').firstMatch(errorString);
+      final urlMatch = RegExp(r'https://console\.firebase\.google\.com[^\s\)]+').firstMatch(errorString);
       if (urlMatch != null) {
-        debugPrint('🔗 Click this link to create the index:');
-        debugPrint('   ${urlMatch.group(0)}');
+        final url = urlMatch.group(0)!;
+        print('🔗 CLICK THIS LINK TO AUTO-CREATE THE INDEX:');
+        print('');
+        print(url);  // Plain print for clickable link
+        print('');
+        print('💡 TIP: Ctrl+Click (or Cmd+Click on Mac) to open in your browser');
       } else {
-        debugPrint('🔗 Create indexes manually:');
-        debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
+        print('🔗 Manually create indexes at:');
+        print('https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
       }
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      debugPrint('');
+      print('');
+      print('═══════════════════════════════════════════════════════════════════════');
+      print('');
     }
   };
 

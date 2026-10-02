@@ -9,6 +9,7 @@ import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
 import '../../core/constants.dart';
 import '../../widgets/professional_data_table.dart';
+import '../../widgets/sweet_alert.dart';
 import '../../utils/csv_export.dart';
 
 class MembersDetailedScreen extends StatefulWidget {
@@ -191,27 +192,31 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
 
               final members = futureSnapshot.data!;
 
-          return Container(
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return Container(
+                margin: const EdgeInsets.all(16),
+                width: constraints.maxWidth - 32, // Account for margin
+                height: constraints.maxHeight - 32, // Account for margin
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: ProfessionalDataTable(
+                child: ProfessionalDataTable(
               columns: [
-                const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 100),
-                const DataTableColumn(key: 'fullName', label: 'Full Name', width: 135),
+                const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 85),
+                const DataTableColumn(key: 'fullName', label: 'Full Name', width: 110),
                 DataTableColumn(
                     key: 'phone',
                     label: 'Phone',
-                    width: 110,
+                    width: 95,
                     builder: (row) {
                       final phone = row['phone'] as String;
                       final hasPhone = phone.isNotEmpty;
@@ -245,7 +250,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'savingsBalance',
                     label: 'Savings',
-                    width: 80,
+                    width: 70,
                     builder: (row) => Text(
                       _currencyFormat.format(row['savingsBalance']),
                       style: const TextStyle(
@@ -260,7 +265,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'sharesBalance',
                     label: 'Shares',
-                    width: 75,
+                    width: 65,
                     builder: (row) => Text(
                       _currencyFormat.format(row['sharesBalance']),
                       style: const TextStyle(
@@ -275,7 +280,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'loanBalance',
                     label: 'Loans',
-                    width: 80,
+                    width: 65,
                     builder: (row) {
                       final amount = row['loanBalance'] as double;
                       return Text(
@@ -293,19 +298,19 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'kycStatus',
                     label: 'KYC',
-                    width: 75,
+                    width: 70,
                     builder: (row) => _kycBadge(row['kycStatus'] as String),
                   ),
                   DataTableColumn(
                     key: 'status',
                     label: 'Status',
-                    width: 70,
+                    width: 65,
                     builder: (row) => _statusBadge(row['status'] as String),
                   ),
                   DataTableColumn(
                     key: 'actions',
                     label: 'Actions',
-                    width: 85,
+                    width: 105,
                     builder: (row) => Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -350,6 +355,22 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                             ),
                           ),
                         ),
+                        const SizedBox(width: 4),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () => _showDeleteMemberDialog(row),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFEBEE),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Icon(Icons.delete_outline, size: 14, color: Color(0xFFD32F2F)),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -357,6 +378,8 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
               data: members,
               searchPlaceholder: 'Search by name, member ID, or account number...',
             ),
+              );
+            },
           );
             },
           );
@@ -869,12 +892,11 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Member updated! Phone: $phone'),
-            backgroundColor: const Color(0xFF388E3C),
-            duration: const Duration(seconds: 3),
-          ),
+        SweetAlert.show(
+          context: context,
+          type: SweetAlertType.success,
+          title: 'Updated Successfully!',
+          message: 'Member information has been updated',
         );
       }
     } catch (e, stackTrace) {
@@ -944,11 +966,11 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Member ${newStatus == 'inactive' ? 'deactivated' : 'activated'} successfully'),
-            backgroundColor: const Color(0xFF388E3C),
-          ),
+        SweetAlert.show(
+          context: context,
+          type: SweetAlertType.success,
+          title: newStatus == 'inactive' ? 'Member Deactivated' : 'Member Activated',
+          message: '${member['fullName']} has been ${newStatus == 'inactive' ? 'deactivated' : 'activated'} successfully',
         );
       }
     } catch (e) {
@@ -957,6 +979,168 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
           SnackBar(
             content: Text('Error updating member status: $e'),
             backgroundColor: const Color(0xFFD32F2F),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showDeleteMemberDialog(Map<String, dynamic> member) async {
+    final memberId = member['id'];
+    final memberName = member['fullName'];
+    final hasBalances = (member['savingsBalance'] as double) > 0 || 
+                        (member['sharesBalance'] as double) > 0 || 
+                        (member['loanBalance'] as double) > 0;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEE),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFD32F2F), size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Delete Member Account?',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to permanently delete $memberName\'s account?',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFF9800)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 18, color: Color(0xFFE65100)),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Account Summary',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFE65100)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Savings: UGX ${_currencyFormat.format(member['savingsBalance'])}', 
+                      style: const TextStyle(fontSize: 12)),
+                  Text('Shares: UGX ${_currencyFormat.format(member['sharesBalance'])}', 
+                      style: const TextStyle(fontSize: 12)),
+                  Text('Loans: UGX ${_currencyFormat.format(member['loanBalance'])}', 
+                      style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+            if (hasBalances) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEBEE),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFD32F2F)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_rounded, color: Color(0xFFD32F2F), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'Warning: Active Balances',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFD32F2F)),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'This member has active balances. Ensure all transactions are settled before deletion.',
+                            style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            const Text(
+              '⚠️ This action cannot be undone. All member data, transactions, and history will be permanently deleted.',
+              style: TextStyle(fontSize: 12, color: Color(0xFFD32F2F), fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(fontSize: 14)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD32F2F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Delete Account', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Delete member document
+      await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .doc(memberId)
+          .delete();
+
+      // Optional: Delete related data (savings, shares, loans)
+      // You might want to keep transaction history for audit purposes
+      // Or move them to an "archived" collection instead of deleting
+
+      if (mounted) {
+        SweetAlert.show(
+          context: context,
+          type: SweetAlertType.success,
+          title: 'Deleted Successfully!',
+          message: 'Member account has been permanently deleted',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting member: $e'),
+            backgroundColor: const Color(0xFFD32F2F),
+            duration: const Duration(seconds: 5),
           ),
         );
       }

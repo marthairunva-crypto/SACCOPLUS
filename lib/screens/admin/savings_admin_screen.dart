@@ -94,12 +94,287 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
         meta: {'amount': amount, 'type': type},
       );
       _snack('Deposit approved and credited.', AppTheme.success);
-    } else {
+    } else if (action == 'reject') {
       await db.collection(AppConstants.savingsTxnCol).doc(docId).update({
         'status': 'Rejected',
         'rejectedAt': FieldValue.serverTimestamp(),
       });
       _snack('Deposit rejected.', AppTheme.error);
+    } else if (action == 'edit') {
+      _showEditDialog(docId, data);
+    } else if (action == 'delete') {
+      _showDeleteDialog(docId, data);
+    }
+  }
+
+  void _showEditDialog(String docId, Map<String, dynamic> data) {
+    final amountCtrl = TextEditingController(text: data['amount'].toString());
+    String selectedType = data['savingsType'] as String? ?? AppConstants.savingsVoluntary;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.edit, color: AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Text('Edit Savings', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                data['memberName'] ?? 'Unknown',
+                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: 'UGX ',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedType,
+                decoration: InputDecoration(
+                  labelText: 'Savings Type',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                items: [
+                  DropdownMenuItem(value: AppConstants.savingsVoluntary, child: Text('Voluntary', style: GoogleFonts.poppins())),
+                  DropdownMenuItem(value: AppConstants.savingsCompulsory, child: Text('Compulsory', style: GoogleFonts.poppins())),
+                  DropdownMenuItem(value: 'Fixed Deposit', child: Text('Fixed Deposit', style: GoogleFonts.poppins())),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => selectedType = value);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newAmount = int.tryParse(amountCtrl.text) ?? 0;
+                if (newAmount <= 0) {
+                  _snack('Please enter a valid amount', AppTheme.error);
+                  return;
+                }
+                
+                Navigator.pop(context);
+                await _updateSavings(docId, data, newAmount, selectedType);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: Text('Save Changes', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateSavings(String docId, Map<String, dynamic> oldData, int newAmount, String newType) async {
+    try {
+      final db = FirebaseFirestore.instance;
+      final memberId = oldData['memberId'] as String? ?? '';
+      final memberName = oldData['memberName'] as String? ?? '';
+      final oldAmount = (oldData['amount'] as num?)?.toInt() ?? 0;
+      final oldType = oldData['savingsType'] as String? ?? '';
+      
+      // Calculate the difference
+      final amountDiff = newAmount - oldAmount;
+      
+      // Update the transaction
+      await db.collection(AppConstants.savingsTxnCol).doc(docId).update({
+        'amount': newAmount,
+        'savingsType': newType,
+        'editedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Update member savings summary
+      // If type changed, we need to adjust both old and new type balances
+      if (oldType != newType) {
+        // Remove from old type
+        final oldField = oldType == AppConstants.savingsVoluntary
+            ? 'voluntary'
+            : oldType == AppConstants.savingsCompulsory
+                ? 'compulsory'
+                : 'fixedDeposit';
+        await db.collection(AppConstants.savingsCol).doc(memberId).update({
+          oldField: FieldValue.increment(-oldAmount),
+        });
+        
+        // Add to new type
+        final newField = newType == AppConstants.savingsVoluntary
+            ? 'voluntary'
+            : newType == AppConstants.savingsCompulsory
+                ? 'compulsory'
+                : 'fixedDeposit';
+        await db.collection(AppConstants.savingsCol).doc(memberId).update({
+          newField: FieldValue.increment(newAmount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+      } else if (amountDiff != 0) {
+        // Same type, just adjust the amount
+        final field = newType == AppConstants.savingsVoluntary
+            ? 'voluntary'
+            : newType == AppConstants.savingsCompulsory
+                ? 'compulsory'
+                : 'fixedDeposit';
+        await db.collection(AppConstants.savingsCol).doc(memberId).update({
+          field: FieldValue.increment(amountDiff),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+      }
+      
+      AuditService.log(
+        action: AuditService.kSavingsEdit,
+        description: 'Savings edited: UGX ${fmt.format(oldAmount)} → ${fmt.format(newAmount)} ($oldType → $newType)',
+        targetId: memberId,
+        targetName: memberName,
+        meta: {'oldAmount': oldAmount, 'newAmount': newAmount, 'oldType': oldType, 'newType': newType},
+      );
+      
+      _snack('Savings updated successfully', AppTheme.success);
+    } catch (e) {
+      _snack('Error updating savings: $e', AppTheme.error);
+    }
+  }
+
+  void _showDeleteDialog(String docId, Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.error.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: AppTheme.error, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text('Delete Savings?', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete this savings transaction?',
+              style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data['memberName'] ?? 'Unknown', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text('Amount: UGX ${fmt.format(data['amount'] ?? 0)}', style: GoogleFonts.poppins(fontSize: 12)),
+                  Text('Type: ${data['savingsType'] ?? '—'}', style: GoogleFonts.poppins(fontSize: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '⚠️ This will deduct the amount from the member\'s balance.',
+              style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.error, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deleteSavings(docId, data);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Delete', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSavings(String docId, Map<String, dynamic> data) async {
+    try {
+      final db = FirebaseFirestore.instance;
+      final memberId = data['memberId'] as String? ?? '';
+      final memberName = data['memberName'] as String? ?? '';
+      final amount = (data['amount'] as num?)?.toInt() ?? 0;
+      final type = data['savingsType'] as String? ?? '';
+      
+      // Delete the transaction
+      await db.collection(AppConstants.savingsTxnCol).doc(docId).delete();
+      
+      // Update member savings summary (deduct the amount)
+      final field = type == AppConstants.savingsVoluntary
+          ? 'voluntary'
+          : type == AppConstants.savingsCompulsory
+              ? 'compulsory'
+              : 'fixedDeposit';
+      await db.collection(AppConstants.savingsCol).doc(memberId).update({
+        field: FieldValue.increment(-amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+      
+      AuditService.log(
+        action: AuditService.kSavingsDelete,
+        description: 'Savings deleted: UGX ${fmt.format(amount)} ($type)',
+        targetId: memberId,
+        targetName: memberName,
+        meta: {'amount': amount, 'type': type},
+      );
+      
+      _snack('Savings deleted successfully', AppTheme.success);
+    } catch (e) {
+      _snack('Error deleting savings: $e', AppTheme.error);
     }
   }
 
@@ -274,6 +549,37 @@ class _SavingsList extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           child: Text('Approve & Credit', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ]),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => onAction(docId, 'edit', data),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.primary,
+                            side: const BorderSide(color: AppTheme.primary),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          label: Text('Edit', style: GoogleFonts.poppins(fontSize: 13)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => onAction(docId, 'delete', data),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.error,
+                            side: const BorderSide(color: AppTheme.error),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: Text('Delete', style: GoogleFonts.poppins(fontSize: 13)),
                         ),
                       ),
                     ]),
