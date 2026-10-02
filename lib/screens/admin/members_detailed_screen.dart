@@ -1254,8 +1254,8 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Dialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (builderContext, setState) => Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             constraints: const BoxConstraints(maxWidth: 650, maxHeight: 750),
@@ -1270,7 +1270,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                     children: [
                       Text('Add New Member', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
                       if (!isLoading)
-                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(builderContext)),
                     ],
                   ),
                   const Divider(height: 32),
@@ -1342,7 +1342,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                                   readOnly: true,
                                   onTap: () async {
                                     final date = await showDatePicker(
-                                      context: context,
+                                      context: builderContext,
                                       initialDate: DateTime.now().subtract(const Duration(days: 6570)),
                                       firstDate: DateTime(1940),
                                       lastDate: DateTime.now(),
@@ -1420,7 +1420,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   Row(
                     children: [
                       if (!isLoading)
-                        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
+                        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(builderContext), child: const Text('Cancel'))),
                       if (!isLoading) const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton(
@@ -1440,20 +1440,20 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                                 nextOfKinPhone: nextOfKinPhoneCtrl.text.trim(),
                                 nextOfKinRelation: nextOfKinRelationCtrl.text.trim(),
                               );
-                              if (context.mounted) {
-                                Navigator.pop(context);
+                              if (builderContext.mounted) {
+                                Navigator.pop(builderContext);
                                 SweetAlert.show(
-                                  context: context,
+                                  context: builderContext,
                                   title: 'Member Added Successfully!',
                                   message: 'The new member has been added to the system',
                                   type: SweetAlertType.success,
                                 );
                               }
                             } catch (e) {
-                              if (context.mounted) {
+                              if (builderContext.mounted) {
                                 setState(() => isLoading = false);
                                 SweetAlert.show(
-                                  context: context,
+                                  context: builderContext,
                                   title: 'Error',
                                   message: e.toString().replaceFirst('Exception: ', ''),
                                   type: SweetAlertType.error,
