@@ -617,6 +617,7 @@ class _BankTransfersScreenState extends State<BankTransfersScreen> {
             ],
           ),
           child: ProfessionalDataTable(
+            tableKey: 'payment_history',
             columns: [
               const DataTableColumn(
                 key: 'memberName',

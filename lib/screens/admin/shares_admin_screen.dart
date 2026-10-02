@@ -651,6 +651,7 @@ class _MemberSharesListState extends State<_MemberSharesList> {
 
   Widget _buildSharesTable(List<Map<String, dynamic>> membersList, double totalShares) {
     return ProfessionalDataTable(
+      tableKey: 'shares_admin',
       columns: [
         const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 120),
         const DataTableColumn(key: 'memberName', label: 'Member Name', width: 220),

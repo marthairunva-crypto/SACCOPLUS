@@ -342,6 +342,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                       ),
                       clipBehavior: Clip.hardEdge,
                       child: ProfessionalDataTable(
+                tableKey: 'loan_approval',
               columns: [
                 const DataTableColumn(
                   key: 'memberName',

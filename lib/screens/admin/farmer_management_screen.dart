@@ -126,6 +126,7 @@ class _FarmerManagementScreenState extends State<FarmerManagementScreen> {
                 ],
               ),
               child: ProfessionalDataTable(
+                tableKey: 'farmers_list',
                 columns: [
                   const DataTableColumn(key: 'memberNumber', label: 'Member No.', width: 120),
                   const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 130),

@@ -217,6 +217,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                 ),
                 clipBehavior: Clip.hardEdge,
                 child: ProfessionalDataTable(
+              tableKey: 'members_management',
               columns: [
                 const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 85),
                 const DataTableColumn(key: 'fullName', label: 'Full Name', width: 110),

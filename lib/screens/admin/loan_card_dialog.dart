@@ -42,7 +42,10 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
   late TextEditingController _feeRateCtrl;
   late TextEditingController _customFeeTypeCtrl;
   late TextEditingController _paymentAmountCtrl;
+  late TextEditingController _principalOutstandingCtrl;
+  late TextEditingController _interestOutstandingCtrl;
   String _interestMethod = 'flat';
+  String _paymentFrequency = 'monthly';
   DateTime? _disbursementDate;
   
   // Guarantor controllers
@@ -70,6 +73,15 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       text: (widget.loanData['duration'] ?? 12).toString()
     );
     _interestMethod = widget.loanData['interestMethod'] ?? 'flat';
+    _paymentFrequency = widget.loanData['paymentFrequency'] ?? 'monthly';
+    
+    // Initialize outstanding balance controllers
+    _principalOutstandingCtrl = TextEditingController(
+      text: (widget.loanData['principalOutstanding'] ?? 0).toString()
+    );
+    _interestOutstandingCtrl = TextEditingController(
+      text: (widget.loanData['interestOutstanding'] ?? widget.loanData['interestOriginalBalance'] ?? 0).toString()
+    );
     
     // Initialize fee controllers
     _feeAmountCtrl = TextEditingController();
@@ -232,6 +244,8 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     _feeRateCtrl.dispose();
     _customFeeTypeCtrl.dispose();
     _paymentAmountCtrl.dispose();
+    _principalOutstandingCtrl.dispose();
+    _interestOutstandingCtrl.dispose();
     for (var g in _guarantors) {
       g['name']?.dispose();
       g['account']?.dispose();
@@ -723,9 +737,13 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       }
     }
     
-    // Get actual outstanding from database (same as loan table)
-    final principalOutstanding = (widget.loanData['principalOutstanding'] ?? 0).toDouble();
-    final interestOutstanding = (widget.loanData['interestOriginalBalance'] ?? 0).toDouble();
+    // Get actual outstanding from editable controllers or database
+    final principalOutstanding = _isEditing 
+        ? (double.tryParse(_principalOutstandingCtrl.text) ?? 0)
+        : (widget.loanData['principalOutstanding'] ?? 0).toDouble();
+    final interestOutstanding = _isEditing
+        ? (double.tryParse(_interestOutstandingCtrl.text) ?? 0)
+        : (widget.loanData['interestOutstanding'] ?? widget.loanData['interestOriginalBalance'] ?? 0).toDouble();
     final totalOutstanding = principalOutstanding + interestOutstanding;
     final totalPaid = total - totalOutstanding;
     
@@ -736,6 +754,8 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
           _buildEditField('Principal (UGX):', _principalCtrl),
           _buildEditField('Interest Rate (%):', _interestRateCtrl),
           _buildEditField('Duration (months):', _durationCtrl),
+          _buildEditField('Principal Outstanding (UGX):', _principalOutstandingCtrl),
+          _buildEditField('Interest Outstanding (UGX):', _interestOutstandingCtrl),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
@@ -762,6 +782,39 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                       DropdownMenuItem(value: 'reducing', child: Text('Reducing Balance')),
                     ],
                     onChanged: (v) => setState(() => _interestMethod = v!),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Payment Frequency:',
+                    style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<String>(
+                    value: _paymentFrequency,
+                    isDense: true,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.all(8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'daily', child: Text('Daily (Emergency Loan)')),
+                      DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+                      DropdownMenuItem(value: 'biweekly', child: Text('Bi-Weekly')),
+                      DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
+                    ],
+                    onChanged: (v) => setState(() => _paymentFrequency = v!),
                   ),
                 ),
               ],
@@ -1166,6 +1219,8 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       final principal = double.parse(_principalCtrl.text);
       final interestRate = double.parse(_interestRateCtrl.text);
       final duration = int.parse(_durationCtrl.text);
+      final principalOutstanding = double.parse(_principalOutstandingCtrl.text);
+      final interestOutstanding = double.parse(_interestOutstandingCtrl.text);
       
       // Calculate interest
       double interest;
@@ -1199,9 +1254,13 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         'loanAmount': principal,
         'interestRate': interestRate,
         'interestMethod': _interestMethod,
+        'paymentFrequency': _paymentFrequency,
         'duration': duration,
         'interest': interest,
         'totalAmount': totalAmount,
+        'principalOutstanding': principalOutstanding,
+        'interestOutstanding': interestOutstanding,
+        'interestOriginalBalance': interestOutstanding,
         'disbursementDate': _disbursementDate,
         'guarantors': guarantorsData,
         'updatedAt': FieldValue.serverTimestamp(),

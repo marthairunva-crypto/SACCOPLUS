@@ -149,6 +149,7 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: ProfessionalDataTable(
+              tableKey: 'savings_summary',
               columns: [
                 const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 110),
                 const DataTableColumn(key: 'memberName', label: 'Member Name', width: 180),
@@ -221,6 +222,7 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
             ),
                   ),
                 ),
+              ),
             ],
           );
         },

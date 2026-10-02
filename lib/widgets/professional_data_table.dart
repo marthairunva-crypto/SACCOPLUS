@@ -7,6 +7,7 @@ class ProfessionalDataTable extends StatefulWidget {
   final List<TableFilter>? filters;
   final bool showSearch;
   final String searchPlaceholder;
+  final String? tableKey; // Unique key to persist pagination state
 
   const ProfessionalDataTable({
     Key? key,
@@ -16,6 +17,7 @@ class ProfessionalDataTable extends StatefulWidget {
     this.filters,
     this.showSearch = true,
     this.searchPlaceholder = 'Search...',
+    this.tableKey,
   }) : super(key: key);
 
   @override
@@ -28,6 +30,10 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   int _currentPage = 0;
   final int _rowsPerPage = 25;
   late ScrollController _horizontalScrollController;
+  late ScrollController _verticalScrollController;
+  
+  // Static map to persist pagination state across rebuilds
+  static final Map<String, int> _pageStateCache = {};
 
   // Clean modern color palette
   static const _headerColor = Color(0xFF00BFA6); // Teal accent
@@ -131,11 +137,22 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   void initState() {
     super.initState();
     _horizontalScrollController = ScrollController();
+    _verticalScrollController = ScrollController();
+    
+    // Restore pagination state if available
+    if (widget.tableKey != null && _pageStateCache.containsKey(widget.tableKey)) {
+      _currentPage = _pageStateCache[widget.tableKey!]!;
+    }
   }
 
   @override
   void dispose() {
+    // Save pagination state before disposing
+    if (widget.tableKey != null) {
+      _pageStateCache[widget.tableKey!] = _currentPage;
+    }
     _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
@@ -283,14 +300,38 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                     border: Border.all(color: _borderColor),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Scrollbar(
-                    controller: _horizontalScrollController,
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      controller: _horizontalScrollController,
-                      scrollDirection: Axis.horizontal,
-                      child: _buildTable(),
-                    ),
+                  child: Column(
+                    children: [
+                      // Horizontal scrollbar
+                      Expanded(
+                        child: Scrollbar(
+                          controller: _horizontalScrollController,
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            controller: _horizontalScrollController,
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: widget.columns.fold<double>(0, (sum, col) => sum + col.width),
+                              child: Column(
+                                children: [
+                                  // Vertical scrollbar for table rows
+                                  Expanded(
+                                    child: Scrollbar(
+                                      controller: _verticalScrollController,
+                                      thumbVisibility: true,
+                                      child: SingleChildScrollView(
+                                        controller: _verticalScrollController,
+                                        child: _buildTable(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
         ),
