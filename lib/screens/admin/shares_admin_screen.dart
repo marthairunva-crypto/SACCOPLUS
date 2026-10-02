@@ -9,6 +9,7 @@ import '../../core/firebase_service.dart';
 import '../../core/theme.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/professional_data_table.dart';
+import '../../utils/csv_export.dart';
 
 class SharesAdminScreen extends StatefulWidget {
   final bool embedded;
@@ -49,6 +50,11 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
               ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.file_download_outlined, color: Colors.white),
+            tooltip: 'Export to CSV',
+            onPressed: () => _exportShares(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.settings_outlined, color: Colors.white),
             tooltip: 'Share Settings',
             onPressed: () => _showShareSettingsDialog(context),
@@ -77,6 +83,47 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _exportShares(BuildContext context) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
+
+      final shares = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'accountNumber': data['accountNumber'] ?? data['memberNumber'] ?? '',
+          'memberName': data['name'] ?? data['fullName'] ?? 'Unknown',
+          'shareValue': (data['sharesBalance'] ?? 0).toDouble(),
+          'lastUpdated': data['lastUpdated'],
+        };
+      }).toList();
+
+      CsvExport.exportShares(shares);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Shares exported successfully! Check your Downloads folder.'),
+            backgroundColor: Color(0xFF388E3C),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: const Color(0xFFD32F2F),
+          ),
+        );
+      }
+    }
   }
 
   void _handlePurchaseAction(String memberId, String txnId, String action, Map<String, dynamic> data) async {

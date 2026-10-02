@@ -138,6 +138,64 @@ class CsvExport {
     _downloadCsv(buffer.toString(), 'repayments_report_${DateTime.now().millisecondsSinceEpoch}.csv');
   }
 
+  /// Export shares data to CSV
+  static void exportShares(List<Map<String, dynamic>> shares) {
+    if (shares.isEmpty) {
+      return;
+    }
+
+    final buffer = StringBuffer();
+    
+    // Header row
+    buffer.writeln(
+      'Account Number,Member ID,Member Name,Share Value (UGX),Last Updated'
+    );
+
+    // Data rows
+    final dateFormat = DateFormat('yyyy-MM-dd HH:mm');
+    for (final share in shares) {
+      final row = [
+        share['accountNumber'] ?? '',
+        share['id'] ?? share['memberId'] ?? '',
+        _escapeCsv(share['memberName'] ?? share['name'] ?? ''),
+        share['shareValue'] ?? share['sharesBalance'] ?? 0,
+        share['lastUpdated'] != null ? _formatDate(share['lastUpdated'], dateFormat) : '',
+      ];
+      buffer.writeln(row.join(','));
+    }
+
+    _downloadCsv(buffer.toString(), 'shares_report_${DateTime.now().millisecondsSinceEpoch}.csv');
+  }
+
+  /// Export savings data to CSV
+  static void exportSavings(List<Map<String, dynamic>> savings) {
+    if (savings.isEmpty) {
+      return;
+    }
+
+    final buffer = StringBuffer();
+    
+    // Header row
+    buffer.writeln(
+      'Account Number,Member ID,Member Name,Savings Balance (UGX),Last Updated'
+    );
+
+    // Data rows
+    final dateFormat = DateFormat('yyyy-MM-dd HH:mm');
+    for (final saving in savings) {
+      final row = [
+        saving['accountNumber'] ?? '',
+        saving['id'] ?? saving['memberId'] ?? '',
+        _escapeCsv(saving['memberName'] ?? saving['name'] ?? ''),
+        saving['savingsBalance'] ?? 0,
+        saving['lastUpdated'] != null ? _formatDate(saving['lastUpdated'], dateFormat) : '',
+      ];
+      buffer.writeln(row.join(','));
+    }
+
+    _downloadCsv(buffer.toString(), 'savings_report_${DateTime.now().millisecondsSinceEpoch}.csv');
+  }
+
   /// Escape CSV special characters
   static String _escapeCsv(String value) {
     if (value.contains(',') || value.contains('"') || value.contains('\n')) {

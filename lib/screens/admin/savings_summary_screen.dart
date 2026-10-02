@@ -10,6 +10,7 @@ import '../../core/audit_service.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../widgets/sweet_alert.dart';
 import '../../widgets/firebase_index_error.dart';
+import '../../utils/csv_export.dart';
 
 class SavingsSummaryScreen extends StatefulWidget {
   const SavingsSummaryScreen({super.key});
@@ -30,6 +31,11 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            tooltip: 'Export to CSV',
+            onPressed: () => _exportSavings(context),
+          ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
             tooltip: 'Add Savings Record',
@@ -126,24 +132,23 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
 
               // Table
               Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return ClipRect(
-                      child: Container(
-                        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                        width: constraints.maxWidth - 24,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
-                              blurRadius: 20,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: ProfessionalDataTable(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: ProfessionalDataTable(
               columns: [
                 const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 110),
                 const DataTableColumn(key: 'memberName', label: 'Member Name', width: 180),
@@ -214,9 +219,6 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                 ),
               ],
             ),
-                        ),
-                      );
-                    },
                   ),
                 ),
             ],
@@ -224,6 +226,47 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _exportSavings(BuildContext context) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('saccoplus-members')
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
+
+      final savings = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'accountNumber': data['accountNumber'] ?? data['memberNumber'] ?? '',
+          'memberName': data['name'] ?? data['fullName'] ?? 'Unknown',
+          'savingsBalance': (data['savingsBalance'] ?? 0).toDouble(),
+          'lastUpdated': data['lastUpdated'],
+        };
+      }).toList();
+
+      CsvExport.exportSavings(savings);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Savings exported successfully! Check your Downloads folder.'),
+            backgroundColor: Color(0xFF388E3C),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: const Color(0xFFD32F2F),
+          ),
+        );
+      }
+    }
   }
 
 
