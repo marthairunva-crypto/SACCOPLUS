@@ -300,38 +300,14 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                     border: Border.all(color: _borderColor),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Column(
-                    children: [
-                      // Horizontal scrollbar
-                      Expanded(
-                        child: Scrollbar(
-                          controller: _horizontalScrollController,
-                          thumbVisibility: true,
-                          child: SingleChildScrollView(
-                            controller: _horizontalScrollController,
-                            scrollDirection: Axis.horizontal,
-                            child: SizedBox(
-                              width: widget.columns.fold<double>(0, (sum, col) => sum + col.width),
-                              child: Column(
-                                children: [
-                                  // Vertical scrollbar for table rows
-                                  Expanded(
-                                    child: Scrollbar(
-                                      controller: _verticalScrollController,
-                                      thumbVisibility: true,
-                                      child: SingleChildScrollView(
-                                        controller: _verticalScrollController,
-                                        child: _buildTable(),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: Scrollbar(
+                    controller: _horizontalScrollController,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _horizontalScrollController,
+                      scrollDirection: Axis.horizontal,
+                      child: _buildTable(),
+                    ),
                   ),
                 ),
         ),
@@ -450,85 +426,108 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
       (sum, col) => sum + (col.width)
     );
     
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        minWidth: totalFixedWidth,
-      ),
-      child: Table(
-        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-        columnWidths: {
-          for (int i = 0; i < widget.columns.length; i++)
-            i: FixedColumnWidth(widget.columns[i].width),
-        },
-        defaultColumnWidth: const FixedColumnWidth(100),
-        children: [
-          // Clean Header Row with teal accent
-          TableRow(
-            decoration: const BoxDecoration(
-              color: _headerColor,
-            ),
-            children: widget.columns.map((column) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
-                  ),
-                ),
-                child: Text(
-                  column.label,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: _headerText,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              );
-            }).toList(),
+    return Column(
+      children: [
+        // Sticky Header Row
+        Container(
+          width: totalFixedWidth,
+          decoration: const BoxDecoration(
+            color: _headerColor,
           ),
-
-          // Clean Data Rows with subtle borders
-          ..._paginatedData.asMap().entries.map((entry) {
-            final row = entry.value;
-            
-            return TableRow(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-              ),
-              children: widget.columns.map((column) {
-                final cellWidget = column.builder != null
-                    ? column.builder!(row)
-                    : Text(
-                        row[column.key]?.toString() ?? '-',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: _bodyText,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      );
-
-                return InkWell(
-                  onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
-                  hoverColor: _hoverColor,
-                  child: Container(
+          child: Table(
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            columnWidths: {
+              for (int i = 0; i < widget.columns.length; i++)
+                i: FixedColumnWidth(widget.columns[i].width),
+            },
+            defaultColumnWidth: const FixedColumnWidth(100),
+            children: [
+              TableRow(
+                decoration: const BoxDecoration(
+                  color: _headerColor,
+                ),
+                children: widget.columns.map((column) {
+                  return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     decoration: const BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(
-                          color: _borderColor,
-                          width: 1,
-                        ),
+                        bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
                       ),
                     ),
-                    child: cellWidget,
-                  ),
-                );
-              }).toList(),
-            );
-          }).toList(),
-        ],
-      ),
+                    child: Text(
+                      column.label,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        color: _headerText,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        
+        // Data Rows (scrollable)
+        Expanded(
+          child: SingleChildScrollView(
+            controller: _verticalScrollController,
+            child: Container(
+              width: totalFixedWidth,
+              child: Table(
+                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                columnWidths: {
+                  for (int i = 0; i < widget.columns.length; i++)
+                    i: FixedColumnWidth(widget.columns[i].width),
+                },
+                defaultColumnWidth: const FixedColumnWidth(100),
+                children: [
+                  ..._paginatedData.asMap().entries.map((entry) {
+                    final row = entry.value;
+                    
+                    return TableRow(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                      ),
+                      children: widget.columns.map((column) {
+                        final cellWidget = column.builder != null
+                            ? column.builder!(row)
+                            : Text(
+                                row[column.key]?.toString() ?? '-',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: _bodyText,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              );
+
+                        return InkWell(
+                          onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
+                          hoverColor: _hoverColor,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            decoration: const BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: _borderColor,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: cellWidget,
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  }).toList(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
