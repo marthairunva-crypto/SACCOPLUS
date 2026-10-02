@@ -219,12 +219,12 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                 child: ProfessionalDataTable(
               tableKey: 'members_management',
               columns: [
-                const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 85),
-                const DataTableColumn(key: 'fullName', label: 'Full Name', width: 110),
+                const DataTableColumn(key: 'accountNumber', label: 'Account No.', flex: 2),
+                const DataTableColumn(key: 'fullName', label: 'Full Name', flex: 3),
                 DataTableColumn(
                     key: 'phone',
                     label: 'Phone',
-                    width: 95,
+                    flex: 2,
                     builder: (row) {
                       final phone = row['phone'] as String;
                       final hasPhone = phone.isNotEmpty;
@@ -258,7 +258,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'savingsBalance',
                     label: 'Savings',
-                    width: 70,
+                    flex: 2,
                     builder: (row) => Text(
                       _currencyFormat.format(row['savingsBalance']),
                       style: const TextStyle(
@@ -273,7 +273,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'sharesBalance',
                     label: 'Shares',
-                    width: 65,
+                    flex: 2,
                     builder: (row) => Text(
                       _currencyFormat.format(row['sharesBalance']),
                       style: const TextStyle(
@@ -288,7 +288,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'loanBalance',
                     label: 'Loans',
-                    width: 65,
+                    flex: 2,
                     builder: (row) {
                       final amount = row['loanBalance'] as double;
                       return Text(
@@ -306,19 +306,19 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
                   DataTableColumn(
                     key: 'kycStatus',
                     label: 'KYC',
-                    width: 70,
+                    flex: 1,
                     builder: (row) => _kycBadge(row['kycStatus'] as String),
                   ),
                   DataTableColumn(
                     key: 'status',
                     label: 'Status',
-                    width: 65,
+                    flex: 1,
                     builder: (row) => _statusBadge(row['status'] as String),
                   ),
                   DataTableColumn(
                     key: 'actions',
                     label: 'Actions',
-                    width: 105,
+                    flex: 2,
                     builder: (row) => Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

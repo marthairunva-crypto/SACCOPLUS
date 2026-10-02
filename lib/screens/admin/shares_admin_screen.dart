@@ -653,12 +653,12 @@ class _MemberSharesListState extends State<_MemberSharesList> {
     return ProfessionalDataTable(
       tableKey: 'shares_admin',
       columns: [
-        const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 120),
-        const DataTableColumn(key: 'memberName', label: 'Member Name', width: 220),
+        const DataTableColumn(key: 'accountNumber', label: 'Account No.', flex: 2),
+        const DataTableColumn(key: 'memberName', label: 'Member Name', flex: 3),
         DataTableColumn(
           key: 'shareValue',
           label: 'Share Value (UGX)',
-          width: 160,
+          flex: 2,
           builder: (row) => Text(
             'UGX ${widget.fmt.format(row['shareValue'])}',
             style: GoogleFonts.poppins(
@@ -671,7 +671,7 @@ class _MemberSharesListState extends State<_MemberSharesList> {
         DataTableColumn(
           key: 'actions',
           label: 'Actions',
-          width: 120,
+          flex: 2,
           builder: (row) => Row(
             mainAxisSize: MainAxisSize.min,
             children: [

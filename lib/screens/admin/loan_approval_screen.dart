@@ -347,12 +347,12 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 const DataTableColumn(
                   key: 'memberName',
                   label: 'Member Name',
-                  width: 140,
+                  flex: 3,
                 ),
                 DataTableColumn(
                   key: 'amount',
                   label: 'Amount',
-                  width: 90,
+                  flex: 2,
                   builder: (row) => Text(
                     fmt.format(row['amount'] ?? 0),
                     style: const TextStyle(
@@ -364,7 +364,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'principalOutstanding',
                   label: 'Outstanding',
-                  width: 90,
+                  flex: 2,
                   builder: (row) => Text(
                     fmt.format(row['principalOutstanding'] ?? 0),
                     style: const TextStyle(
@@ -377,7 +377,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'createdAt',
                   label: 'Created',
-                  width: 85,
+                  flex: 2,
                   builder: (row) {
                     // Show disbursement date if available, otherwise creation date
                     final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'];
@@ -397,7 +397,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'disbursementDate',
                   label: 'Disbursed',
-                  width: 85,
+                  flex: 2,
                   builder: (row) {
                     // Try multiple possible field names
                     final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'] ?? row['Disbursement Date'];
@@ -424,7 +424,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'dueDate',
                   label: 'Due Date',
-                  width: 85,
+                  flex: 2,
                   builder: (row) {
                     // Calculate due date from disbursement + duration
                     final disbursementDate = row['disbursementDate'] ?? row['disbursedAt'];
@@ -475,7 +475,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'status',
                   label: 'Status',
-                  width: 85,
+                  flex: 2,
                   builder: (row) {
                     // Calculate smart status based on payment and due date
                     final outstanding = (row['principalOutstanding'] ?? 0) as num;
@@ -546,7 +546,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 DataTableColumn(
                   key: 'actions',
                   label: 'Actions',
-                  width: 130,
+                  flex: 3,
                   builder: (row) {
                     final loanId = row['id'];
                     

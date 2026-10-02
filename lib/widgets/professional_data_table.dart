@@ -295,19 +295,13 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                   ),
                 )
               : Container(
-                  width: double.infinity,
                   decoration: BoxDecoration(
                     border: Border.all(color: _borderColor),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Scrollbar(
-                    controller: _horizontalScrollController,
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      controller: _horizontalScrollController,
-                      scrollDirection: Axis.horizontal,
-                      child: _buildTable(),
-                    ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: _buildTable(),
                   ),
                 ),
         ),
@@ -420,114 +414,101 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   }
 
   Widget _buildTable() {
-    // Calculate total width to determine if we need horizontal scroll
-    final totalFixedWidth = widget.columns.fold<double>(
-      0, 
-      (sum, col) => sum + (col.width)
-    );
-    
-    return Column(
-      children: [
-        // Sticky Header Row
-        Container(
-          width: totalFixedWidth,
-          decoration: const BoxDecoration(
-            color: _headerColor,
-          ),
-          child: Table(
-            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-            columnWidths: {
-              for (int i = 0; i < widget.columns.length; i++)
-                i: FixedColumnWidth(widget.columns[i].width),
-            },
-            defaultColumnWidth: const FixedColumnWidth(100),
-            children: [
-              TableRow(
-                decoration: const BoxDecoration(
-                  color: _headerColor,
-                ),
+    // Use LayoutBuilder to get available width
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        
+        return Column(
+          children: [
+            // Sticky Header Row
+            Container(
+              width: availableWidth,
+              decoration: const BoxDecoration(
+                color: _headerColor,
+              ),
+              child: Row(
                 children: widget.columns.map((column) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
+                  return Expanded(
+                    flex: column.flex,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      column.label,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                        color: _headerText,
-                        letterSpacing: 0.2,
+                      child: Text(
+                        column.label,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: _headerText,
+                          letterSpacing: 0.3,
+                        ),
                       ),
                     ),
                   );
                 }).toList(),
               ),
-            ],
-          ),
-        ),
-        
-        // Data Rows (scrollable)
-        Expanded(
-          child: SingleChildScrollView(
-            controller: _verticalScrollController,
-            child: Container(
-              width: totalFixedWidth,
-              child: Table(
-                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-                columnWidths: {
-                  for (int i = 0; i < widget.columns.length; i++)
-                    i: FixedColumnWidth(widget.columns[i].width),
-                },
-                defaultColumnWidth: const FixedColumnWidth(100),
-                children: [
-                  ..._paginatedData.asMap().entries.map((entry) {
+            ),
+            
+            // Data Rows (scrollable)
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _verticalScrollController,
+                child: Column(
+                  children: _paginatedData.asMap().entries.map((entry) {
+                    final index = entry.key;
                     final row = entry.value;
+                    final isEven = index % 2 == 0;
                     
-                    return TableRow(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                      ),
-                      children: widget.columns.map((column) {
-                        final cellWidget = column.builder != null
-                            ? column.builder!(row)
-                            : Text(
-                                row[column.key]?.toString() ?? '-',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: _bodyText,
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              );
-
-                        return InkWell(
-                          onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
-                          hoverColor: _hoverColor,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            decoration: const BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: _borderColor,
-                                  width: 1,
-                                ),
-                              ),
+                    return InkWell(
+                      onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
+                      hoverColor: _hoverColor,
+                      child: Container(
+                        width: availableWidth,
+                        decoration: BoxDecoration(
+                          color: isEven ? Colors.white : _backgroundColor,
+                          border: const Border(
+                            bottom: BorderSide(
+                              color: _borderColor,
+                              width: 1,
                             ),
-                            child: cellWidget,
                           ),
-                        );
-                      }).toList(),
+                        ),
+                        child: Row(
+                          children: widget.columns.map((column) {
+                            final cellWidget = column.builder != null
+                                ? column.builder!(row)
+                                : Text(
+                                    row[column.key]?.toString() ?? '-',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: _bodyText,
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+
+                            return Expanded(
+                              flex: column.flex,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                child: cellWidget,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     );
                   }).toList(),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
@@ -536,13 +517,15 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
 class DataTableColumn {
   final String key;
   final String label;
-  final double width;
+  final double? width; // Now optional - will use flex if not provided
+  final int flex; // Flex weight for responsive columns
   final Widget Function(Map<String, dynamic>)? builder;
 
   const DataTableColumn({
     required this.key,
     required this.label,
-    required this.width,
+    this.width,
+    this.flex = 1,
     this.builder,
   });
 }

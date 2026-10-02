@@ -151,12 +151,12 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                     child: ProfessionalDataTable(
               tableKey: 'savings_summary',
               columns: [
-                const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 110),
-                const DataTableColumn(key: 'memberName', label: 'Member Name', width: 180),
+                const DataTableColumn(key: 'accountNumber', label: 'Account No.', flex: 2),
+                const DataTableColumn(key: 'memberName', label: 'Member Name', flex: 3),
                 DataTableColumn(
                   key: 'savingsBalance',
                   label: 'Savings Balance',
-                  width: 150,
+                  flex: 2,
                   builder: (row) => Text(
                     'UGX ${_currencyFormat.format(row['savingsBalance'])}',
                     style: GoogleFonts.poppins(fontSize: 13, color: Colors.green.shade700, fontWeight: FontWeight.w600),
@@ -165,7 +165,7 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                 DataTableColumn(
                   key: 'actions',
                   label: 'Actions',
-                  width: 120,
+                  flex: 2,
                   builder: (row) => Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
