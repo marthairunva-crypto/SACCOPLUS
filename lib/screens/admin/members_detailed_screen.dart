@@ -5,9 +5,12 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math';
 import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
 import '../../core/constants.dart';
+import '../../core/account_number_service.dart';
+import '../../services/audit_service.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../widgets/sweet_alert.dart';
 import '../../widgets/firebase_index_error.dart';
@@ -392,6 +395,13 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
             },
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddMemberDialog,
+        icon: const Icon(Icons.person_add),
+        label: const Text('Add Member'),
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
       ),
     );
   }
@@ -1224,3 +1234,330 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
   }
 
 }
+
+  void _showAddMemberDialog() {
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final dobCtrl = TextEditingController();
+    final villageCtrl = TextEditingController();
+    final districtCtrl = TextEditingController();
+    final nextOfKinNameCtrl = TextEditingController();
+    final nextOfKinPhoneCtrl = TextEditingController();
+    final nextOfKinRelationCtrl = TextEditingController();
+    
+    String selectedGender = 'Male';
+    DateTime? selectedDOB;
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 650, maxHeight: 750),
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Add New Member', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
+                      if (!isLoading)
+                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                  const Divider(height: 32),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextFormField(
+                            controller: nameCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Full Name *',
+                              prefixIcon: const Icon(Icons.person),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: phoneCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Phone Number *',
+                              prefixIcon: const Icon(Icons.phone),
+                              hintText: '256XXXXXXXXX',
+                              helperText: 'Format: 256XXXXXXXXX (12 digits)',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return 'Required';
+                              if (!RegExp(r'^256\d{9}$').hasMatch(v.trim())) return 'Must be 256 followed by 9 digits';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: emailCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Email (Optional)',
+                              prefixIcon: const Icon(Icons.email),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: selectedGender,
+                                  decoration: InputDecoration(
+                                    labelText: 'Gender *',
+                                    prefixIcon: const Icon(Icons.wc),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  items: ['Male', 'Female'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                                  onChanged: (v) => setState(() => selectedGender = v!),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: dobCtrl,
+                                  decoration: InputDecoration(
+                                    labelText: 'Date of Birth *',
+                                    prefixIcon: const Icon(Icons.calendar_today),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  readOnly: true,
+                                  onTap: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: DateTime.now().subtract(const Duration(days: 6570)),
+                                      firstDate: DateTime(1940),
+                                      lastDate: DateTime.now(),
+                                    );
+                                    if (date != null) {
+                                      setState(() {
+                                        selectedDOB = date;
+                                        dobCtrl.text = DateFormat('dd/MM/yyyy').format(date);
+                                      });
+                                    }
+                                  },
+                                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: villageCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Village *',
+                              prefixIcon: const Icon(Icons.location_on),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: districtCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'District *',
+                              prefixIcon: const Icon(Icons.location_city_outlined),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: nextOfKinNameCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Next of Kin Name *',
+                              prefixIcon: const Icon(Icons.person_outline),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: nextOfKinPhoneCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Next of Kin Phone *',
+                              prefixIcon: const Icon(Icons.phone_outlined),
+                              hintText: '256XXXXXXXXX',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: nextOfKinRelationCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Relationship *',
+                              prefixIcon: const Icon(Icons.family_restroom),
+                              hintText: 'e.g., Spouse, Parent, Sibling',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      if (!isLoading)
+                        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
+                      if (!isLoading) const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: isLoading ? null : () async {
+                            if (!formKey.currentState!.validate()) return;
+                            setState(() => isLoading = true);
+                            try {
+                              await _createMember(
+                                name: nameCtrl.text.trim(),
+                                phone: phoneCtrl.text.trim(),
+                                email: emailCtrl.text.trim(),
+                                gender: selectedGender,
+                                dateOfBirth: selectedDOB!,
+                                village: villageCtrl.text.trim(),
+                                district: districtCtrl.text.trim(),
+                                nextOfKinName: nextOfKinNameCtrl.text.trim(),
+                                nextOfKinPhone: nextOfKinPhoneCtrl.text.trim(),
+                                nextOfKinRelation: nextOfKinRelationCtrl.text.trim(),
+                              );
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                SweetAlert.show(
+                                  context: context,
+                                  title: 'Member Added Successfully!',
+                                  message: 'The new member has been added to the system',
+                                  type: SweetAlertType.success,
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                setState(() => isLoading = false);
+                                SweetAlert.show(
+                                  context: context,
+                                  title: 'Error',
+                                  message: e.toString().replaceFirst('Exception: ', ''),
+                                  type: SweetAlertType.error,
+                                );
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: isLoading
+                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Text('Add Member', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createMember({
+    required String name,
+    required String phone,
+    required String email,
+    required String gender,
+    required DateTime dateOfBirth,
+    required String village,
+    required String district,
+    required String nextOfKinName,
+    required String nextOfKinPhone,
+    required String nextOfKinRelation,
+  }) async {
+    final memberId = 'phone_$phone';
+    final tenantId = FirebaseService.sessionTenantId;
+    
+    final existing = await FirebaseFirestore.instance.collection(AppConstants.usersCol).doc(memberId).get();
+    if (existing.exists) throw Exception('Member with this phone number already exists');
+    
+    final accountNumber = await AccountNumberService.generateNext();
+    
+    final membersCount = await FirebaseFirestore.instance
+        .collection('saccoplus-members')
+        .where('tenantId', isEqualTo: tenantId)
+        .count()
+        .get();
+    final memberNumber = 'M${((membersCount.count ?? 0) + 1).toString().padLeft(6, '0')}';
+    
+    final random = Random();
+    final pin = (1000 + random.nextInt(9000)).toString();
+    
+    final tempPassword = '${name.replaceAll(' ', '').substring(0, min(4, name.length)).toLowerCase()}${phone.substring(phone.length - 4)}';
+    
+    final now = Timestamp.now();
+    
+    final memberData = {
+      'tenantId': tenantId,
+      'memberNumber': memberNumber,
+      'accountNumber': accountNumber,
+      'name': name,
+      'fullName': name,
+      'phone': phone,
+      'email': email.isNotEmpty ? email : null,
+      'gender': gender,
+      'dateOfBirth': Timestamp.fromDate(dateOfBirth),
+      'village': village,
+      'district': district,
+      'nextOfKin': {
+        'name': nextOfKinName,
+        'phone': nextOfKinPhone,
+        'relationship': nextOfKinRelation,
+      },
+      'pin': pin,
+      'tempPassword': tempPassword,
+      'savingsBalance': 0,
+      'sharesBalance': 0,
+      'loanBalance': 0,
+      'kycStatus': 'pending',
+      'idStatus': 'pending',
+      'role': 'farmer',
+      'status': 'active',
+      'createdAt': now,
+      'updatedAt': now,
+      'createdBy': FirebaseService.sessionUid,
+    };
+    
+    await FirebaseFirestore.instance.collection('saccoplus-members').doc(memberId).set(memberData);
+    await FirebaseFirestore.instance.collection(AppConstants.usersCol).doc(memberId).set(memberData);
+    
+    await AuditService.log(
+      action: 'MEMBER_CREATED',
+      details: 'Created new member: $name',
+      userId: FirebaseService.sessionUid ?? '',
+      affectedUserId: memberId,
+      metadata: {'memberNumber': memberNumber, 'accountNumber': accountNumber},
+    );
+    
+    debugPrint('📱 SMS would be sent to $phone:');
+    debugPrint('Account: $accountNumber, Member: $memberNumber, PIN: $pin, Password: $tempPassword');
+  }

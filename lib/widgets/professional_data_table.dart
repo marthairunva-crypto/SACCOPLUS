@@ -31,6 +31,7 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   final int _rowsPerPage = 25;
   late ScrollController _horizontalScrollController;
   late ScrollController _verticalScrollController;
+  Set<String> _hiddenColumns = {}; // Track hidden columns
   
   // Static map to persist pagination state across rebuilds
   static final Map<String, int> _pageStateCache = {};
@@ -228,6 +229,48 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                       );
                     }).toList(),
                   ],
+                  
+                  // Column Visibility Button
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    icon: Container(
+                      height: 42,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: _backgroundColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _borderColor),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.view_column, color: _secondaryText, size: 18),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_drop_down, color: _secondaryText, size: 18),
+                        ],
+                      ),
+                    ),
+                    tooltip: 'Show/Hide Columns',
+                    itemBuilder: (context) {
+                      return widget.columns.where((col) => col.key != 'actions').map((column) {
+                        final isVisible = !_hiddenColumns.contains(column.key);
+                        return CheckedPopupMenuItem<String>(
+                          value: column.key,
+                          checked: isVisible,
+                          child: Text(column.label),
+                        );
+                      }).toList();
+                    },
+                    onSelected: (columnKey) {
+                      setState(() {
+                        if (_hiddenColumns.contains(columnKey)) {
+                          _hiddenColumns.remove(columnKey);
+                        } else {
+                          _hiddenColumns.add(columnKey);
+                        }
+                      });
+                    },
+                  ),
                 ],
               ),
               
@@ -428,7 +471,7 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                 color: _headerColor,
               ),
               child: Row(
-                children: widget.columns.map((column) {
+                children: widget.columns.where((col) => !_hiddenColumns.contains(col.key)).map((column) {
                   return Expanded(
                     flex: column.flex,
                     child: Container(
@@ -478,7 +521,7 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                           ),
                         ),
                         child: Row(
-                          children: widget.columns.map((column) {
+                          children: widget.columns.where((col) => !_hiddenColumns.contains(col.key)).map((column) {
                             final cellWidget = column.builder != null
                                 ? column.builder!(row)
                                 : Text(
