@@ -841,18 +841,43 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
           ),
         ],
         
-        // Outstanding Balance Summary Card (showing actual database values)
+        // Outstanding Balance Summary Card (EDITABLE - TELLER MODE)
         Container(
           padding: const EdgeInsets.all(12),
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: Colors.blue.shade50,
+            color: _isEditing ? Colors.orange.shade50 : Colors.blue.shade50,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.shade700, width: 2),
+            border: Border.all(
+              color: _isEditing ? Colors.orange.shade700 : Colors.blue.shade700, 
+              width: 2
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                children: [
+                  Icon(
+                    _isEditing ? Icons.edit : Icons.info_outline, 
+                    size: 16, 
+                    color: _isEditing ? Colors.orange.shade700 : Colors.blue.shade700
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isEditing ? 'TELLER MODE - EDITING' : 'LOAN SUMMARY',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _isEditing ? Colors.orange.shade900 : Colors.blue.shade900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 12, thickness: 1),
+              
+              // Total Loan (read-only)
               Row(
                 children: [
                   Expanded(
@@ -875,19 +900,302 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              
+              // Principal Outstanding (EDITABLE)
+              if (_isEditing)
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Principal Out:',
+                        style: GoogleFonts.inter(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        controller: _principalOutstandingCtrl,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.red.shade700),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.all(6),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                          prefixText: 'UGX ',
+                          prefixStyle: GoogleFonts.inter(fontSize: 10, color: Colors.grey),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Principal Out:',
+                        style: GoogleFonts.inter(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
+                    Text(
+                      _currencyFormat.format(principalOutstanding),
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 6),
+              
+              // Interest Outstanding (EDITABLE)
+              if (_isEditing)
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Interest Out:',
+                        style: GoogleFonts.inter(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        controller: _interestOutstandingCtrl,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.red.shade700),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.all(6),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                          prefixText: 'UGX ',
+                          prefixStyle: GoogleFonts.inter(fontSize: 10, color: Colors.grey),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Interest Out:',
+                        style: GoogleFonts.inter(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
+                    Text(
+                      _currencyFormat.format(interestOutstanding),
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                ),
               const Divider(height: 12, thickness: 1),
+              
+              // TOTAL OUTSTANDING (auto-calculated + fines/penalties)
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      'Principal Out:',
+                      'TOTAL OUTSTANDING:',
                       style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: Colors.black87,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.red.shade900,
                       ),
                     ),
                   ),
                   Text(
+                    _currencyFormat.format(totalOutstanding),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.red.shade900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              
+              // Total Paid
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Total Paid:',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _currencyFormat.format(totalPaid),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        
+        // FINES & PENALTIES Section (TELLER CONTROLS)
+        if (_isEditing)
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.shade300, width: 2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      'FINES & PENALTIES',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.red.shade900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 12, thickness: 1),
+                
+                // Manual Arrears
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Arrears/Late Fee:',
+                        style: GoogleFonts.inter(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        controller: _manualArrearsCtrl,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.red.shade700),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.all(6),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                          prefixText: 'UGX ',
+                          prefixStyle: GoogleFonts.inter(fontSize: 10, color: Colors.grey),
+                          hintText: '0',
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                
+                // Manual Penalty
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Penalty/Fine:',
+                        style: GoogleFonts.inter(fontSize: 10, color: Colors.black87),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        controller: _manualPenaltyCtrl,
+                        keyboardType: TextInputType.number,
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.red.shade700),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.all(6),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                          prefixText: 'UGX ',
+                          prefixStyle: GoogleFonts.inter(fontSize: 10, color: Colors.grey),
+                          hintText: '0',
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                
+                // Penalty Reason
+                TextFormField(
+                  controller: _penaltyReasonCtrl,
+                  maxLines: 2,
+                  style: GoogleFonts.inter(fontSize: 10),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.all(8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                    labelText: 'Reason for Fine/Penalty',
+                    hintText: 'e.g., Late payment, Missed deadline',
+                    labelStyle: GoogleFonts.inter(fontSize: 10),
+                    hintStyle: GoogleFonts.inter(fontSize: 9, color: Colors.grey),
+                  ),
+                ),
+                
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.yellow.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.yellow.shade700),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: Colors.yellow.shade900),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Fines & penalties will be added to outstanding balance',
+                          style: GoogleFonts.inter(fontSize: 9, color: Colors.yellow.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
                     _currencyFormat.format(principalOutstanding),
                     style: GoogleFonts.inter(
                       fontSize: 10,
@@ -1221,6 +1529,9 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
       final duration = int.parse(_durationCtrl.text);
       final principalOutstanding = double.parse(_principalOutstandingCtrl.text);
       final interestOutstanding = double.parse(_interestOutstandingCtrl.text);
+      final manualArrears = double.tryParse(_manualArrearsCtrl.text) ?? 0;
+      final manualPenalty = double.tryParse(_manualPenaltyCtrl.text) ?? 0;
+      final penaltyReason = _penaltyReasonCtrl.text.trim();
       
       // Calculate interest
       double interest;
@@ -1247,10 +1558,7 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         'savings': double.tryParse(g['savings']!.text) ?? 0,
       }).where((g) => (g['name'] as String).isNotEmpty).toList();
 
-      await FirebaseFirestore.instance
-          .collection('saccoplus-loans')
-          .doc(widget.loanId)
-          .update({
+      final updateData = {
         'loanAmount': principal,
         'interestRate': interestRate,
         'interestMethod': _interestMethod,
@@ -1263,8 +1571,16 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         'interestOriginalBalance': interestOutstanding,
         'disbursementDate': _disbursementDate,
         'guarantors': guarantorsData,
+        'manualArrears': manualArrears,
+        'manualPenalty': manualPenalty,
+        'penaltyReason': penaltyReason,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .doc(widget.loanId)
+          .update(updateData);
 
       if (mounted) {
         setState(() => _isEditing = false);
