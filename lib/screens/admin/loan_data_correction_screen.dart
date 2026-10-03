@@ -46,11 +46,13 @@ class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
           'status': data['status'] ?? 'N/A',
           // Controllers for editing
           'disbursementDateCtrl': TextEditingController(
-            text: data['disbursementDate'] != null || data['disbursedAt'] != null
-                ? DateFormat('yyyy-MM-dd').format(
-                    (data['disbursementDate'] ?? data['disbursedAt'] as Timestamp).toDate()
-                  )
-                : ''
+            text: () {
+              final disbDate = data['disbursementDate'] ?? data['disbursedAt'];
+              if (disbDate != null && disbDate is Timestamp) {
+                return DateFormat('yyyy-MM-dd').format(disbDate.toDate());
+              }
+              return '';
+            }()
           ),
           'principalOutstandingCtrl': TextEditingController(
             text: (data['principalOutstanding'] ?? 0).toString()
