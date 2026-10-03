@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../core/constants.dart';
-import '../core/audit_service.dart';
+import 'audit_service.dart';
 
 /// Handles loan disbursement operations
 class LoanDisbursementService {
@@ -114,6 +114,7 @@ class LoanDisbursementService {
         action: AuditService.ACTION_LOAN_DISBURSED,
         details: 'Loan disbursed: $amount via $destinationType',
         userId: disbursedBy,
+        affectedUserId: memberId,
         metadata: {
           'loanId': loanId,
           'amount': amount,
