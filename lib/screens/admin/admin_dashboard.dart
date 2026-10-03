@@ -49,6 +49,8 @@ import 'risk_provisioning_screen.dart';
 import 'payment_screens.dart';
 import 'finance_screens.dart';
 import '../../scripts/reconcile_savings.dart';
+import '../../services/update_service.dart';
+import '../../widgets/update_dialog.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -836,6 +838,25 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   void initState() {
     super.initState();
     _load();
+    _checkForUpdates();
+  }
+  
+  /// Check for app updates on startup
+  Future<void> _checkForUpdates() async {
+    // Wait a bit for the UI to load
+    await Future.delayed(const Duration(seconds: 2));
+    
+    if (!mounted) return;
+    
+    final updateInfo = await UpdateService.checkForUpdates();
+    
+    if (updateInfo['hasUpdate'] == true && mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => UpdateDialog(updateInfo: updateInfo),
+      );
+    }
   }
 
   Future<void> _load() async {

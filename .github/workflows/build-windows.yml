@@ -76,3 +76,28 @@ jobs:
           name: MBADIFA-SACCO-Portable
           path: MBADIFA_SACCO_Portable.zip
           retention-days: 90
+      
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main' && success()
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release v1.0.${{ github.run_number }}
+          body: |
+            ## MBADIFA SACCO System - Windows Build
+            
+            ### Download and Installation:
+            1. Download `MBADIFA_SACCO_Portable.zip`
+            2. Extract the ZIP file
+            3. Run `saccoplus_pro.exe`
+            
+            ### What's New:
+            - Auto-update system
+            - Improved loan management
+            - Search and pagination features
+            - Bug fixes and performance improvements
+          files: MBADIFA_SACCO_Portable.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
