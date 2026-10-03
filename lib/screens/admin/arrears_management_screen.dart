@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../services/arrears_service.dart';
-import 'loan_card_dialog.dart';
+import 'loan_details_screen.dart';
 
 class ArrearsManagementScreen extends StatefulWidget {
   const ArrearsManagementScreen({Key? key}) : super(key: key);
@@ -255,13 +255,10 @@ class _ArrearsManagementScreenState extends State<ArrearsManagementScreen> {
         onTap: () {
           showDialog(
             context: context,
-            builder: (context) => Dialog(
-              backgroundColor: Colors.transparent,
-              child: LoanCardDialog(
+            builder: (context) => LoanDetailsScreen(
                 loanId: loan['loanId'],
-                loanData: loan,
+                initialLoanData: loan,
               ),
-            ),
           );
         },
         borderRadius: BorderRadius.circular(12),

@@ -10,7 +10,7 @@ import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../utils/csv_export.dart';
-import 'loan_card_dialog.dart';
+import 'loan_details_screen.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
   final bool embedded;
@@ -857,10 +857,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     // Show loan card dialog for editing
     await showDialog(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: LoanCardDialog(loanId: loanId, loanData: loanData),
-      ),
+      builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loanData),
     );
     
     // Refresh the list after dialog closes
@@ -1052,10 +1049,7 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     
     await showDialog(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: LoanCardDialog(loanId: loanId, loanData: loan),
-      ),
+      builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loan),
     );
     
     // Refresh the list after dialog closes
