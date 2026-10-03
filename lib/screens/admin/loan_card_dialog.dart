@@ -7,7 +7,9 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../services/arrears_service.dart';
+import '../../services/loan_disbursement_service.dart';
 import '../../core/firebase_service.dart';
+import '../../core/constants.dart';
 
 class LoanCardDialog extends StatefulWidget {
   final String loanId;
@@ -485,33 +487,53 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                         ],
                       )
                     else
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => setState(() => _isEditing = true),
-                              icon: const Icon(Icons.edit, size: 18),
-                              label: const Text('Edit Loan'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2C1810),
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(double.infinity, 45),
+                          // Show Disburse button for approved loans
+                          if (widget.loanData['status'] == AppConstants.statusApproved)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: ElevatedButton.icon(
+                                onPressed: _showDisburseLoanDialog,
+                                icon: const Icon(Icons.attach_money, size: 20),
+                                label: const Text('Disburse Loan'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade700,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(double.infinity, 50),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _printLoanCard,
-                              icon: const Icon(Icons.print, size: 18),
-                              label: const Text('Print Card'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF2C1810),
-                                side: const BorderSide(color: Color(0xFF2C1810), width: 2),
-                                minimumSize: const Size(double.infinity, 45),
+                          
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => setState(() => _isEditing = true),
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  label: const Text('Edit Loan'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2C1810),
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(double.infinity, 45),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _printLoanCard,
+                                  icon: const Icon(Icons.print, size: 18),
+                                  label: const Text('Print Card'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: const Color(0xFF2C1810),
+                                    side: const BorderSide(color: Color(0xFF2C1810), width: 2),
+                                    minimumSize: const Size(double.infinity, 45),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -1382,6 +1404,261 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
         );
       }
     }
+  }
+  
+  /// Show dialog to disburse an approved loan
+  Future<void> _showDisburseLoanDialog() async {
+    final TextEditingController amountCtrl = TextEditingController(
+      text: (widget.loanData['loanAmount'] ?? widget.loanData['amount'] ?? 0).toString()
+    );
+    final TextEditingController referenceCtrl = TextEditingController();
+    final TextEditingController chequeCtrl = TextEditingController();
+    final TextEditingController narrationCtrl = TextEditingController(
+      text: 'Loan disbursement for ${widget.loanData['memberName']}'
+    );
+    
+    String destinationType = 'cash';
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.attach_money, color: Colors.green.shade700),
+              const SizedBox(width: 8),
+              const Text('Disburse Loan'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Member info
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.loanData['memberName'] ?? 'N/A',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'A/C: ${widget.loanData['accountNumber']} • Ref: ${widget.loanData['referenceNumber']}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // Destination Type
+                  Text(
+                    'Destination Type *',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: destinationType,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'bank', child: Text('Bank Transfer')),
+                      DropdownMenuItem(value: 'mobile_money', child: Text('Mobile Money')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => destinationType = value);
+                      }
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Amount
+                  Text(
+                    'Amount (UGX) *',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      hintText: 'Enter amount',
+                    ),
+                    readOnly: true, // Amount should match loan amount
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Reference Number
+                  Text(
+                    'Reference Number',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: referenceCtrl,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      hintText: 'Receipt/transaction number',
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Cheque Number (if bank)
+                  if (destinationType == 'bank') ...[
+                    Text(
+                      'Cheque Number',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: chequeCtrl,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        hintText: 'Cheque number',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  
+                  // Narration
+                  Text(
+                    'Narration / Description',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: narrationCtrl,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.all(12),
+                      hintText: 'Description of this transaction',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                amountCtrl.dispose();
+                referenceCtrl.dispose();
+                chequeCtrl.dispose();
+                narrationCtrl.dispose();
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () async {
+                final amount = double.tryParse(amountCtrl.text) ?? 0;
+                
+                if (amount <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Invalid amount')),
+                  );
+                  return;
+                }
+                
+                Navigator.pop(dialogContext);
+                
+                // Show loading
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (ctx) => const Center(child: CircularProgressIndicator()),
+                );
+                
+                // Disburse loan
+                final result = await LoanDisbursementService.disburseLoan(
+                  loanId: widget.loanId,
+                  destinationType: destinationType,
+                  disbursedBy: 'CURRENT_USER_ID', // TODO: Get from auth
+                  amount: amount,
+                  referenceNumber: referenceCtrl.text.trim(),
+                  chequeNumber: chequeCtrl.text.trim(),
+                  narration: narrationCtrl.text.trim(),
+                );
+                
+                // Close loading
+                if (mounted) Navigator.pop(context);
+                
+                // Dispose controllers
+                amountCtrl.dispose();
+                referenceCtrl.dispose();
+                chequeCtrl.dispose();
+                narrationCtrl.dispose();
+                
+                // Show result
+                if (result['success'] == true) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message'] ?? 'Loan disbursed successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    Navigator.pop(context); // Close loan card dialog
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message'] ?? 'Failed to disburse loan'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+              ),
+              icon: const Icon(Icons.check),
+              label: const Text('Disburse'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
   
   Future<void> _printLoanCard() async {
