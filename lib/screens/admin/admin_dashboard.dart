@@ -16,6 +16,7 @@ import '../common/settings_screen.dart';
 import 'loan_approval_screen.dart';
 import 'members_detailed_screen.dart';
 import 'create_loan_screen.dart';
+import 'loan_data_correction_screen.dart';
 import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
 import 'teller_screen.dart';
@@ -85,6 +86,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       'loans': const LoanApprovalScreen(embedded: true),
       'loan_portfolio': const LoanPortfolioScreen(embedded: true),
       'create_loan': const CreateLoanScreen(),
+      'loan_correction': const LoanDataCorrectionScreen(),
       'loan_products': const LoanProductsScreen(),
       'loan_calc': const LoanCalculatorScreen(),
       'collections': const CollectionsScreen(),
@@ -381,6 +383,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   {'icon': Icons.add_card_rounded, 'label': 'Create & Disburse Loan', 'route': 'create_loan'},
                   {'icon': Icons.fact_check_rounded, 'label': 'Loan Applications', 'route': 'loans'},
                   {'icon': Icons.account_tree_rounded, 'label': 'Loan Portfolio', 'route': 'loan_portfolio'},
+                  {'icon': Icons.edit_note, 'label': 'Correct Loan Data', 'route': 'loan_correction'},
                   {'icon': Icons.inventory_2_rounded, 'label': 'Loan Products', 'route': 'loan_products'},
                   {'icon': Icons.calculate_rounded, 'label': 'Loan Calculator', 'route': 'loan_calc'},
                   {'icon': Icons.payment_rounded, 'label': 'Collections', 'route': 'collections'},
