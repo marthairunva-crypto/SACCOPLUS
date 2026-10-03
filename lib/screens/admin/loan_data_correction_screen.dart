@@ -294,21 +294,56 @@ class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
         ),
         DataCell(
           SizedBox(
-            width: 120,
-            child: TextField(
-              controller: loan['disbursementDateCtrl'],
-              style: GoogleFonts.inter(fontSize: 12),
-              decoration: const InputDecoration(
-                isDense: true,
-                contentPadding: EdgeInsets.all(8),
-                border: OutlineInputBorder(),
-                hintText: '2024-08-31',
-              ),
-              onChanged: (value) {
-                setState(() {
-                  loan['isModified'] = true;
-                });
+            width: 140,
+            child: InkWell(
+              onTap: () async {
+                final DateTime? picked = await showDatePicker(
+                  context: context,
+                  initialDate: () {
+                    try {
+                      final dateStr = loan['disbursementDateCtrl'].text;
+                      if (dateStr.isNotEmpty) {
+                        return DateTime.parse(dateStr);
+                      }
+                    } catch (e) {}
+                    return DateTime.now();
+                  }(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now(),
+                );
+                
+                if (picked != null) {
+                  setState(() {
+                    loan['disbursementDateCtrl'].text = DateFormat('yyyy-MM-dd').format(picked);
+                    loan['isModified'] = true;
+                  });
+                }
               },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        loan['disbursementDateCtrl'].text.isEmpty 
+                            ? 'Pick date' 
+                            : loan['disbursementDateCtrl'].text,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: loan['disbursementDateCtrl'].text.isEmpty 
+                              ? Colors.grey.shade600 
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.calendar_today, size: 16, color: Colors.grey.shade600),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
