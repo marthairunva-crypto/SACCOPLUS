@@ -46,16 +46,14 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
   Future<void> _loadLoanData() async {
     setState(() => _isLoading = true);
     
-    // Load loan data if not provided
-    if (_loanData == null) {
-      final doc = await FirebaseFirestore.instance
-          .collection(AppConstants.loansCol)
-          .doc(widget.loanId)
-          .get();
-      
-      if (doc.exists) {
-        _loanData = {'id': doc.id, ...doc.data()!};
-      }
+    // Always fetch fresh data from Firestore
+    final doc = await FirebaseFirestore.instance
+        .collection(AppConstants.loansCol)
+        .doc(widget.loanId)
+        .get();
+    
+    if (doc.exists) {
+      _loanData = {'id': doc.id, ...doc.data()!};
     }
     
     // Load arrears data
@@ -222,7 +220,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
   }
 
   // ============================================================================
-  // TAB 1: SUMMARY
+  // TAB 1: SUMMARY - Clean table-based layout
   // ============================================================================
   Widget _buildSummaryTab() {
     final principal = (_loanData!['loanAmount'] ?? _loanData!['amount'] ?? 0).toDouble();
@@ -235,8 +233,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
     final chargesPaid = (_loanData!['chargesPaid'] ?? 0).toDouble();
     final totalPaid = principalPaid + interestPaid + chargesPaid;
     
-    final principalOutstanding = principal - principalPaid;
-    final interestOutstanding = interest - interestPaid;
+    final principalOutstanding = (_loanData!['principalOutstanding'] ?? (principal - principalPaid)).toDouble();
+    final interestOutstanding = (_loanData!['interestOutstanding'] ?? (interest - interestPaid)).toDouble();
     final chargesOutstanding = charges - chargesPaid;
     final totalOutstanding = principalOutstanding + interestOutstanding + chargesOutstanding;
     
@@ -247,42 +245,88 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Loan Details Card
-          _buildInfoCard(
-            'Loan Details',
-            [
-              _buildInfoRow('Client/Member Name', _loanData!['memberName'] ?? 'N/A'),
-              _buildInfoRow('Member ID', _loanData!['memberId'] ?? 'N/A'),
-              _buildInfoRow('Account Number', _loanData!['accountNumber'] ?? 'N/A'),
-              _buildInfoRow('Status', _loanData!['status'] ?? 'N/A', valueColor: _getStatusColor(_loanData!['status'])),
-              _buildInfoRow('Application Date', _formatDate(_loanData!['createdAt'])),
-              _buildInfoRow('Installment Start Date', _formatDate(_loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])),
-              _buildInfoRow('Branch', _loanData!['branch'] ?? 'Main Branch'),
-              _buildInfoRow('Loan Amount (UGX)', _currencyFormat.format(principal.round())),
-              _buildInfoRow('Nominal Interest Rate', '${_loanData!['interestRate'] ?? 0}% per ${_loanData!['paymentFrequency'] ?? 'month'}'),
-              _buildInfoRow('Loan Officer', _loanData!['loanOfficer'] ?? _loanData!['approvedBy'] ?? 'N/A'),
-              _buildInfoRow('Tenure', '${_loanData!['duration'] ?? 0} ${_getTenureLabel()}'),
-              _buildInfoRow('Loan Type', _loanData!['loanType'] ?? 'N/A'),
-            ],
+          // Loan Details - Simple table
+          Card(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Loan Details',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(2),
+                      1: FlexColumnWidth(3),
+                    },
+                    children: [
+                      _buildTableRow('Client/Member Name', _loanData!['memberName'] ?? 'N/A'),
+                      _buildTableRow('Member ID', _loanData!['memberId'] ?? 'N/A'),
+                      _buildTableRow('Account Number', _loanData!['accountNumber'] ?? 'N/A'),
+                      _buildTableRow('Status', _loanData!['status'] ?? 'N/A', valueColor: _getStatusColor(_loanData!['status'])),
+                      _buildTableRow('Application Date', _formatDate(_loanData!['createdAt'])),
+                      _buildTableRow('Installment Start Date', _formatDate(_loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])),
+                      _buildTableRow('Branch', _loanData!['branch'] ?? 'Main Branch'),
+                      _buildTableRow('Loan Amount (UGX)', _currencyFormat.format(principal.round())),
+                      _buildTableRow('Nominal Interest Rate', '${_loanData!['interestRate'] ?? 0}% per ${_loanData!['paymentFrequency'] ?? 'month'}'),
+                      _buildTableRow('Loan Officer', _loanData!['loanOfficer'] ?? _loanData!['approvedBy'] ?? 'N/A'),
+                      _buildTableRow('Tenure', '${_loanData!['duration'] ?? 0} ${_getTenureLabel()}'),
+                      _buildTableRow('Loan Type', _loanData!['loanType'] ?? 'N/A'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
           
           const SizedBox(height: 16),
           
           // Additional Info
-          _buildInfoCard(
-            'Additional Loan Information',
-            [
-              _buildInfoRow('Purpose', _loanData!['purpose'] ?? 'N/A'),
-              _buildInfoRow('Debt Capacity (USh)', _currencyFormat.format(0)),
-              _buildInfoRow('Description', _loanData!['description'] ?? 'N/A'),
-            ],
-          ),
+          if (_loanData!['purpose'] != null || _loanData!['description'] != null)
+            Card(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Additional Loan Information',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Table(
+                      columnWidths: const {
+                        0: FlexColumnWidth(2),
+                        1: FlexColumnWidth(3),
+                      },
+                      children: [
+                        if (_loanData!['purpose'] != null)
+                          _buildTableRow('Purpose', _loanData!['purpose'] ?? 'N/A'),
+                        _buildTableRow('Description', _loanData!['description'] ?? 'N/A'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           
           const SizedBox(height: 16),
           
-          // Balance Summary
+          // Balance Summary - Clean Table
           Card(
-            child: Padding(
+            child: Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -290,63 +334,64 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
                   Text(
                     'Balance Summary',
                     style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 16),
                   
-                  // Header Row
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      children: [
-                        const Expanded(flex: 2, child: Text('Category', style: TextStyle(fontWeight: FontWeight.w600))),
-                        Expanded(child: Text('Principal (USh)', style: const TextStyle(fontWeight: FontWeight.w600))),
-                        Expanded(child: Text('Interest (USh)', style: const TextStyle(fontWeight: FontWeight.w600))),
-                        Expanded(child: Text('Charges (USh)', style: const TextStyle(fontWeight: FontWeight.w600))),
-                        Expanded(child: Text('Total (USh)', style: const TextStyle(fontWeight: FontWeight.w600))),
+                  // Clean data table
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowColor: MaterialStateProperty.all(Colors.grey.shade200),
+                      headingTextStyle: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.black87,
+                      ),
+                      dataTextStyle: GoogleFonts.inter(fontSize: 13),
+                      columns: const [
+                        DataColumn(label: Text('Category')),
+                        DataColumn(label: Text('Principal (USh)'), numeric: true),
+                        DataColumn(label: Text('Interest (USh)'), numeric: true),
+                        DataColumn(label: Text('Charges (USh)'), numeric: true),
+                        DataColumn(label: Text('Total (USh)'), numeric: true),
+                      ],
+                      rows: [
+                        _buildDataRow('Total', principal, interest, charges, total, null),
+                        _buildDataRow('Waived Off', 0, 0, 0, 0, Colors.orange.shade50),
+                        _buildDataRow('Paid', principalPaid, interestPaid, chargesPaid, totalPaid, Colors.green.shade50),
+                        _buildDataRow('Outstanding', principalOutstanding, interestOutstanding, chargesOutstanding, totalOutstanding, Colors.red.shade50, bold: true),
                       ],
                     ),
                   ),
                   
-                  // Total Row
-                  _buildBalanceRow('Total', principal, interest, charges, total),
-                  
-                  // Waived Off Row
-                  _buildBalanceRow('Waived Off', 0, 0, 0, 0, color: Colors.orange.shade50),
-                  
-                  // Paid Row
-                  _buildBalanceRow('Paid', principalPaid, interestPaid, chargesPaid, totalPaid, color: Colors.green.shade50),
-                  
-                  // Outstanding Row
-                  _buildBalanceRow('Outstanding', principalOutstanding, interestOutstanding, chargesOutstanding, totalOutstanding, color: Colors.red.shade50, bold: true),
-                  
-                  const Divider(height: 24),
+                  const SizedBox(height: 16),
                   
                   // Arrear Balance
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.red.shade50,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade300),
+                      border: Border.all(color: Colors.red.shade300, width: 2),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           'Arrear Balance',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                         Text(
                           'UGX ${_currencyFormat.format(arrearBalance.round())}',
                           style: GoogleFonts.inter(
                             fontWeight: FontWeight.bold,
+                            fontSize: 18,
                             color: Colors.red.shade700,
                           ),
                         ),
@@ -360,42 +405,86 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
           
           const SizedBox(height: 16),
           
-          // Disbursement Details (if disbursed)
+          // Disbursement Details
           if (_loanData!['disbursedAt'] != null || _loanData!['disbursementDate'] != null)
-            _buildInfoCard(
-              'Disbursement Details',
-              [
-                _buildInfoRow('Destination Type', _loanData!['destinationType'] ?? 'Cash'),
-                _buildInfoRow('Reference Number', _loanData!['referenceNumber'] ?? 'N/A'),
-                _buildInfoRow('Disbursed By', _loanData!['disbursedBy'] ?? 'N/A'),
-                _buildInfoRow('Disbursement Date', _formatDate(_loanData!['disbursedAt'] ?? _loanData!['disbursementDate'])),
-              ],
+            Card(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Disbursement Details',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Table(
+                      columnWidths: const {
+                        0: FlexColumnWidth(2),
+                        1: FlexColumnWidth(3),
+                      },
+                      children: [
+                        _buildTableRow('Destination Type', _loanData!['destinationType'] ?? 'Cash'),
+                        _buildTableRow('Reference Number', _loanData!['referenceNumber'] ?? 'N/A'),
+                        _buildTableRow('Disbursed By', _loanData!['disbursedBy'] ?? 'N/A'),
+                        _buildTableRow('Disbursement Date', _formatDate(_loanData!['disbursedAt'] ?? _loanData!['disbursementDate'])),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildBalanceRow(String category, double principal, double interest, double charges, double total, {Color? color, bool bold = false}) {
+  TableRow _buildTableRow(String label, String value, {Color? valueColor}) {
+    return TableRow(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              color: Colors.grey.shade700,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            value,
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+              color: valueColor ?? Colors.black87,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  DataRow _buildDataRow(String category, double principal, double interest, double charges, double total, Color? color, {bool bold = false}) {
     final textStyle = TextStyle(
       fontWeight: bold ? FontWeight.bold : FontWeight.normal,
     );
     
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        children: [
-          Expanded(flex: 2, child: Text(category, style: textStyle)),
-          Expanded(child: Text(_currencyFormat.format(principal.round()), style: textStyle)),
-          Expanded(child: Text(_currencyFormat.format(interest.round()), style: textStyle)),
-          Expanded(child: Text(_currencyFormat.format(charges.round()), style: textStyle)),
-          Expanded(child: Text(_currencyFormat.format(total.round()), style: textStyle)),
-        ],
-      ),
+    return DataRow(
+      color: color != null ? MaterialStateProperty.all(color) : null,
+      cells: [
+        DataCell(Text(category, style: textStyle)),
+        DataCell(Text(_currencyFormat.format(principal.round()), style: textStyle)),
+        DataCell(Text(_currencyFormat.format(interest.round()), style: textStyle)),
+        DataCell(Text(_currencyFormat.format(charges.round()), style: textStyle)),
+        DataCell(Text(_currencyFormat.format(total.round()), style: textStyle)),
+      ],
     );
   }
 
@@ -538,62 +627,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
   }
 
   // ============================================================================
-  // HELPER WIDGETS
+  // HELPER METHODS
   // ============================================================================
-  
-  Widget _buildInfoCard(String title, List<Widget> children) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-                color: valueColor,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Color _getStatusColor(String? status) {
     switch (status?.toLowerCase()) {
