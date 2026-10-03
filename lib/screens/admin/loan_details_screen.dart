@@ -183,6 +183,18 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          labelStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
           tabs: const [
             Tab(text: 'Summary'),
             Tab(text: 'Transactions'),

@@ -40,7 +40,7 @@ class LoanActionsService {
         final r = interestRate / (100 * 12);
         final n = newDuration.toDouble();
         if (r > 0) {
-          final powValue = pow(1 + r, n).toDouble();
+          final powValue = pow(1 + r, n.toInt()).toDouble();
           final monthlyPayment = principal * r * powValue / (powValue - 1);
           newInterest = (monthlyPayment * n) - principal;
         } else {
@@ -300,7 +300,7 @@ class LoanActionsService {
         final r = interestRate / (100 * 12);
         final n = duration.toDouble();
         if (r > 0) {
-          final powValue = pow(1 + r, n).toDouble();
+          final powValue = pow(1 + r, n.toInt()).toDouble();
           final monthlyPayment = newPrincipal * r * powValue / (powValue - 1);
           newInterest = (monthlyPayment * n) - newPrincipal;
         } else {
