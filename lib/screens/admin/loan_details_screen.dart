@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../services/loan_disbursement_service.dart';
+import '../../services/loan_actions_service.dart';
 import '../../services/arrears_service.dart';
 
 class LoanDetailsScreen extends StatefulWidget {
@@ -879,33 +880,606 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
   }
 
   // Placeholder methods for other actions
-  void _showRescheduleLoanDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reschedule Loan - Coming Soon')),
+  Future<void> _showRescheduleLoanDialog() async {
+    final TextEditingController durationCtrl = TextEditingController(
+      text: (_loanData!['duration'] ?? 12).toString()
+    );
+    final TextEditingController reasonCtrl = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.schedule, color: Colors.blue.shade700),
+            const SizedBox(width: 8),
+            const Text('Reschedule Loan'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Current Duration: ${_loanData!['duration']} months',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'New Duration (months) *',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: durationCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Enter new duration in months',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Reason',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Why is this loan being rescheduled?',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              durationCtrl.dispose();
+              reasonCtrl.dispose();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final newDuration = int.tryParse(durationCtrl.text) ?? 0;
+              
+              if (newDuration <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid duration')),
+                );
+                return;
+              }
+              
+              Navigator.pop(dialogContext);
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator()),
+              );
+              
+              final result = await LoanActionsService.rescheduleLoan(
+                loanId: widget.loanId,
+                newDuration: newDuration,
+                rescheduledBy: 'CURRENT_USER_ID',
+                reason: reasonCtrl.text.trim(),
+              );
+              
+              if (mounted) Navigator.pop(context);
+              
+              durationCtrl.dispose();
+              reasonCtrl.dispose();
+              
+              if (result['success'] == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Loan rescheduled'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadLoanData();
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Failed'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade700),
+            icon: const Icon(Icons.check),
+            label: const Text('Reschedule'),
+          ),
+        ],
+      ),
     );
   }
 
-  void _showTopUpDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Loan Top-Up - Coming Soon')),
+  Future<void> _showTopUpDialog() async {
+    final TextEditingController amountCtrl = TextEditingController();
+    final TextEditingController reasonCtrl = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.arrow_upward, color: Colors.green.shade700),
+            const SizedBox(width: 8),
+            const Text('Loan Top-Up'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Current Loan Amount: UGX ${_currencyFormat.format((_loanData!['loanAmount'] ?? 0))}',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Top-Up Amount (UGX) *',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Enter additional amount',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Reason',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Reason for top-up',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              amountCtrl.dispose();
+              reasonCtrl.dispose();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final amount = double.tryParse(amountCtrl.text) ?? 0;
+              
+              if (amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid amount')),
+                );
+                return;
+              }
+              
+              Navigator.pop(dialogContext);
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator()),
+              );
+              
+              final result = await LoanActionsService.topUpLoan(
+                loanId: widget.loanId,
+                topUpAmount: amount,
+                approvedBy: 'CURRENT_USER_ID',
+                reason: reasonCtrl.text.trim(),
+              );
+              
+              if (mounted) Navigator.pop(context);
+              
+              amountCtrl.dispose();
+              reasonCtrl.dispose();
+              
+              if (result['success'] == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Loan topped up'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadLoanData();
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Failed'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
+            icon: const Icon(Icons.check),
+            label: const Text('Top Up'),
+          ),
+        ],
+      ),
     );
   }
 
-  void _showWaiveInterestDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Waive Interest - Coming Soon')),
+  Future<void> _showWaiveInterestDialog() async {
+    final interestOutstanding = (_loanData!['interestOutstanding'] ?? 0).toDouble();
+    final TextEditingController amountCtrl = TextEditingController(
+      text: interestOutstanding.round().toString()
+    );
+    final TextEditingController reasonCtrl = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.money_off, color: Colors.orange.shade700),
+            const SizedBox(width: 8),
+            const Text('Waive Interest'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Outstanding Interest: UGX ${_currencyFormat.format(interestOutstanding.round())}',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Waive Amount (UGX) *',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Enter amount to waive',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Reason *',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Why is interest being waived?',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              amountCtrl.dispose();
+              reasonCtrl.dispose();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final amount = double.tryParse(amountCtrl.text) ?? 0;
+              
+              if (amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid amount')),
+                );
+                return;
+              }
+              
+              if (reasonCtrl.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Reason is required')),
+                );
+                return;
+              }
+              
+              Navigator.pop(dialogContext);
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator()),
+              );
+              
+              final result = await LoanActionsService.waiveInterest(
+                loanId: widget.loanId,
+                waiveAmount: amount,
+                waivedBy: 'CURRENT_USER_ID',
+                reason: reasonCtrl.text.trim(),
+              );
+              
+              if (mounted) Navigator.pop(context);
+              
+              amountCtrl.dispose();
+              reasonCtrl.dispose();
+              
+              if (result['success'] == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Interest waived'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadLoanData();
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Failed'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700),
+            icon: const Icon(Icons.check),
+            label: const Text('Waive'),
+          ),
+        ],
+      ),
     );
   }
 
-  void _showWriteOffDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Write Off - Coming Soon')),
+  Future<void> _showWriteOffDialog() async {
+    final TextEditingController reasonCtrl = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.cancel, color: Colors.red.shade700),
+            const SizedBox(width: 8),
+            const Text('Write Off Loan'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade300),
+                  ),
+                  child: Text(
+                    '⚠️ Warning: This will mark the loan as uncollectable bad debt. This action cannot be undone.',
+                    style: GoogleFonts.inter(color: Colors.red.shade900),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Reason *',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Explain why this loan is being written off',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              reasonCtrl.dispose();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              if (reasonCtrl.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Reason is required')),
+                );
+                return;
+              }
+              
+              Navigator.pop(dialogContext);
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator()),
+              );
+              
+              final result = await LoanActionsService.writeOffLoan(
+                loanId: widget.loanId,
+                writtenOffBy: 'CURRENT_USER_ID',
+                reason: reasonCtrl.text.trim(),
+              );
+              
+              if (mounted) Navigator.pop(context);
+              
+              reasonCtrl.dispose();
+              
+              if (result['success'] == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Loan written off'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  Navigator.pop(context); // Close details screen
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Failed'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+            icon: const Icon(Icons.warning),
+            label: const Text('Write Off'),
+          ),
+        ],
+      ),
     );
   }
 
-  void _showCloseLoanDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Close Loan - Coming Soon')),
+  Future<void> _showCloseLoanDialog() async {
+    final TextEditingController reasonCtrl = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.teal.shade700),
+            const SizedBox(width: 8),
+            const Text('Close Loan'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reason',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    hintText: 'Why is this loan being closed?',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              reasonCtrl.dispose();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator()),
+              );
+              
+              final result = await LoanActionsService.closeLoan(
+                loanId: widget.loanId,
+                closedBy: 'CURRENT_USER_ID',
+                reason: reasonCtrl.text.trim(),
+              );
+              
+              if (mounted) Navigator.pop(context);
+              
+              reasonCtrl.dispose();
+              
+              if (result['success'] == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Loan closed'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadLoanData();
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Failed'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade700),
+            icon: const Icon(Icons.check),
+            label: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }
