@@ -14,9 +14,13 @@ class LoanDataCorrectionScreen extends StatefulWidget {
 class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
   final _db = FirebaseFirestore.instance;
   final _currencyFormat = NumberFormat('#,###', 'en_US');
+  final _searchController = TextEditingController();
   List<Map<String, dynamic>> _loans = [];
+  List<Map<String, dynamic>> _filteredLoans = [];
   bool _isLoading = true;
   bool _isSaving = false;
+  int _currentPage = 0;
+  int _itemsPerPage = 20;
   
   @override
   void initState() {
@@ -69,9 +73,36 @@ class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
           'isModified': false,
         };
       }).toList();
+      _filteredLoans = _loans;
       _isLoading = false;
     });
   }
+
+  void _filterLoans(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredLoans = _loans;
+      } else {
+        _filteredLoans = _loans.where((loan) {
+          final memberName = loan['memberName'].toString().toLowerCase();
+          final accountNumber = loan['accountNumber'].toString().toLowerCase();
+          final searchLower = query.toLowerCase();
+          return memberName.contains(searchLower) || accountNumber.contains(searchLower);
+        }).toList();
+      }
+      _currentPage = 0; // Reset to first page when searching
+    });
+  }
+
+  List<Map<String, dynamic>> _getPaginatedLoans() {
+    final startIndex = _currentPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, _filteredLoans.length);
+    
+    if (startIndex >= _filteredLoans.length) return [];
+    return _filteredLoans.sublist(startIndex, endIndex);
+  }
+
+  int get _totalPages => (_filteredLoans.length / _itemsPerPage).ceil();
 
   Future<void> _saveChanges() async {
     final modifiedLoans = _loans.where((loan) => loan['isModified'] == true).toList();
@@ -161,6 +192,7 @@ class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     for (var loan in _loans) {
       loan['disbursementDateCtrl']?.dispose();
       loan['principalOutstandingCtrl']?.dispose();
@@ -210,7 +242,53 @@ class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
               ? const Center(child: Text('No loans found'))
               : Column(
                   children: [
-                    // Instructions
+                    // Search bar
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      color: Colors.white,
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search by member name or account number...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _filterLoans('');
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        ),
+                        onChanged: _filterLoans,
+                      ),
+                    ),
+                    
+                    // Results count
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      color: Colors.grey.shade100,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Showing ${_getPaginatedLoans().length} of ${_filteredLoans.length} loans',
+                            style: GoogleFonts.inter(fontSize: 13),
+                          ),
+                          Text(
+                            'Page ${_currentPage + 1} of ${_totalPages > 0 ? _totalPages : 1}',
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // Loans table
                     Container(
                       padding: const EdgeInsets.all(16),
                       color: Colors.blue.shade50,
@@ -242,16 +320,58 @@ class _LoanDataCorrectionScreenState extends State<LoanDataCorrectionScreen> {
                               DataColumn(label: Text('Member', style: _headerStyle())),
                               DataColumn(label: Text('Account', style: _headerStyle())),
                               DataColumn(label: Text('Loan Amount', style: _headerStyle())),
-                              DataColumn(label: Text('Disbursement Date\n(YYYY-MM-DD)', style: _headerStyle())),
+                              DataColumn(label: Text('Disbursement Date\n(Pick from calendar)', style: _headerStyle())),
                               DataColumn(label: Text('Principal\nOutstanding', style: _headerStyle())),
                               DataColumn(label: Text('Interest\nOutstanding', style: _headerStyle())),
                               DataColumn(label: Text('Principal\nPaid', style: _headerStyle())),
                               DataColumn(label: Text('Interest\nPaid', style: _headerStyle())),
                               DataColumn(label: Text('Status', style: _headerStyle())),
                             ],
-                            rows: _loans.map((loan) => _buildLoanRow(loan)).toList(),
+                            rows: _getPaginatedLoans().map((loan) => _buildLoanRow(loan)).toList(),
                           ),
                         ),
+                      ),
+                    ),
+                    
+                    // Pagination controls
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      color: Colors.white,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.first_page),
+                            onPressed: _currentPage > 0
+                                ? () => setState(() => _currentPage = 0)
+                                : null,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left),
+                            onPressed: _currentPage > 0
+                                ? () => setState(() => _currentPage--)
+                                : null,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              'Page ${_currentPage + 1} of ${_totalPages > 0 ? _totalPages : 1}',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right),
+                            onPressed: _currentPage < _totalPages - 1
+                                ? () => setState(() => _currentPage++)
+                                : null,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.last_page),
+                            onPressed: _currentPage < _totalPages - 1
+                                ? () => setState(() => _currentPage = _totalPages - 1)
+                                : null,
+                          ),
+                        ],
                       ),
                     ),
                   ],
