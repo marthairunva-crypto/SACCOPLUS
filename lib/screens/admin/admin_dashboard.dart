@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:io';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -843,6 +844,9 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   
   /// Check for app updates on startup
   Future<void> _checkForUpdates() async {
+    // Only check for updates on Windows
+    if (!Platform.isWindows) return;
+    
     // Wait a bit for the UI to load
     await Future.delayed(const Duration(seconds: 2));
     
