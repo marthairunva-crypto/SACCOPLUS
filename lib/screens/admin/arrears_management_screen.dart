@@ -253,12 +253,13 @@ class _ArrearsManagementScreenState extends State<ArrearsManagementScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () {
-          showDialog(
-            context: context,
-            builder: (context) => LoanDetailsScreen(
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => LoanDetailsScreen(
                 loanId: loan['loanId'],
                 initialLoanData: loan,
               ),
+            ),
           );
         },
         borderRadius: BorderRadius.circular(12),

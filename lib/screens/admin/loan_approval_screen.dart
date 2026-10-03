@@ -855,9 +855,10 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
 
   Future<void> _editLoan(String loanId, Map<String, dynamic> loanData) async {
     // Show loan card dialog for editing
-    await showDialog(
-      context: context,
-      builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loanData),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loanData),
+      ),
     );
     
     // Refresh the list after dialog closes
@@ -1047,9 +1048,10 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     print('Outstanding: ${loan['principalOutstanding']}');
     print('========================');
     
-    await showDialog(
-      context: context,
-      builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loan),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loan),
+      ),
     );
     
     // Refresh the list after dialog closes

@@ -238,7 +238,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
     final chargesOutstanding = charges - chargesPaid;
     final totalOutstanding = principalOutstanding + interestOutstanding + chargesOutstanding;
     
-    final arrearBalance = (_arrearsData?['arrearsAmount'] ?? 0).toDouble();
+    // Get arrear balance from multiple sources
+    final arrearBalance = (_loanData!['arrears'] ?? _arrearsData?['arrearsAmount'] ?? 0).toDouble();
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -271,8 +272,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> with SingleTicker
                       _buildTableRow('Member ID', _loanData!['memberId'] ?? 'N/A'),
                       _buildTableRow('Account Number', _loanData!['accountNumber'] ?? 'N/A'),
                       _buildTableRow('Status', _loanData!['status'] ?? 'N/A', valueColor: _getStatusColor(_loanData!['status'])),
-                      _buildTableRow('Application Date', _formatDate(_loanData!['createdAt'])),
-                      _buildTableRow('Installment Start Date', _formatDate(_loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])),
+                      _buildTableRow('Disbursement Date', _formatDate(_loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])),
                       _buildTableRow('Branch', _loanData!['branch'] ?? 'Main Branch'),
                       _buildTableRow('Loan Amount (UGX)', _currencyFormat.format(principal.round())),
                       _buildTableRow('Nominal Interest Rate', '${_loanData!['interestRate'] ?? 0}% per ${_loanData!['paymentFrequency'] ?? 'month'}'),
