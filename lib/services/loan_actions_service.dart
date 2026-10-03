@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:math' as math;
 import '../core/constants.dart';
 import 'audit_service.dart';
 
@@ -40,7 +41,7 @@ class LoanActionsService {
         final r = interestRate / (100 * 12);
         final n = newDuration.toDouble();
         if (r > 0) {
-          final powValue = pow(1 + r, n.toInt()).toDouble();
+          final powValue = math.pow(1 + r, n);
           final monthlyPayment = principal * r * powValue / (powValue - 1);
           newInterest = (monthlyPayment * n) - principal;
         } else {
@@ -300,7 +301,7 @@ class LoanActionsService {
         final r = interestRate / (100 * 12);
         final n = duration.toDouble();
         if (r > 0) {
-          final powValue = pow(1 + r, n.toInt()).toDouble();
+          final powValue = math.pow(1 + r, n);
           final monthlyPayment = newPrincipal * r * powValue / (powValue - 1);
           newInterest = (monthlyPayment * n) - newPrincipal;
         } else {
@@ -435,17 +436,4 @@ class LoanActionsService {
       return {'success': false, 'message': 'Error: $e'};
     }
   }
-}
-
-// Helper function for power calculation (if not imported)
-double pow(double base, double exponent) {
-  if (exponent == 0) return 1;
-  if (exponent == 1) return base;
-  
-  double result = 1;
-  for (int i = 0; i < exponent.abs(); i++) {
-    result *= base;
-  }
-  
-  return exponent < 0 ? 1 / result : result;
 }
