@@ -1,0 +1,91 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.5'
+          channel: 'stable'
+          cache: true
+      
+      - name: Flutter Doctor
+        run: flutter doctor -v
+      
+      - name: Install dependencies
+        run: flutter pub get
+      
+      - name: Build APK (Release)
+        run: flutter build apk --release --split-per-abi
+      
+      - name: List APK files
+        run: |
+          echo "=== APK Files Generated ==="
+          ls -lh build/app/outputs/flutter-apk/
+      
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MBADIFA-SACCO-APKs
+          path: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          retention-days: 90
+      
+      - name: Create Release (on main/master push)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: MBADIFA SACCO v1.0.${{ github.run_number }}
+          body: |
+            ## MBADIFA SACCO System - Android APK
+            
+            ### Download Instructions:
+            Choose the APK for your device:
+            - **app-arm64-v8a-release.apk** - Modern phones (64-bit, recommended)
+            - **app-armeabi-v7a-release.apk** - Older phones (32-bit)
+            - **app-x86_64-release.apk** - Emulators/tablets
+            
+            ### Installation:
+            1. Download the appropriate APK
+            2. Enable "Install from Unknown Sources" on your Android device
+            3. Install the APK
+            4. Open MBADIFA SACCO app
+            
+            ### What's New:
+            - Full SACCO management system
+            - Loan management with arrears tracking
+            - Savings and deposits management
+            - Member 360° view
+            - Comprehensive reporting
+            - Teller operations
+            - Audit trails
+          files: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
