@@ -283,12 +283,12 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
             },
           ),
         ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
               const SizedBox(height: 20),
               
               // Security Icon
@@ -475,6 +475,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 }
