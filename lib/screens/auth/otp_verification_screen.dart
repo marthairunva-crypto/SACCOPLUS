@@ -264,16 +264,25 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   Widget build(BuildContext context) {
     final name = widget.profile['name'] ?? 'Admin';
     
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: ModernTheme.textPrimary),
-          onPressed: () => Navigator.pop(context),
+    return WillPopScope(
+      onWillPop: () async {
+        // Allow back navigation
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_ios, color: ModernTheme.textPrimary),
+            onPressed: () {
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+            },
+          ),
         ),
-      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -325,52 +334,55 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
               const SizedBox(height: 40),
               
               // OTP Input Fields
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(6, (index) {
-                    return Container(
-                      width: 45,
-                      height: 56,
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      child: TextField(
-                        controller: _otpControllers[index],
-                        focusNode: _otpFocusNodes[index],
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.number,
-                        maxLength: 1,
-                        style: GoogleFonts.poppins(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        decoration: InputDecoration(
-                          counterText: '',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: ModernTheme.primary, width: 2),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                        ),
-                        onChanged: (value) {
-                          if (value.length == 1 && index < 5) {
-                            _otpFocusNodes[index + 1].requestFocus();
-                          } else if (value.isEmpty && index > 0) {
-                            _otpFocusNodes[index - 1].requestFocus();
-                          } else if (value.length == 1 && index == 5) {
-                            // Auto-submit when last digit entered
-                            _verifyOTP();
-                          }
-                        },
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(6, (index) {
+                  return Container(
+                    width: 55,
+                    height: 65,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    child: TextField(
+                      controller: _otpControllers[index],
+                      focusNode: _otpFocusNodes[index],
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      maxLength: 1,
+                      style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: ModernTheme.textPrimary,
                       ),
-                    );
-                  }),
-                ),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300, width: 2),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: ModernTheme.primary, width: 2.5),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      onChanged: (value) {
+                        if (value.length == 1 && index < 5) {
+                          _otpFocusNodes[index + 1].requestFocus();
+                        } else if (value.isEmpty && index > 0) {
+                          _otpFocusNodes[index - 1].requestFocus();
+                        } else if (value.length == 1 && index == 5) {
+                          // Auto-submit when last digit entered
+                          _verifyOTP();
+                        }
+                      },
+                    ),
+                  );
+                }),
               ),
               
               const SizedBox(height: 32),
