@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class ProfessionalDataTable extends StatefulWidget {
@@ -9,6 +10,10 @@ class ProfessionalDataTable extends StatefulWidget {
   final String searchPlaceholder;
   final String? tableKey; // Unique key to persist pagination state
 
+  /// Extra space under the last row so floating buttons (e.g. "Add Member")
+  /// never cover the data.
+  final double listBottomPadding;
+
   const ProfessionalDataTable({
     Key? key,
     required this.columns,
@@ -18,6 +23,7 @@ class ProfessionalDataTable extends StatefulWidget {
     this.showSearch = true,
     this.searchPlaceholder = 'Search...',
     this.tableKey,
+    this.listBottomPadding = 88,
   }) : super(key: key);
 
   @override
@@ -26,18 +32,18 @@ class ProfessionalDataTable extends StatefulWidget {
 
 class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   String _searchQuery = '';
-  Map<String, String?> _selectedFilters = {};
+  final Map<String, String?> _selectedFilters = {};
   int _currentPage = 0;
   final int _rowsPerPage = 25;
   late ScrollController _horizontalScrollController;
   late ScrollController _verticalScrollController;
-  Set<String> _hiddenColumns = {}; // Track hidden columns
-  
+  final Set<String> _hiddenColumns = {};
+
   // Static map to persist pagination state across rebuilds
   static final Map<String, int> _pageStateCache = {};
 
   // Clean modern color palette
-  static const _headerColor = Color(0xFF00BFA6); // Teal accent
+  static const _headerColor = Color(0xFF00BFA6);
   static const _headerText = Colors.white;
   static const _bodyText = Color(0xFF212121);
   static const _secondaryText = Color(0xFF757575);
@@ -45,26 +51,27 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   static const _hoverColor = Color(0xFFF5F5F5);
   static const _backgroundColor = Color(0xFFFAFAFA);
 
+  /// Below this width the toolbar switches to the compact (stacked) layout
+  static const double _compactBreakpoint = 600;
+
   List<Map<String, dynamic>> get _filteredData {
     var filtered = widget.data;
 
-    // Apply search
     if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
       filtered = filtered.where((row) {
         return widget.columns.any((column) {
           final value = row[column.key]?.toString().toLowerCase() ?? '';
-          return value.contains(_searchQuery.toLowerCase());
+          return value.contains(q);
         });
       }).toList();
     }
 
-    // Apply filters
     if (widget.filters != null) {
       for (var filter in widget.filters!) {
         final selectedValue = _selectedFilters[filter.key];
         if (selectedValue != null && selectedValue != 'all') {
           filtered = filtered.where((row) {
-            // Handle numeric range filters for shareValue
             if (filter.key == 'shareValue' && row.containsKey('shareValue')) {
               final value = (row['shareValue'] as num?)?.toDouble() ?? 0.0;
               switch (selectedValue) {
@@ -84,7 +91,6 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                   return true;
               }
             }
-            // Handle numeric range filters for savingsBalance
             if (filter.key == 'savingsBalance' && row.containsKey('savingsBalance')) {
               final value = (row['savingsBalance'] as num?)?.toDouble() ?? 0.0;
               switch (selectedValue) {
@@ -102,7 +108,6 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                   return true;
               }
             }
-            // Default string comparison for other filters
             return row[filter.key]?.toString() == selectedValue;
           }).toList();
         }
@@ -112,35 +117,12 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
     return filtered;
   }
 
-  List<Map<String, dynamic>> get _paginatedData {
-    // Ensure current page is within valid range
-    if (_currentPage >= _totalPages && _totalPages > 0) {
-      _currentPage = _totalPages - 1;
-    }
-    if (_currentPage < 0) {
-      _currentPage = 0;
-    }
-    
-    final startIndex = _currentPage * _rowsPerPage;
-    final endIndex = (startIndex + _rowsPerPage).clamp(0, _filteredData.length);
-    
-    // Safety check to prevent RangeError
-    if (startIndex >= _filteredData.length) {
-      return [];
-    }
-    
-    return _filteredData.sublist(startIndex, endIndex);
-  }
-
-  int get _totalPages => _filteredData.isEmpty ? 1 : (_filteredData.length / _rowsPerPage).ceil();
-
   @override
   void initState() {
     super.initState();
     _horizontalScrollController = ScrollController();
     _verticalScrollController = ScrollController();
-    
-    // Restore pagination state if available
+
     if (widget.tableKey != null && _pageStateCache.containsKey(widget.tableKey)) {
       _currentPage = _pageStateCache[widget.tableKey!]!;
     }
@@ -148,7 +130,6 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
 
   @override
   void dispose() {
-    // Save pagination state before disposing
     if (widget.tableKey != null) {
       _pageStateCache[widget.tableKey!] = _currentPage;
     }
@@ -159,196 +140,200 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Clean Search and Filters Bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+    // Compute once per build (instead of re-filtering in every getter)
+    final filtered = _filteredData;
+    final totalPages = filtered.isEmpty ? 1 : (filtered.length / _rowsPerPage).ceil();
+    if (_currentPage >= totalPages) _currentPage = totalPages - 1;
+    if (_currentPage < 0) _currentPage = 0;
+
+    final start = _currentPage * _rowsPerPage;
+    final end = (start + _rowsPerPage).clamp(0, filtered.length);
+    final pageRows = filtered.sublist(math.min(start, filtered.length), end);
+
+    return LayoutBuilder(
+      builder: (context, outer) {
+        // Parent gives a fixed height -> table fills it and scrolls inside.
+        // Parent gives unbounded height (inside a scroll view / Column) -> table
+        // sizes itself to its rows and the parent does the scrolling.
+        final bounded = outer.hasBoundedHeight;
+
+        final body = filtered.isEmpty
+            ? _buildEmptyState()
+            : Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: _borderColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: _buildTable(pageRows),
+                ),
+              );
+
+        return Column(
+          mainAxisSize: bounded ? MainAxisSize.max : MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildToolbar(filtered.length, pageRows.length, totalPages),
+            if (bounded) Expanded(child: body) else body,
+          ],
+        );
+      },
+    );
+  }
+
+  // ───────────────────────── Toolbar ─────────────────────────
+
+  Widget _buildToolbar(int totalCount, int pageCount, int totalPages) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final compact = maxW < _compactBreakpoint;
+        final hPad = compact ? 12.0 : 24.0;
+        final innerW = maxW - (hPad * 2);
+
+        final from = totalCount == 0 ? 0 : _currentPage * _rowsPerPage + 1;
+        final to = _currentPage * _rowsPerPage + pageCount;
+
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 12 : 20),
           decoration: const BoxDecoration(
             color: Colors.white,
-            border: Border(
-              bottom: BorderSide(color: _borderColor, width: 1),
-            ),
+            border: Border(bottom: BorderSide(color: _borderColor, width: 1)),
           ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
+              // Search + filters + column toggle wrap onto new lines when needed
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  // Clean Search Box
                   if (widget.showSearch)
-                    Expanded(
-                      flex: 2,
-                      child: Container(
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: _backgroundColor,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _borderColor),
-                        ),
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: widget.searchPlaceholder,
-                            hintStyle: const TextStyle(
-                              fontSize: 14,
-                              color: _secondaryText,
-                            ),
-                            prefixIcon: const Icon(Icons.search, color: _secondaryText, size: 20),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () {
-                                      setState(() {
-                                        _searchQuery = '';
-                                        _currentPage = 0;
-                                      });
-                                    },
-                                  )
-                                : null,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          ),
-                          style: const TextStyle(fontSize: 14, color: _bodyText),
-                          onChanged: (value) {
-                            setState(() {
-                              _searchQuery = value;
-                              _currentPage = 0;
-                            });
-                          },
-                        ),
-                      ),
+                    SizedBox(
+                      width: compact
+                          ? (widget.filters == null ? innerW - 50 : innerW)
+                          : (innerW * 0.4).clamp(220.0, 420.0),
+                      child: _buildSearchBox(),
                     ),
-                  
-                  // Clean Filters
-                  if (widget.filters != null) ...[
-                    const SizedBox(width: 12),
-                    ...widget.filters!.map((filter) {
-                      return Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: _buildFilterDropdown(filter),
-                      );
-                    }).toList(),
-                  ],
-                  
-                  // Column Visibility Button
-                  const SizedBox(width: 8),
-                  PopupMenuButton<String>(
-                    icon: Container(
-                      height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: _backgroundColor,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _borderColor),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.view_column, color: _secondaryText, size: 18),
-                          SizedBox(width: 4),
-                          Icon(Icons.arrow_drop_down, color: _secondaryText, size: 18),
-                        ],
-                      ),
-                    ),
-                    tooltip: 'Show/Hide Columns',
-                    itemBuilder: (context) {
-                      return widget.columns.where((col) => col.key != 'actions').map((column) {
-                        final isVisible = !_hiddenColumns.contains(column.key);
-                        return CheckedPopupMenuItem<String>(
-                          value: column.key,
-                          checked: isVisible,
-                          child: Text(column.label),
-                        );
-                      }).toList();
-                    },
-                    onSelected: (columnKey) {
-                      setState(() {
-                        if (_hiddenColumns.contains(columnKey)) {
-                          _hiddenColumns.remove(columnKey);
-                        } else {
-                          _hiddenColumns.add(columnKey);
-                        }
-                      });
-                    },
-                  ),
+                  if (widget.filters != null)
+                    ...widget.filters!.map((filter) => SizedBox(
+                          width: compact ? (innerW - 8 - 50) / 2 : 180,
+                          child: _buildFilterDropdown(filter),
+                        )),
+                  _buildColumnToggle(),
                 ],
               ),
-              
-              // Results count and pagination
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              SizedBox(height: compact ? 12 : 16),
+              // Count + pagination wrap instead of overflowing
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
+                spacing: 12,
                 children: [
                   Text(
-                    'Showing ${_filteredData.isEmpty ? 0 : _currentPage * _rowsPerPage + 1}-${(_currentPage * _rowsPerPage + _paginatedData.length)} of ${_filteredData.length} entries',
+                    'Showing $from-$to of $totalCount entries',
                     style: const TextStyle(
                       fontSize: 13,
                       color: _secondaryText,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  if (_totalPages > 1) _buildPagination(),
+                  if (totalPages > 1) _buildPagination(totalPages),
                 ],
               ),
             ],
           ),
-        ),
+        );
+      },
+    );
+  }
 
-        // Clean Table
-        Expanded(
-          child: _filteredData.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'No data found',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: _secondaryText,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Try adjusting your search or filters',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: _secondaryText,
-                        ),
-                      ),
-                      if (_searchQuery.isNotEmpty || _selectedFilters.values.any((v) => v != null && v != 'all'))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _searchQuery = '';
-                                _selectedFilters.clear();
-                                _currentPage = 0;
-                              });
-                            },
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Clear filters'),
-                          ),
-                        ),
-                    ],
-                  ),
+  Widget _buildSearchBox() {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: _backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _borderColor),
+      ),
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: widget.searchPlaceholder,
+          hintMaxLines: 1,
+          hintStyle: const TextStyle(
+            fontSize: 14,
+            color: _secondaryText,
+            overflow: TextOverflow.ellipsis,
+          ),
+          prefixIcon: const Icon(Icons.search, color: _secondaryText, size: 20),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    setState(() {
+                      _searchQuery = '';
+                      _currentPage = 0;
+                    });
+                  },
                 )
-              : Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: _borderColor),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: _buildTable(),
-                  ),
-                ),
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
-      ],
+        style: const TextStyle(fontSize: 14, color: _bodyText),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+            _currentPage = 0;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildColumnToggle() {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      tooltip: 'Show/Hide Columns',
+      child: Container(
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: _backgroundColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _borderColor),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.view_column, color: _secondaryText, size: 18),
+            SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down, color: _secondaryText, size: 18),
+          ],
+        ),
+      ),
+      itemBuilder: (context) {
+        return widget.columns.where((col) => col.key != 'actions').map((column) {
+          final isVisible = !_hiddenColumns.contains(column.key);
+          return CheckedPopupMenuItem<String>(
+            value: column.key,
+            checked: isVisible,
+            child: Text(column.label),
+          );
+        }).toList();
+      },
+      onSelected: (columnKey) {
+        setState(() {
+          if (_hiddenColumns.contains(columnKey)) {
+            _hiddenColumns.remove(columnKey);
+          } else {
+            _hiddenColumns.add(columnKey);
+          }
+        });
+      },
     );
   }
 
@@ -363,6 +348,7 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
+          isExpanded: true,
           value: _selectedFilters[filter.key] ?? 'all',
           icon: const Icon(Icons.keyboard_arrow_down, color: _secondaryText, size: 20),
           style: const TextStyle(
@@ -373,14 +359,14 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
           items: [
             DropdownMenuItem(
               value: 'all',
-              child: Text('All ${filter.label}'),
+              child: Text('All ${filter.label}', maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             ...filter.options.map((option) {
               return DropdownMenuItem(
                 value: option.value,
-                child: Text(option.label),
+                child: Text(option.label, maxLines: 1, overflow: TextOverflow.ellipsis),
               );
-            }).toList(),
+            }),
           ],
           onChanged: (value) {
             setState(() {
@@ -393,36 +379,34 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
     );
   }
 
-  Widget _buildPagination() {
-    return Row(
-      children: [
-        // Previous button
-        Material(
-          color: _currentPage > 0 ? Colors.white : _backgroundColor,
+  Widget _buildPagination(int totalPages) {
+    Widget navButton(IconData icon, bool enabled, VoidCallback onTap) {
+      return Material(
+        color: enabled ? Colors.white : _backgroundColor,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
           borderRadius: BorderRadius.circular(6),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                border: Border.all(color: _borderColor),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                Icons.chevron_left,
-                size: 20,
-                color: _currentPage > 0 ? _bodyText : _secondaryText,
-              ),
+          onTap: enabled ? onTap : null,
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              border: Border.all(color: _borderColor),
+              borderRadius: BorderRadius.circular(6),
             ),
+            child: Icon(icon, size: 20, color: enabled ? _bodyText : _secondaryText),
           ),
         ),
-        
-        // Page info
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        navButton(Icons.chevron_left, _currentPage > 0, () => setState(() => _currentPage--)),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            'Page ${_currentPage + 1} of $_totalPages',
+            'Page ${_currentPage + 1} of $totalPages',
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -430,126 +414,193 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
             ),
           ),
         ),
-        
-        // Next button
-        Material(
-          color: _currentPage < _totalPages - 1 ? Colors.white : _backgroundColor,
-          borderRadius: BorderRadius.circular(6),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: _currentPage < _totalPages - 1 ? () => setState(() => _currentPage++) : null,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                border: Border.all(color: _borderColor),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: _currentPage < _totalPages - 1 ? _bodyText : _secondaryText,
-              ),
-            ),
-          ),
-        ),
+        navButton(Icons.chevron_right, _currentPage < totalPages - 1,
+            () => setState(() => _currentPage++)),
       ],
     );
   }
 
-  Widget _buildTable() {
-    // Use LayoutBuilder to get available width
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text(
+              'No data found',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _secondaryText),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Try adjusting your search or filters',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: _secondaryText),
+            ),
+            if (_searchQuery.isNotEmpty ||
+                _selectedFilters.values.any((v) => v != null && v != 'all'))
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _searchQuery = '';
+                      _selectedFilters.clear();
+                      _currentPage = 0;
+                    });
+                  },
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Clear filters'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ───────────────────────── Table ─────────────────────────
+
+  /// Minimum comfortable width of a column. `DataTableColumn.width` wins,
+  /// otherwise it's derived from `flex`.
+  double _minWidthFor(DataTableColumn c) {
+    if (c.width != null) return c.width!;
+    return (110.0 * c.flex).clamp(100.0, 260.0);
+  }
+
+  Widget _buildTable(List<Map<String, dynamic>> rows) {
+    final visibleColumns =
+        widget.columns.where((col) => !_hiddenColumns.contains(col.key)).toList();
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth;
-        
-        return Column(
-          children: [
-            // Sticky Header Row
-            Container(
-              width: availableWidth,
-              decoration: const BoxDecoration(
-                color: _headerColor,
+        final available = constraints.maxWidth;
+        final minTotal = visibleColumns.fold<double>(0, (s, c) => s + _minWidthFor(c));
+
+        // Wide screen  -> columns stretch proportionally to fill the width
+        // Narrow screen -> columns keep their min width and the table scrolls sideways
+        final contentWidth = math.max(available, minTotal);
+        final scale = contentWidth / (minTotal == 0 ? 1 : minTotal);
+        double widthOf(DataTableColumn c) => _minWidthFor(c) * scale;
+
+        final bounded = constraints.hasBoundedHeight;
+
+        Widget buildRow(int index) {
+          final row = rows[index];
+          final isEven = index % 2 == 0;
+
+          return InkWell(
+            onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
+            hoverColor: _hoverColor,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isEven ? Colors.white : _backgroundColor,
+                border: const Border(
+                  bottom: BorderSide(color: _borderColor, width: 1),
+                ),
               ),
               child: Row(
-                children: widget.columns.where((col) => !_hiddenColumns.contains(col.key)).map((column) {
-                  return Expanded(
-                    flex: column.flex,
-                    child: Container(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: visibleColumns.map((column) {
+                  final cellWidget = column.builder != null
+                      ? column.builder!(row)
+                      : Text(
+                          row[column.key]?.toString() ?? '-',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _bodyText,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        );
+
+                  return SizedBox(
+                    width: widthOf(column),
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: const BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
-                        ),
-                      ),
-                      child: Text(
-                        column.label,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: _headerText,
-                          letterSpacing: 0.3,
-                        ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: cellWidget,
                       ),
                     ),
                   );
                 }).toList(),
               ),
             ),
-            
-            // Data Rows (scrollable)
-            Expanded(
-              child: SingleChildScrollView(
-                controller: _verticalScrollController,
-                child: Column(
-                  children: _paginatedData.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final row = entry.value;
-                    final isEven = index % 2 == 0;
-                    
-                    return InkWell(
-                      onTap: widget.onRowTap != null ? () => widget.onRowTap!(row) : null,
-                      hoverColor: _hoverColor,
-                      child: Container(
-                        width: availableWidth,
-                        decoration: BoxDecoration(
-                          color: isEven ? Colors.white : _backgroundColor,
-                          border: const Border(
-                            bottom: BorderSide(
-                              color: _borderColor,
-                              width: 1,
+          );
+        }
+
+        return Scrollbar(
+          controller: _horizontalScrollController,
+          thumbVisibility: minTotal > available,
+          notificationPredicate: (n) => n.depth == 0,
+          child: SingleChildScrollView(
+            controller: _horizontalScrollController,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: contentWidth,
+              // Only force a height when the parent actually gave us one
+              height: bounded ? constraints.maxHeight : null,
+              child: Column(
+                mainAxisSize: bounded ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  // Header
+                  Container(
+                    color: _headerColor,
+                    child: Row(
+                      children: visibleColumns.map((column) {
+                        return SizedBox(
+                          width: widthOf(column),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            decoration: const BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(color: Color(0xFF00AB94), width: 2),
+                              ),
+                            ),
+                            child: Text(
+                              column.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: _headerText,
+                                letterSpacing: 0.3,
+                              ),
                             ),
                           ),
-                        ),
-                        child: Row(
-                          children: widget.columns.where((col) => !_hiddenColumns.contains(col.key)).map((column) {
-                            final cellWidget = column.builder != null
-                                ? column.builder!(row)
-                                : Text(
-                                    row[column.key]?.toString() ?? '-',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: _bodyText,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  );
+                        );
+                      }).toList(),
+                    ),
+                  ),
 
-                            return Expanded(
-                              flex: column.flex,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                child: cellWidget,
-                              ),
-                            );
-                          }).toList(),
-                        ),
+                  // Rows
+                  if (bounded)
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _verticalScrollController,
+                        padding: EdgeInsets.only(bottom: widget.listBottomPadding),
+                        itemCount: rows.length,
+                        itemBuilder: (context, index) => buildRow(index),
                       ),
-                    );
-                  }).toList(),
-                ),
+                    )
+                  else
+                    Padding(
+                      padding: EdgeInsets.only(bottom: widget.listBottomPadding),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(rows.length, buildRow),
+                      ),
+                    ),
+                ],
               ),
             ),
-          ],
+          ),
         );
       },
     );
@@ -560,8 +611,11 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
 class DataTableColumn {
   final String key;
   final String label;
-  final double? width; // Now optional - will use flex if not provided
-  final int flex; // Flex weight for responsive columns
+
+  /// Minimum width in px. If omitted it's derived from [flex] (flex * 110).
+  /// On wide screens columns stretch to fill; on phones the table scrolls sideways.
+  final double? width;
+  final int flex;
   final Widget Function(Map<String, dynamic>)? builder;
 
   const DataTableColumn({

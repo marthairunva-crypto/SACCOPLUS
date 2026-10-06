@@ -4,7 +4,7 @@ class AppConstants {
   static const String appSubtitle = 'Poverty Must Go';
   static const String appTagline  = 'Empowering Communities • Building Futures';
   static const String appVersion  = '2.0.0';
-  static const String logoPath    = 'assets/images/logo2.png';
+  static const String logoPath    = 'assets/images/mbadifa-logo.png';
 
   // ── Image Upload (ImgBB) ──────────────────────────────────────────────────
   static const String imgbbApiKey    = '3f4e8e2c4b5c204728716579fe9355bf';
@@ -84,6 +84,19 @@ class AppConstants {
   static const String marzPayProxyKey = 'saccoplus_pro_2025_proxy_key';
   static const bool   useRenderProxy  = true;
   static const String renderProxyUrl  = 'https://marzpay-proxy.onrender.com';
+  
+  // Local development proxy (when running proxy server locally)
+  static const bool   useLocalProxy   = false;  // Set to false for web testing
+  static const String localProxyUrl   = 'http://localhost:10000';
+  
+  // Get active proxy URL based on configuration and platform
+  static String get activeProxyUrl {
+    // On web, always use remote proxy (CORS issue with localhost)
+    if (identical(0, 0.0)) { // This is always true, placeholder for kIsWeb check
+      return renderProxyUrl;
+    }
+    return useLocalProxy ? localProxyUrl : renderProxyUrl;
+  }
 
   // ── Bank Transfer ─────────────────────────────────────────────────────────
   static const int bankTransferMinAmount = 2500; // UGX

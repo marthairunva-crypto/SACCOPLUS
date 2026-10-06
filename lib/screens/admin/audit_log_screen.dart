@@ -40,15 +40,17 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+    
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(
+      appBar: canPop ? AppBar(
         title: const Text('Audit Trail'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => Navigator.pop(context),
         ),
-      ),
+      ) : null,
       body: Column(
         children: [
           // ── Search + filter ──────────────────────────────────────────
@@ -216,26 +218,35 @@ class _AuditTile extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _color.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(action,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                                fontSize: 9, color: _color, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
                       ),
-                      child: Text(action,
-                          style: GoogleFonts.poppins(
-                              fontSize: 9, color: _color, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
                     ),
+                    const SizedBox(width: 8),
                     Text(timeStr,
                         style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textSecondary)),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textPrimary, fontWeight: FontWeight.w500)),
                 const SizedBox(height: 3),
                 Text(
                   'By: $actorName ($actorRole)${targetName != null ? '  •  Target: $targetName' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.poppins(fontSize: 10, color: AppTheme.textSecondary),
                 ),
               ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -215,99 +216,308 @@ class PaymentHubScreen extends StatelessWidget {
 }
 
 // Mobile Money Screen
-class MobileMoneyScreen extends StatelessWidget {
+class MobileMoneyScreen extends StatefulWidget {
   const MobileMoneyScreen({super.key});
+
+  @override
+  State<MobileMoneyScreen> createState() => _MobileMoneyScreenState();
+}
+
+class _MobileMoneyScreenState extends State<MobileMoneyScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final _currencyFormat = NumberFormat('#,###', 'en_US');
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: Text('Mobile Money', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        backgroundColor: Colors.white,
+        title: Text(
+          'Mobile Money Transactions',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.white),
+        ),
+        backgroundColor: Colors.purple.shade700,
+        foregroundColor: Colors.white,
         elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildProviderCards(context),
-            const SizedBox(height: 24),
-            Text('Recent Transactions', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            _buildTransactionsList(),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          labelStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+          unselectedLabelStyle: GoogleFonts.inter(fontSize: 13),
+          tabs: const [
+            Tab(icon: Icon(Icons.pending_actions), text: 'Pending'),
+            Tab(icon: Icon(Icons.check_circle), text: 'Completed'),
+            Tab(icon: Icon(Icons.history), text: 'All'),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildProviderCards(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: _buildProviderCard('MTN Mobile Money', Colors.yellow.shade700, Icons.phone_android)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildProviderCard('Airtel Money', Colors.red, Icons.phone_iphone)),
-      ],
-    );
-  }
-
-  Widget _buildProviderCard(String provider, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
+      body: Column(
         children: [
-          Icon(icon, color: Colors.white, size: 40),
-          const SizedBox(height: 8),
-          Text(
-            provider,
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-            textAlign: TextAlign.center,
+          _buildSummaryCards(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildTransactionsList('pending'),
+                _buildTransactionsList('completed'),
+                _buildTransactionsList('all'),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionsList() {
+  Widget _buildSummaryCards() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('mobileMoneyTransactions')
           .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .orderBy('createdAt', descending: true)
-          .limit(20)
           .snapshots(),
       builder: (context, snapshot) {
+        double pending = 0;
+        double completed = 0;
+        int pendingCount = 0;
+        int completedCount = 0;
+
+        if (snapshot.hasData) {
+          for (var doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final amount = (data['amount'] ?? 0).toDouble();
+            final status = data['status'] as String?;
+
+            if (status == 'pending') {
+              pending += amount;
+              pendingCount++;
+            } else if (status == 'completed' || status == 'approved') {
+              completed += amount;
+              completedCount++;
+            }
+          }
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.purple.shade700, Colors.purple.shade900],
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildSummaryCard(
+                  'Pending',
+                  'UGX ${_currencyFormat.format(pending)}',
+                  '$pendingCount transactions',
+                  Icons.access_time,
+                  Colors.orange.shade400,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSummaryCard(
+                  'Completed',
+                  'UGX ${_currencyFormat.format(completed)}',
+                  '$completedCount transactions',
+                  Icons.check_circle,
+                  Colors.green.shade400,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSummaryCard(String label, String amount, String subtitle, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              amount,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: Colors.white60,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionsList(String filter) {
+    Query query = FirebaseFirestore.instance
+        .collection('mobileMoneyTransactions')
+        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+        .orderBy('createdAt', descending: true);
+
+    if (filter == 'pending') {
+      query = query.where('status', isEqualTo: 'pending');
+    } else if (filter == 'completed') {
+      query = query.where('status', whereIn: ['completed', 'approved']);
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: query.limit(50).snapshots(),
+      builder: (context, snapshot) {
         if (snapshot.hasError) {
-          print('');
-          print('🔥🔥🔥 FIRESTORE INDEX ERROR - MOBILE MONEY 🔥🔥🔥');
-          print('');
-          print(snapshot.error.toString());
-          print('');
-          print('👆 COPY THE URL ABOVE AND PASTE IN YOUR BROWSER 👆');
-          print('');
+          // Extract the Firestore index URL from the error message
+          final errorMsg = snapshot.error.toString();
+          String? indexUrl;
+          
+          // Try to extract URL from the error message
+          final urlMatch = RegExp(r'https://[^\s]+').firstMatch(errorMsg);
+          if (urlMatch != null) {
+            indexUrl = urlMatch.group(0);
+          }
+          
+          // Print to console
+          debugPrint('');
+          debugPrint('🔥🔥🔥 FIRESTORE INDEX ERROR - MOBILE MONEY 🔥🔥🔥');
+          debugPrint('');
+          debugPrint(errorMsg);
+          debugPrint('');
+          if (indexUrl != null) {
+            debugPrint('👆 INDEX URL: $indexUrl 👆');
+            debugPrint('');
+          }
+          
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                Text('Index Required', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                const Text('Check console for index creation URL'),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Firestore Index Required',
+                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This query requires a composite index.',
+                    style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (indexUrl != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: SelectableText(
+                        indexUrl,
+                        style: GoogleFonts.robotoMono(fontSize: 11, color: Colors.blue.shade700),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (indexUrl != null) {
+                          Clipboard.setData(ClipboardData(text: indexUrl));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Index URL copied to clipboard!'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy URL'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  const SizedBox(height: 8),
+                  Text(
+                    'Click the URL above, sign in to Firebase Console, and click "Create Index".',
+                    style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple.shade700,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -319,18 +529,46 @@ class MobileMoneyScreen extends StatelessWidget {
         final transactions = snapshot.data!.docs;
 
         if (transactions.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(40),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(40),
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.phone_android_outlined, size: 48, color: Colors.grey.shade300),
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.phone_android_outlined,
+                      size: 64,
+                      color: Colors.grey.shade400,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    filter == 'pending'
+                        ? 'No pending transactions'
+                        : filter == 'completed'
+                            ? 'No completed transactions'
+                            : 'No transactions yet',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text('No mobile money transactions', style: GoogleFonts.poppins(color: Colors.grey)),
+                  Text(
+                    'Client mobile money deposits will appear here',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
@@ -338,38 +576,180 @@ class MobileMoneyScreen extends StatelessWidget {
         }
 
         return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
           itemCount: transactions.length,
           itemBuilder: (context, index) {
-            final txn = transactions[index].data() as Map<String, dynamic>;
+            final doc = transactions[index];
+            final txn = doc.data() as Map<String, dynamic>;
+            final status = txn['status'] as String? ?? 'pending';
+            final isPending = status == 'pending';
+
             return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isPending ? Colors.orange.shade200 : Colors.green.shade200,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Icon(Icons.phone_android, color: ModernTheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(txn['provider'] ?? 'Mobile Money', style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13)),
-                        Text(
-                          DateFormat('MMM dd, yyyy').format((txn['createdAt'] as Timestamp).toDate()),
-                          style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: isPending
+                                      ? [Colors.orange.shade400, Colors.orange.shade600]
+                                      : [Colors.green.shade400, Colors.green.shade600],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                isPending ? Icons.pending_actions : Icons.check_circle,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    txn['memberName'] ?? txn['clientName'] ?? 'Unknown Member',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    txn['provider'] ?? 'Mobile Money',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isPending ? Colors.orange.shade50 : Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isPending ? Colors.orange.shade200 : Colors.green.shade200,
+                                ),
+                              ),
+                              child: Text(
+                                isPending ? 'PENDING' : 'COMPLETED',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isPending ? Colors.orange.shade700 : Colors.green.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              _buildDetailRow('Amount', 'UGX ${_currencyFormat.format(txn['amount'])}'),
+                              const Divider(height: 16),
+                              _buildDetailRow('Phone', txn['phoneNumber'] ?? 'N/A'),
+                              const Divider(height: 16),
+                              _buildDetailRow(
+                                'Date',
+                                txn['createdAt'] != null
+                                    ? DateFormat('MMM dd, yyyy hh:mm a').format(
+                                        (txn['createdAt'] as Timestamp).toDate(),
+                                      )
+                                    : 'N/A',
+                              ),
+                              if (txn['reference'] != null) ...[
+                                const Divider(height: 16),
+                                _buildDetailRow('Reference', txn['reference']),
+                              ],
+                              if (txn['description'] != null) ...[
+                                const Divider(height: 16),
+                                _buildDetailRow('Description', txn['description']),
+                              ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Text(
-                    NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0).format(txn['amount']),
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
+                  if (isPending)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(14),
+                          bottomRight: Radius.circular(14),
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _approveTransaction(doc.id, txn),
+                              icon: const Icon(Icons.check, size: 18),
+                              label: const Text('Approve'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _rejectTransaction(doc.id),
+                              icon: const Icon(Icons.close, size: 18),
+                              label: const Text('Reject'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red.shade600,
+                                side: BorderSide(color: Colors.red.shade600, width: 2),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             );
@@ -377,6 +757,173 @@ class MobileMoneyScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _approveTransaction(String docId, Map<String, dynamic> txn) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Update member's savings balance
+      final memberId = txn['memberId'] as String?;
+      if (memberId != null && memberId.isNotEmpty) {
+        final memberRef = FirebaseFirestore.instance.collection('saccoplus-members').doc(memberId);
+        final memberSnap = await memberRef.get();
+        
+        if (memberSnap.exists) {
+          final currentSavings = (memberSnap.data()?['savingsBalance'] ?? 0).toDouble();
+          final amount = (txn['amount'] ?? 0).toDouble();
+          
+          await memberRef.update({
+            'savingsBalance': currentSavings + amount,
+          });
+
+          // Record in savings transactions
+          await FirebaseFirestore.instance.collection('saccoplus-savings-transactions').add({
+            'tenantId': FirebaseService.sessionTenantId,
+            'memberId': memberId,
+            'memberName': txn['memberName'] ?? 'Unknown',
+            'type': 'Deposit',
+            'amount': amount,
+            'balanceAfter': currentSavings + amount,
+            'method': 'Mobile Money',
+            'provider': txn['provider'],
+            'phoneNumber': txn['phoneNumber'],
+            'reference': txn['reference'],
+            'description': txn['description'] ?? 'Mobile money deposit',
+            'status': 'Approved',
+            'approvedBy': FirebaseService.sessionProfile?['name'] as String? ?? 
+                         FirebaseService.sessionProfile?['fullName'] as String? ?? 'Admin',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      // Update transaction status
+      await FirebaseFirestore.instance
+          .collection('mobileMoneyTransactions')
+          .doc(docId)
+          .update({
+        'status': 'completed',
+        'approvedAt': FieldValue.serverTimestamp(),
+        'approvedBy': FirebaseService.sessionProfile?['name'] as String? ?? 
+                     FirebaseService.sessionProfile?['fullName'] as String? ?? 'Admin',
+      });
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transaction approved successfully'),
+            backgroundColor: Colors.green.shade600,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectTransaction(String docId) async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange.shade700),
+            const SizedBox(width: 12),
+            const Text('Reject Transaction?'),
+          ],
+        ),
+        content: const Text('Are you sure you want to reject this transaction? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('mobileMoneyTransactions')
+          .doc(docId)
+          .update({
+        'status': 'rejected',
+        'rejectedAt': FieldValue.serverTimestamp(),
+        'rejectedBy': FirebaseService.sessionProfile?['name'] as String? ?? 
+                     FirebaseService.sessionProfile?['fullName'] as String? ?? 'Admin',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Transaction rejected'),
+            backgroundColor: Colors.orange.shade600,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
   }
 }
 

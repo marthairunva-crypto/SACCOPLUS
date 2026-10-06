@@ -152,11 +152,14 @@ class _BankTransferScreenState extends State<BankTransferScreen> {
         walletSource: 'main',
       );
       if (!mounted) return;
-      final status = result['status'] as String? ?? '';
-      if (status == 'processing' || status == 'completed') {
+      
+      // Check if transfer was successful (reference means money was deducted)
+      final reference = result['reference'] as String? ?? '';
+      if (reference.isNotEmpty) {
         _showSuccess(result);
         _clearForm();
       } else {
+        final status = result['status'] as String? ?? 'failed';
         _showErrorSheet(_friendlyError('Transfer failed with status: $status'));
       }
     } catch (e) {

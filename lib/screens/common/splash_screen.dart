@@ -157,107 +157,36 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 const Spacer(flex: 2),
 
-                // Logo with premium glow
+                // Logo - clean without glow
                 Center(
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Outer glow ring
-                      Container(
-                        width: 168, height: 168,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.2),
-                              blurRadius: 50,
-                              spreadRadius: 10,
-                            ),
-                          ],
+                  child: Container(
+                    width: 140,
+                    height: 140,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
                         ),
-                      )
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
-                          .scale(
-                              begin: const Offset(1, 1),
-                              end: const Offset(1.1, 1.1),
-                              duration: 2000.ms,
-                              curve: Curves.easeInOut),
-                      
-                      Container(
-                        width: 148, height: 148,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: ModernTheme.accent.withOpacity(0.3),
-                              blurRadius: 40,
-                              spreadRadius: 5,
-                            ),
-                          ],
-                        ),
-                      )
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
-                          .scale(
-                              begin: const Offset(1, 1),
-                              end: const Offset(1.08, 1.08),
-                              duration: 1800.ms,
-                              curve: Curves.easeInOut),
-                      
-                      Container(
-                        width: 124, height: 124,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.15),
-                          border: Border.all(
-                              color: Colors.white.withOpacity(0.3), width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.2),
-                              blurRadius: 30,
-                              spreadRadius: 3,
-                            ),
-                          ],
-                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: ClipOval(
+                      child: Image.asset(
+                        AppConstants.logoPath,
+                        fit: BoxFit.cover,
                       ),
-                      
-                      Container(
-                        width: 100, height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          border: Border.all(
-                              color: Colors.white.withOpacity(0.5), width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: ModernTheme.accent.withOpacity(0.5),
-                              blurRadius: 40,
-                              spreadRadius: 5,
-                            ),
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.8),
-                              blurRadius: 20,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: Image.asset(
-                            AppConstants.logoPath,
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      )
-                          .animate()
-                          .scale(
-                              begin: const Offset(0.3, 0.3),
-                              duration: 800.ms,
-                              curve: Curves.elasticOut)
-                          .fadeIn(duration: 500.ms),
-                    ],
-                  ),
+                    ),
+                  )
+                      .animate()
+                      .scale(
+                          begin: const Offset(0.5, 0.5),
+                          duration: 600.ms,
+                          curve: Curves.easeOut)
+                      .fadeIn(duration: 400.ms),
                 ),
 
                 const SizedBox(height: 40),
@@ -378,7 +307,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'A product of',
+                      'SACCO PLUS is a product of',
                       style: GoogleFonts.poppins(
                           color: Colors.white30, fontSize: 10),
                     ),

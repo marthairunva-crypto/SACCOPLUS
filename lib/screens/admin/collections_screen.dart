@@ -186,13 +186,50 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
           .limit(100)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // Show loading only briefly
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         
+        // Show error with details
         if (snapshot.hasError) {
           return Center(
-            child: Text('Error loading data: ${snapshot.error}'),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading collections',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.error}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'The Firebase index may still be building. Please wait a few minutes.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.grey.shade500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
           );
         }
         
@@ -203,7 +240,22 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
               children: [
                 Icon(Icons.payments_outlined, size: 64, color: Colors.grey.shade300),
                 const SizedBox(height: 16),
-                Text('No collections in this period', style: GoogleFonts.poppins(color: Colors.grey)),
+                Text(
+                  'No collections in this period',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Collections will appear here when payments are made',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
               ],
             ),
           );

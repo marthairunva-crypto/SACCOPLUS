@@ -7,7 +7,7 @@ import '../../core/firebase_service.dart';
 
 class Member360Screen extends StatefulWidget {
   final String? memberId;
-  
+
   Member360Screen({super.key, this.memberId});
 
   @override
@@ -20,8 +20,10 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Map<String, dynamic>? _memberData;
   bool _isLoading = false;
   List<Map<String, dynamic>> _members = [];
-  
+
   final _currencyFormat = NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0);
+
+  bool get _isNarrow => MediaQuery.of(context).size.width < 600;
 
   @override
   void initState() {
@@ -43,12 +45,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Future<void> _loadMembers() async {
     try {
       print('🔍 Loading members for tenantId: ${FirebaseService.sessionTenantId}');
-      
+
       // Use FirebaseService.getAllFarmersOnce() instead of direct query
       final members = await FirebaseService.getAllFarmersOnce();
-      
+
       print('📥 Loaded ${members.length} members from Firebase');
-      
+
+      if (!mounted) return;
       setState(() {
         _members = members;
         // Sort in memory
@@ -61,59 +64,107 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
   Future<void> _loadMemberData() async {
     if (_selectedMemberId == null) return;
-    
+
     print('🔍 Loading member data for ID: $_selectedMemberId');
     setState(() => _isLoading = true);
-    
+
     try {
       // Load member profile
       final memberDoc = await FirebaseFirestore.instance
           .collection('saccoplus-members')
           .doc(_selectedMemberId)
           .get();
-      
+
       print('📥 Member doc exists: ${memberDoc.exists}');
-      
+
       if (!memberDoc.exists) {
         print('❌ Member not found!');
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
-      
+
       final data = memberDoc.data()!;
       print('✅ Member loaded: ${data['name'] ?? data['fullName']}');
       print('💰 Savings Balance: ${data['savingsBalance']}');
-      
+
+      if (!mounted) return;
       setState(() {
         _memberData = {'id': memberDoc.id, ...data};
         _isLoading = false;
       });
-      
+
       print('✅ State updated, _memberData is ${_memberData != null ? 'SET' : 'NULL'}');
     } catch (e) {
       print('❌ Error loading member: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading member: $e')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading member: $e')),
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getMemberLoans(String memberId, String memberName) async {
+    try {
+      debugPrint('🔍 Getting loans for memberId: $memberId, memberName: $memberName');
+
+      // Get all loans for this tenant
+      final allLoans = await FirebaseFirestore.instance
+          .collection('saccoplus-loans')
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .get();
+
+      debugPrint('📊 Total loans in tenant: ${allLoans.docs.length}');
+
+      // Filter loans that belong to this member (by ID or name)
+      final memberNameLower = memberName.toLowerCase();
+      final memberLoans = <Map<String, dynamic>>[];
+
+      for (final doc in allLoans.docs) {
+        final data = doc.data();
+        final loanMemberName = (data['memberName'] ?? '').toString().toLowerCase();
+
+        // Check if this loan belongs to this member
+        final belongsToMember = data['memberId'] == memberId ||
+                                data['farmerId'] == memberId ||
+                                loanMemberName == memberNameLower;
+
+        if (belongsToMember) {
+          memberLoans.add({'id': doc.id, ...data});
+          debugPrint('✅ Found loan ${doc.id}: status=${data['status']}, principal=${data['principalOutstanding']}');
+        }
       }
+
+      // Sort by creation date (most recent first)
+      memberLoans.sort((a, b) {
+        final aDate = a['createdAt'] as Timestamp?;
+        final bDate = b['createdAt'] as Timestamp?;
+        if (aDate == null || bDate == null) return 0;
+        return bDate.compareTo(aDate);
+      });
+
+      debugPrint('✅ Total loans for member: ${memberLoans.length}');
+      return memberLoans;
+    } catch (e) {
+      debugPrint('❌ Error getting member loans: $e');
+      return [];
     }
   }
 
   void _showEditMemberDialog() {
     if (_memberData == null) return;
-    
+
     final nameController = TextEditingController(text: _memberData!['name'] ?? _memberData!['fullName'] ?? '');
     final phoneController = TextEditingController(text: _memberData!['phone'] ?? '');
+    final altPhoneController = TextEditingController(text: _memberData!['alternativePhone'] ?? '');
     final ninController = TextEditingController(text: _memberData!['nationalId'] ?? '');
     final villageController = TextEditingController(text: _memberData!['village'] ?? '');
     final districtController = TextEditingController(text: _memberData!['district'] ?? '');
     final nextOfKinController = TextEditingController(text: _memberData!['nextOfKin'] ?? '');
     final nextOfKinPhoneController = TextEditingController(text: _memberData!['nextOfKinPhone'] ?? '');
-    
+
     final formKey = GlobalKey<FormState>();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -121,7 +172,14 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           children: [
             const Icon(Icons.edit, color: AppTheme.primary),
             const SizedBox(width: 12),
-            Text('Edit Member Information', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+            Flexible(
+              child: Text(
+                'Edit Member Information',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         ),
         content: Form(
@@ -230,7 +288,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               if (!formKey.currentState!.validate()) {
                 return;
               }
-              
+
               try {
                 await FirebaseFirestore.instance
                     .collection('saccoplus-members')
@@ -245,7 +303,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                   'nextOfKin': nextOfKinController.text.trim(),
                   'nextOfKinPhone': nextOfKinPhoneController.text.trim(),
                 });
-                
+
                 if (mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -279,11 +337,16 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Widget build(BuildContext context) {
     // Check if we're in a dialog
     final isDialog = ModalRoute.of(context)?.settings.name == null;
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: Text('Member 360° View', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text(
+          'Member 360° View',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: !isDialog,
@@ -304,14 +367,14 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           // Member selector
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(_isNarrow ? 12 : 16),
             child: _buildMemberSelector(),
           ),
-          
+
           if (_memberData != null) ...[
             // Member header card
             _buildMemberHeader(),
-            
+
             // Tabs
             Container(
               color: Colors.white,
@@ -332,7 +395,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                 ],
               ),
             ),
-            
+
             // Tab content
             Expanded(
               child: _isLoading
@@ -371,14 +434,19 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildMemberSelector() {
+    final compact = _isNarrow;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Search Member',
-          style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
-        ),
-        const SizedBox(height: 8),
+        // Label hidden on phones to save vertical space (hint text says the same)
+        if (!compact) ...[
+          Text(
+            'Search Member',
+            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 8),
+        ],
         Autocomplete<Map<String, dynamic>>(
           displayStringForOption: (member) => member['name'] ?? member['fullName'] ?? 'Unknown',
           optionsBuilder: (TextEditingValue textEditingValue) {
@@ -392,17 +460,17 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               final phone = (member['phone'] ?? '').toString();
               final accountNumber = (member['accountNumber'] ?? '').toString();
               final memberNumber = (member['memberNumber'] ?? '').toString();
-              return name.contains(query) || 
-                     phone.contains(query) || 
+              return name.contains(query) ||
+                     phone.contains(query) ||
                      accountNumber.contains(query) ||
                      memberNumber.contains(query);
             }).toList();
-            
+
             print('🔍 Autocomplete: query="$query", results=${results.length}');
             if (results.isNotEmpty) {
               print('🔍 First result: ${results.first['name'] ?? results.first['fullName']}');
             }
-            
+
             return results;
           },
           onSelected: (Map<String, dynamic> member) {
@@ -417,11 +485,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               controller: controller,
               focusNode: focusNode,
               decoration: InputDecoration(
-                hintText: 'Type name, phone, account or member number...',
+                hintText: 'Search name, phone, account or member no...',
+                hintMaxLines: 1,
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
                 fillColor: const Color(0xFFF5F7FA),
+                isDense: compact,
               ),
               onEditingComplete: onEditingComplete,
             );
@@ -442,10 +512,10 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                       final member = options.elementAt(index);
                       final accountNum = member['accountNumber'] ?? '';
                       final phone = member['phone'] ?? 'No phone';
-                      final subtitle = accountNum.isNotEmpty 
+                      final subtitle = accountNum.isNotEmpty
                           ? '$phone  •  Acc: $accountNum'
                           : phone;
-                      
+
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: AppTheme.primary.withOpacity(0.1),
@@ -456,10 +526,14 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                         ),
                         title: Text(
                           member['name'] ?? member['fullName'] ?? 'Unknown',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
                         ),
                         subtitle: Text(
                           subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(fontSize: 12),
                         ),
                         onTap: () => onSelected(member),
@@ -476,34 +550,132 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   }
 
   Widget _buildMemberHeader() {
-    final memberName = _memberData!['name'] ?? _memberData!['fullName'] ?? 'Unknown';
-    final memberPhone = _memberData!['phone'] ?? 'No phone';
+    final memberName = (_memberData!['name'] ?? _memberData!['fullName'] ?? 'Unknown').toString();
+    final memberPhone = (_memberData!['phone'] ?? 'No phone').toString();
     final accountNumber = _memberData!['accountNumber'] ?? 'N/A';
     final memberNumber = _memberData!['memberNumber'] ?? 'N/A';
-    
+    final initial = memberName.isNotEmpty ? memberName[0].toUpperCase() : '?';
+    final narrow = _isNarrow;
+
+    final statusBadge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _memberData!['status'] == 'active' ? Colors.green : Colors.orange,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        (_memberData!['status'] ?? 'active').toString().toUpperCase(),
+        style: GoogleFonts.poppins(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+
+    // Wrap (instead of Row) so the chips drop to a new line rather than overflow
+    final chips = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _buildHeaderChip(Icons.phone, memberPhone),
+        _buildHeaderChip(
+          Icons.calendar_today,
+          'Joined ${_formatDate(_memberData!['createdAt'])}',
+        ),
+      ],
+    );
+
+    final decoration = BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)],
+      ),
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.1),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    );
+
+    // ---- Phone layout: compact, stacked ----
+    if (narrow) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.all(16),
+        decoration: decoration,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 26,
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  child: Text(
+                    initial,
+                    style: GoogleFonts.poppins(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        memberName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Acc: $accountNumber',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        'Member: $memberNumber',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                statusBadge,
+              ],
+            ),
+            const SizedBox(height: 12),
+            chips,
+          ],
+        ),
+      );
+    }
+
+    // ---- Wide layout ----
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: decoration,
       child: Row(
         children: [
           CircleAvatar(
             radius: 40,
             backgroundColor: Colors.white.withOpacity(0.2),
             child: Text(
-              memberName[0].toUpperCase(),
+              initial,
               style: GoogleFonts.poppins(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
@@ -518,6 +690,8 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               children: [
                 Text(
                   memberName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.poppins(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -534,36 +708,12 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _buildHeaderChip(Icons.phone, memberPhone),
-                    const SizedBox(width: 12),
-                    _buildHeaderChip(
-                      Icons.calendar_today,
-                      'Joined ${_formatDate(_memberData!['createdAt'])}',
-                    ),
-                  ],
-                ),
+                chips,
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _memberData!['status'] == 'active'
-                  ? Colors.green
-                  : Colors.orange,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              (_memberData!['status'] ?? 'active').toString().toUpperCase(),
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ),
+          const SizedBox(width: 12),
+          statusBadge,
         ],
       ),
     );
@@ -581,10 +731,69 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         children: [
           Icon(icon, size: 14, color: Colors.white70),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.white),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.white),
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Gradient banner used at the top of the Savings / Shares / Loans tabs.
+  /// The amount scales down if it is too wide, so it can never overflow.
+  Widget _buildBalanceBanner({
+    required String title,
+    required String amount,
+    required IconData icon,
+    required List<Color> colors,
+    String? footnote,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: colors),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+                ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    amount,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (footnote != null)
+                  Text(
+                    footnote,
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Icon(icon, size: 48, color: Colors.white24),
         ],
       ),
     );
@@ -594,9 +803,9 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     // Get real financial data from member document
     final savingsBalance = (_memberData!['savingsBalance'] ?? 0).toDouble();
     final sharesBalance = (_memberData!['sharesBalance'] ?? 0).toDouble();
-    final loanBalance = (_memberData!['loanBalance'] ?? 0).toDouble();
     final walletBalance = (_memberData!['walletBalance'] ?? 0).toDouble();
-    
+    final memberName = _memberData!['name'] ?? _memberData!['fullName'] ?? '';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -625,20 +834,33 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildSummaryCard('Active Loans', _currencyFormat.format(loanBalance), Icons.account_balance, Colors.orange)),
+              // Calculate actual loan balance dynamically
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _getMemberLoans(_selectedMemberId!, memberName),
+                  builder: (context, snapshot) {
+                    final loans = snapshot.data ?? [];
+                    final actualLoanBalance = loans.fold<double>(
+                      0,
+                      (sum, loan) => sum + (loan['principalOutstanding'] ?? 0).toDouble(),
+                    );
+                    return _buildSummaryCard('Active Loans', _currencyFormat.format(actualLoanBalance), Icons.account_balance, Colors.orange);
+                  },
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(child: _buildSummaryCard('Wallet Balance', _currencyFormat.format(walletBalance), Icons.account_balance_wallet, Colors.purple)),
             ],
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           // Personal Information
           _buildSectionTitle('Personal Information'),
           _buildInfoCard(),
-          
+
           const SizedBox(height: 24),
-          
+
           // Recent Activity
           _buildSectionTitle('Recent Activity'),
           _buildRecentActivity(),
@@ -650,10 +872,10 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Widget _buildSavingsTab() {
     // Get savings balance from member document
     final savingsBalance = (_memberData!['savingsBalance'] ?? 0).toDouble();
-    
+
     print('💰 Loading savings for member: $_selectedMemberId');
     print('💰 Member savings balance: $savingsBalance');
-    
+
     // Also check if there are transactions in the savings collection
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
@@ -665,91 +887,79 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         if (snapshot.hasError) {
           print('❌ Savings query error: ${snapshot.error}');
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
-                const SizedBox(height: 16),
-                Text('Error loading savings', style: GoogleFonts.poppins(color: Colors.red)),
-                Text('${snapshot.error}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                  const SizedBox(height: 16),
+                  Text('Error loading savings', style: GoogleFonts.poppins(color: Colors.red)),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
             ),
           );
         }
-        
+
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        
+
         final savingsTransactions = snapshot.data!.docs;
         print('💰 Found ${savingsTransactions.length} savings transactions');
-        
+
         // Calculate total from transactions if any exist
         final transactionsTotal = savingsTransactions.fold<double>(
           0,
           (sum, doc) => sum + ((doc.data() as Map)['amount'] ?? 0).toDouble(),
         );
-        
+
         print('💰 Transactions total: $transactionsTotal');
-        
+
         // Use the higher of the two (member document balance or transaction sum)
         final displayBalance = savingsBalance > 0 ? savingsBalance : transactionsTotal;
-        
+
         return Column(
           children: [
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF4A90E2), Color(0xFF357ABD)]),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Total Savings', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
-                      Text(
-                        _currencyFormat.format(displayBalance),
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (savingsTransactions.isNotEmpty)
-                        Text(
-                          '${savingsTransactions.length} transactions',
-                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
-                        ),
-                    ],
-                  ),
-                  const Icon(Icons.savings, size: 48, color: Colors.white24),
-                ],
-              ),
+            _buildBalanceBanner(
+              title: 'Total Savings',
+              amount: _currencyFormat.format(displayBalance),
+              icon: Icons.savings,
+              colors: const [Color(0xFF4A90E2), Color(0xFF357ABD)],
+              footnote: savingsTransactions.isNotEmpty ? '${savingsTransactions.length} transactions' : null,
             ),
             if (savingsTransactions.isEmpty)
               Expanded(
                 child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      Text('No savings transactions found', style: GoogleFonts.poppins(color: Colors.grey)),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Balance from member: ${_currencyFormat.format(displayBalance)}',
-                        style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Member ID: $_selectedMemberId',
-                        style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 10),
-                      ),
-                    ],
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        Text('No savings transactions found', style: GoogleFonts.poppins(color: Colors.grey)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Balance from member: ${_currencyFormat.format(displayBalance)}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Member ID: $_selectedMemberId',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 10),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               )
@@ -779,10 +989,10 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Widget _buildSharesTab() {
     // Get shares balance from member document
     final sharesBalance = (_memberData!['sharesBalance'] ?? 0).toDouble();
-    
+
     print('📊 Loading shares for member: $_selectedMemberId');
     print('📊 Member shares balance: $sharesBalance');
-    
+
     // Also check if there are transactions in the shares collection
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
@@ -794,91 +1004,79 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         if (snapshot.hasError) {
           print('❌ Shares query error: ${snapshot.error}');
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
-                const SizedBox(height: 16),
-                Text('Error loading shares', style: GoogleFonts.poppins(color: Colors.red)),
-                Text('${snapshot.error}', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                  const SizedBox(height: 16),
+                  Text('Error loading shares', style: GoogleFonts.poppins(color: Colors.red)),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
             ),
           );
         }
-        
+
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        
+
         final sharesTransactions = snapshot.data!.docs;
         print('📊 Found ${sharesTransactions.length} shares transactions');
-        
+
         // Calculate total from transactions if any exist
         final transactionsTotal = sharesTransactions.fold<double>(
           0,
           (sum, doc) => sum + ((doc.data() as Map)['amount'] ?? 0).toDouble(),
         );
-        
+
         print('📊 Transactions total: $transactionsTotal');
-        
+
         // Use the higher of the two (member document balance or transaction sum)
         final displayBalance = sharesBalance > 0 ? sharesBalance : transactionsTotal;
-        
+
         return Column(
           children: [
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF10B981), Color(0xFF059669)]),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Total Shares Value', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
-                      Text(
-                        _currencyFormat.format(displayBalance),
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (sharesTransactions.isNotEmpty)
-                        Text(
-                          '${sharesTransactions.length} transactions',
-                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
-                        ),
-                    ],
-                  ),
-                  const Icon(Icons.pie_chart, size: 48, color: Colors.white24),
-                ],
-              ),
+            _buildBalanceBanner(
+              title: 'Total Shares Value',
+              amount: _currencyFormat.format(displayBalance),
+              icon: Icons.pie_chart,
+              colors: const [Color(0xFF10B981), Color(0xFF059669)],
+              footnote: sharesTransactions.isNotEmpty ? '${sharesTransactions.length} transactions' : null,
             ),
             if (sharesTransactions.isEmpty)
               Expanded(
                 child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      Text('No shares transactions found', style: GoogleFonts.poppins(color: Colors.grey)),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Balance from member: ${_currencyFormat.format(displayBalance)}',
-                        style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Member ID: $_selectedMemberId',
-                        style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 10),
-                      ),
-                    ],
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        Text('No shares transactions found', style: GoogleFonts.poppins(color: Colors.grey)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Balance from member: ${_currencyFormat.format(displayBalance)}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Member ID: $_selectedMemberId',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 10),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               )
@@ -907,86 +1105,58 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
   Widget _buildLoansTab() {
     final loanBalance = (_memberData!['loanBalance'] ?? 0).toDouble();
-    
-    return FutureBuilder<QuerySnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('saccoplus-loans')
-          .where('farmerId', isEqualTo: _selectedMemberId)
-          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .orderBy('createdAt', descending: true)
-          .get(),
+    final memberName = _memberData!['name'] ?? _memberData!['fullName'] ?? '';
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _getMemberLoans(_selectedMemberId!, memberName),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        
-        final loans = snapshot.data!.docs;
-        
+
+        final loans = snapshot.data!;
+
         // Calculate actual outstanding balance from loan records
         final actualOutstanding = loans.fold<double>(
           0,
-          (sum, doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final principalOutstanding = (data['principalOutstanding'] ?? 0).toDouble();
+          (sum, loan) {
+            final principalOutstanding = (loan['principalOutstanding'] ?? 0).toDouble();
             return sum + principalOutstanding;
           },
         );
-        
+
         // Use the actual outstanding from loans if available, otherwise fall back to member document
         final displayBalance = actualOutstanding > 0 ? actualOutstanding : loanBalance;
-        
+
         return Column(
           children: [
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFFEF4444), Color(0xFFDC2626)]),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Outstanding Loan Balance', style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13)),
-                      Text(
-                        _currencyFormat.format(displayBalance),
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (loans.isNotEmpty)
-                        Text(
-                          '${loans.length} loan(s)',
-                          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
-                        ),
-                    ],
-                  ),
-                  const Icon(Icons.account_balance, size: 48, color: Colors.white24),
-                ],
-              ),
+            _buildBalanceBanner(
+              title: 'Outstanding Loan Balance',
+              amount: _currencyFormat.format(displayBalance),
+              icon: Icons.account_balance,
+              colors: const [Color(0xFFEF4444), Color(0xFFDC2626)],
+              footnote: loans.isNotEmpty ? '${loans.length} loan(s)' : null,
             ),
             if (loans.isEmpty)
               Expanded(
                 child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.account_balance_outlined, size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      Text('No loan records', style: GoogleFonts.poppins(color: Colors.grey)),
-                      if (loanBalance > 0) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Outstanding: ${_currencyFormat.format(loanBalance)}',
-                          style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
-                        ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.account_balance_outlined, size: 64, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        Text('No loan records', style: GoogleFonts.poppins(color: Colors.grey)),
+                        if (loanBalance > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Outstanding: ${_currencyFormat.format(loanBalance)}',
+                            style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 12),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               )
@@ -996,7 +1166,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                   padding: const EdgeInsets.all(16),
                   itemCount: loans.length,
                   itemBuilder: (context, index) {
-                    final loan = loans[index].data() as Map<String, dynamic>;
+                    final loan = loans[index];
                     return _buildLoanCard(loan);
                   },
                 ),
@@ -1014,9 +1184,9 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        
+
         final transactions = snapshot.data!;
-        
+
         if (transactions.isEmpty) {
           return Center(
             child: Column(
@@ -1029,7 +1199,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
             ),
           );
         }
-        
+
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: transactions.length,
@@ -1050,27 +1220,34 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
   Widget _buildDocumentsTab() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.folder_outlined, size: 64, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          Text('KYC documents, contracts, and attachments', style: GoogleFonts.poppins(color: Colors.grey)),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.folder_outlined, size: 64, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text(
+              'KYC documents, contracts, and attachments',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Future<List<Map<String, dynamic>>> _loadAllTransactions() async {
     final List<Map<String, dynamic>> allTransactions = [];
-    
+
     // Load savings
     final savingsSnap = await FirebaseFirestore.instance
         .collection('savings')
         .where('farmerId', isEqualTo: _selectedMemberId)
         .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
         .get();
-    
+
     for (var doc in savingsSnap.docs) {
       final data = doc.data();
       allTransactions.add({
@@ -1081,14 +1258,14 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         'color': Colors.green,
       });
     }
-    
+
     // Load shares
     final sharesSnap = await FirebaseFirestore.instance
         .collection('shares')
         .where('farmerId', isEqualTo: _selectedMemberId)
         .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
         .get();
-    
+
     for (var doc in sharesSnap.docs) {
       final data = doc.data();
       allTransactions.add({
@@ -1099,10 +1276,13 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         'color': Colors.blue,
       });
     }
-    
-    // Sort by date
-    allTransactions.sort((a, b) => (b['createdAt'] as Timestamp).compareTo(a['createdAt'] as Timestamp));
-    
+
+    // Sort by date, newest first (records without a date go to the bottom
+    // instead of crashing the whole tab)
+    DateTime dateOf(dynamic v) =>
+        v is Timestamp ? v.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+    allTransactions.sort((a, b) => dateOf(b['createdAt']).compareTo(dateOf(a['createdAt'])));
+
     return allTransactions;
   }
 
@@ -1140,17 +1320,22 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           const SizedBox(height: 12),
           Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -1208,7 +1393,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // Detailed information table
           Table(
             columnWidths: const {
@@ -1220,7 +1405,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               _buildTableRow('Account Number', _memberData!['accountNumber'] ?? 'N/A'),
               _buildTableRow('Member Number', _memberData!['memberNumber'] ?? 'N/A'),
               const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
-              
+
               // Personal Info
               _buildTableRow('Full Name', _memberData!['name'] ?? _memberData!['fullName'] ?? 'N/A', bold: true),
               _buildTableRow('Gender', _memberData!['gender'] ?? 'N/A'),
@@ -1229,21 +1414,21 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               _buildTableRow('Village', _memberData!['village'] ?? 'N/A'),
               _buildTableRow('District', _memberData!['district'] ?? 'N/A'),
               const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
-              
+
               // Member Classification
               _buildTableRow('Member Type', _memberData!['memberType'] ?? 'Individual'),
               _buildTableRow('Branch', _memberData!['branch'] ?? 'Main Branch'),
               _buildTableRow('Manager', _memberData!['manager'] ?? 'N/A'),
               _buildTableRow('Group', _memberData!['group'] ?? 'N/A'),
               const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
-              
+
               // Next of Kin
               _buildTableRow('Next of Kin', _memberData!['nextOfKin'] ?? 'N/A'),
               _buildTableRow('Next of Kin Phone', _memberData!['nextOfKinPhone'] ?? 'N/A'),
               const TableRow(children: [SizedBox(height: 16), SizedBox(height: 16)]),
-              
+
               // Account Status
-              _buildTableRow('Status', _memberData!['status'] ?? 'active', 
+              _buildTableRow('Status', _memberData!['status'] ?? 'active',
                 valueWidget: _buildStatusBadge(_memberData!['status'] ?? 'active')),
               _buildTableRow('KYC Status', _memberData!['kycStatus'] ?? 'pending',
                 valueWidget: _buildKycBadge(_memberData!['kycStatus'] ?? 'pending')),
@@ -1271,14 +1456,17 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: valueWidget ?? Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
-              fontSize: 13,
-              color: Colors.grey.shade800,
-            ),
-          ),
+          // Align badges to the left instead of stretching across the cell
+          child: valueWidget != null
+              ? Align(alignment: Alignment.centerLeft, child: valueWidget)
+              : Text(
+                  value,
+                  style: GoogleFonts.poppins(
+                    fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+                    fontSize: 13,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
         ),
       ],
     );
@@ -1309,7 +1497,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
   Widget _buildKycBadge(String status) {
     Color color;
     String label;
-    
+
     switch (status.toLowerCase()) {
       case 'approved':
         color = Colors.green;
@@ -1323,7 +1511,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
         color = Colors.orange;
         label = 'Pending';
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -1348,13 +1536,19 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 13)),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
-              color: isError ? Colors.red.shade700 : null,
+          Flexible(
+            child: Text(label, style: GoogleFonts.poppins(color: Colors.grey.shade600, fontSize: 13)),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: isError ? Colors.red.shade700 : null,
+              ),
             ),
           ),
         ],
@@ -1446,6 +1640,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
 
             if (activities.isEmpty) {
               return Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -1494,7 +1689,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                   final timeAgo = timestamp != null
                       ? _getTimeAgo(timestamp.toDate())
                       : 'Unknown';
-                  
+
                   return Column(
                     children: [
                       if (index > 0) const Divider(),
@@ -1555,11 +1750,17 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13)),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13),
+                ),
                 Text(time, style: GoogleFonts.poppins(color: Colors.grey, fontSize: 11)),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Text(
             'UGX $amount',
             style: GoogleFonts.poppins(
@@ -1573,7 +1774,11 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     );
   }
 
-  Widget _buildTransactionTile(Timestamp timestamp, dynamic amount, String description, IconData icon, Color color) {
+  /// Accepts a nullable/dynamic [timestamp] and [amount] so records with a
+  /// missing `createdAt` or `amount` no longer crash the list.
+  Widget _buildTransactionTile(dynamic timestamp, dynamic amount, String description, IconData icon, Color color) {
+    final num safeAmount = amount is num ? amount : (num.tryParse('$amount') ?? 0);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1605,17 +1810,20 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
               children: [
                 Text(
                   description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
                 ),
                 Text(
-                  _formatDate(timestamp),
+                  _formatDate(timestamp), // shows "N/A" when there's no date
                   style: GoogleFonts.poppins(color: Colors.grey, fontSize: 12),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Text(
-            _currencyFormat.format(amount),
+            _currencyFormat.format(safeAmount),
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.w600,
               color: color,
@@ -1636,7 +1844,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
             : status == 'overdue'
                 ? Colors.red
                 : Colors.orange;
-    
+
     final amount = (loan['amount'] ?? 0).toDouble();
     final principalOutstanding = (loan['principalOutstanding'] ?? 0).toDouble();
     final outstandingDays = loan['outstandingDays'] ?? 0;
@@ -1644,7 +1852,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
     final loanProduct = loan['loanProduct'] ?? 'General Loan';
     final interestRate = loan['interestRate'] ?? 0;
     final durationMonths = loan['durationMonths'] ?? 0;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1671,11 +1879,15 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                   children: [
                     Text(
                       loanProduct,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Ref: $referenceNumber',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(
                         fontSize: 11,
                         color: Colors.grey.shade600,
@@ -1685,6 +1897,7 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(

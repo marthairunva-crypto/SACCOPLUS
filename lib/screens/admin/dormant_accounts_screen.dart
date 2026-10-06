@@ -472,9 +472,11 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
   }
 
   void _showReactivateDialog(String memberId) {
+    if (!mounted) return;
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text('Reactivate Account', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
           'Mark this account as reactivated? This will update the account status.',
@@ -482,25 +484,36 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('users').doc(memberId).update({
-                'status': 'active',
-                'reactivatedAt': FieldValue.serverTimestamp(),
-                'reactivatedBy': FirebaseService.sessionUid,
-              });
+              Navigator.pop(dialogContext);
+              try {
+                await FirebaseFirestore.instance.collection('users').doc(memberId).update({
+                  'status': 'active',
+                  'reactivatedAt': FieldValue.serverTimestamp(),
+                  'reactivatedBy': FirebaseService.sessionUid,
+                });
 
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Account reactivated successfully'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Account reactivated successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
@@ -512,9 +525,11 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
   }
 
   void _showContactDialog(Map<String, dynamic> memberData) {
+    if (!mounted) return;
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text('Contact Member', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -534,7 +549,7 @@ class _DormantAccountsScreenState extends State<DormantAccountsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Close'),
           ),
         ],

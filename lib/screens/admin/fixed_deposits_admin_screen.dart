@@ -40,12 +40,19 @@ class _FixedDepositsAdminScreenState extends State<FixedDepositsAdminScreen>
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Fixed Deposits'),
+        title: Text('Fixed Deposits',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.embedded
             ? null
             : IconButton(
-                icon: const Icon(Icons.arrow_back_ios_rounded),
+                icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
               ),
         bottom: TabBar(

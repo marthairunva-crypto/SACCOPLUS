@@ -27,8 +27,10 @@ class _LoanRiskCenterScreenState extends State<LoanRiskCenterScreen> {
   }
 
   Future<void> _loadRiskAnalysis() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     final analysis = await _riskService.getLoanRiskAnalysis(widget.tenantId);
+    if (!mounted) return;
     setState(() {
       _analysis = analysis;
       _isLoading = false;

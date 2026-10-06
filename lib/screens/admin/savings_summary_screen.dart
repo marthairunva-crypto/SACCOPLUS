@@ -13,7 +13,8 @@ import '../../widgets/firebase_index_error.dart';
 import '../../utils/csv_export.dart';
 
 class SavingsSummaryScreen extends StatefulWidget {
-  const SavingsSummaryScreen({super.key});
+  final bool embedded;
+  const SavingsSummaryScreen({super.key, this.embedded = false});
 
   @override
   State<SavingsSummaryScreen> createState() => _SavingsSummaryScreenState();
@@ -22,27 +23,43 @@ class SavingsSummaryScreen extends StatefulWidget {
 class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
   final _currencyFormat = NumberFormat('#,###', 'en_US');
 
+  /// Latest members from the stream (used by the "Add Savings" member picker)
+  List<Map<String, dynamic>> _membersCache = [];
+
+  /// Keeps the layout tidy on very wide screens
+  static const double _maxContentWidth = 1400;
+
   @override
   Widget build(BuildContext context) {
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    final bool shouldShowAppBar = !widget.embedded || !isMobile || (isMobile && Navigator.of(context).canPop());
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        title: Text('Savings Summary', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.file_download_outlined),
-            tooltip: 'Export to CSV',
-            onPressed: () => _exportSavings(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            tooltip: 'Add Savings Record',
-            onPressed: () => _showAddEditDialog(null),
-          ),
-        ],
-      ),
+      appBar: shouldShowAppBar
+          ? AppBar(
+              title: Text(
+                'Savings Summary',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.file_download_outlined, color: Colors.white),
+                  tooltip: 'Export to CSV',
+                  onPressed: () => _exportSavings(context),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+                  tooltip: 'Add Savings Record',
+                  onPressed: () => _showAddEditDialog(null),
+                ),
+              ],
+            )
+          : null,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('saccoplus-members')
@@ -67,18 +84,23 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
             };
           }).toList();
 
+          _membersCache = members;
+
           if (members.isEmpty) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade400),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No members found',
-                    style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.savings_outlined, size: 64, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No members found',
+                      style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -89,143 +111,174 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
           final zeroBalance = members.where((m) => (m['savingsBalance'] as double) == 0).length;
           final highValue = members.where((m) => (m['savingsBalance'] as double) >= 1000000).length;
 
-          return Column(
-            children: [
-              // Summary Cards
-              Container(
-                margin: const EdgeInsets.all(12),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Row(
-                      children: [
-                        Expanded(child: _buildStatCard('Total Savings', 'UGX ${_currencyFormat.format(totalSavings.round())}', Icons.account_balance_wallet, const Color(0xFF00BFA6))),
-                        const SizedBox(width: 8),
-                        Expanded(child: _buildStatCard('Active Accounts', '$activeAccounts', Icons.people, const Color(0xFF1976D2))),
-                        const SizedBox(width: 8),
-                        Expanded(child: _buildStatCard('Zero Balance', '$zeroBalance', Icons.money_off, const Color(0xFFFF9800))),
-                        const SizedBox(width: 8),
-                        Expanded(child: _buildStatCard('High Value (≥1M)', '$highValue', Icons.trending_up, const Color(0xFF2E7D32))),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              
-              // Chart Section
-              Container(
-                margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+          // The WHOLE page scrolls, so nothing can overflow the bottom no
+          // matter how short the screen is. The table sizes itself to its rows.
+          return SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Summary Cards
+                    Container(
+                      margin: const EdgeInsets.all(12),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final narrow = constraints.maxWidth < 600;
+
+                          final cards = [
+                            _buildStatCard('Total Savings', 'UGX ${_currencyFormat.format(totalSavings.round())}', Icons.account_balance_wallet, const Color(0xFF00BFA6)),
+                            _buildStatCard('Active Accounts', '$activeAccounts', Icons.people, const Color(0xFF1976D2)),
+                            _buildStatCard('Zero Balance', '$zeroBalance', Icons.money_off, const Color(0xFFFF9800)),
+                            _buildStatCard('High Value (≥1M)', '$highValue', Icons.trending_up, const Color(0xFF2E7D32)),
+                          ];
+
+                          if (narrow) {
+                            // 2 x 2 grid
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: cards
+                                  .map((c) => SizedBox(
+                                        width: (constraints.maxWidth - 8) / 2,
+                                        child: c,
+                                      ))
+                                  .toList(),
+                            );
+                          }
+
+                          return IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (int i = 0; i < cards.length; i++) ...[
+                                  if (i > 0) const SizedBox(width: 8),
+                                  Expanded(child: cards[i]),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    // Chart Section
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      padding: const EdgeInsets.all(16),
+                      decoration: _cardDecoration(),
+                      child: _buildSavingsChart(members),
+                    ),
+
+                    // Table (no Expanded: it grows with its rows, page scrolls)
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      decoration: _cardDecoration(),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: ProfessionalDataTable(
+                          tableKey: 'savings_summary',
+                          listBottomPadding: 16,
+                          columns: [
+                            const DataTableColumn(key: 'accountNumber', label: 'Account No.', width: 130, flex: 2),
+                            const DataTableColumn(key: 'memberName', label: 'Member Name', width: 200, flex: 3),
+                            DataTableColumn(
+                              key: 'savingsBalance',
+                              label: 'Savings Balance',
+                              width: 170,
+                              flex: 2,
+                              builder: (row) => Text(
+                                'UGX ${_currencyFormat.format(row['savingsBalance'])}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(fontSize: 13, color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            DataTableColumn(
+                              key: 'actions',
+                              label: 'Actions',
+                              width: 100,
+                              flex: 1,
+                              builder: (row) => Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _actionButton(
+                                    Icons.edit_outlined,
+                                    const Color(0xFFE3F2FD),
+                                    const Color(0xFF1565C0),
+                                    () => _showAddEditDialog(row),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  _actionButton(
+                                    Icons.delete_outline,
+                                    const Color(0xFFFFEBEE),
+                                    const Color(0xFFD32F2F),
+                                    () => _showDeleteDialog(row),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          data: members,
+                          searchPlaceholder: 'Search by member name or account number...',
+                          filters: [
+                            TableFilter(
+                              key: 'savingsBalance',
+                              label: 'Balance Range',
+                              options: const [
+                                FilterOption(value: 'zero', label: 'Zero Balance'),
+                                FilterOption(value: 'below_100k', label: 'Below 100K'),
+                                FilterOption(value: '100k_500k', label: '100K - 500K'),
+                                FilterOption(value: '500k_1m', label: '500K - 1M'),
+                                FilterOption(value: 'above_1m', label: 'Above 1M'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                child: _buildSavingsChart(members),
               ),
-
-              // Table
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: ProfessionalDataTable(
-              tableKey: 'savings_summary',
-              columns: [
-                const DataTableColumn(key: 'accountNumber', label: 'Account No.', flex: 2),
-                const DataTableColumn(key: 'memberName', label: 'Member Name', flex: 3),
-                DataTableColumn(
-                  key: 'savingsBalance',
-                  label: 'Savings Balance',
-                  flex: 2,
-                  builder: (row) => Text(
-                    'UGX ${_currencyFormat.format(row['savingsBalance'])}',
-                    style: GoogleFonts.poppins(fontSize: 13, color: Colors.green.shade700, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                DataTableColumn(
-                  key: 'actions',
-                  label: 'Actions',
-                  flex: 2,
-                  builder: (row) => Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(4),
-                          onTap: () => _showAddEditDialog(row),
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE3F2FD),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF1565C0)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(4),
-                          onTap: () => _showDeleteDialog(row),
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFEBEE),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Icon(Icons.delete_outline, size: 14, color: Color(0xFFD32F2F)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              data: members,
-              searchPlaceholder: 'Search by member name or account number...',
-              filters: [
-                TableFilter(
-                  key: 'savingsBalance',
-                  label: 'Balance Range',
-                  options: const [
-                    FilterOption(value: 'zero', label: 'Zero Balance'),
-                    FilterOption(value: 'below_100k', label: 'Below 100K'),
-                    FilterOption(value: '100k_500k', label: '100K - 500K'),
-                    FilterOption(value: '500k_1m', label: '500K - 1M'),
-                    FilterOption(value: 'above_1m', label: 'Above 1M'),
-                  ],
-                ),
-              ],
             ),
-                  ),
-                ),
-              ),
-            ],
           );
         },
+      ),
+    );
+  }
+
+  // ───────────────────────── Helpers ─────────────────────────
+
+  BoxDecoration _cardDecoration() {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.grey.shade200, width: 1),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.04),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    );
+  }
+
+  Widget _actionButton(IconData icon, Color bg, Color fg, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(icon, size: 14, color: fg),
+        ),
       ),
     );
   }
@@ -271,22 +324,10 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
     }
   }
 
-
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -295,6 +336,8 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
           const SizedBox(height: 10),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w500,
@@ -319,6 +362,20 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
     );
   }
 
+  // ───────────────────────── Chart ─────────────────────────
+
+  PieChartSectionData _pieSection(double value, double total, Color color) {
+    // Tiny slices can't fit a label, so hide it instead of drawing over the ring
+    final showLabel = total > 0 && value / total >= 0.06;
+    return PieChartSectionData(
+      color: color,
+      value: value,
+      title: showLabel ? '${value.toInt()}' : '',
+      radius: 32,
+      titleStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+    );
+  }
+
   Widget _buildSavingsChart(List<Map<String, dynamic>> members) {
     final zero = members.where((m) => (m['savingsBalance'] as double) == 0).length;
     final low = members.where((m) {
@@ -330,68 +387,71 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
       return bal >= 100000 && bal < 500000;
     }).length;
     final high = members.where((m) => (m['savingsBalance'] as double) >= 500000).length;
+    final total = (zero + low + medium + high).toDouble();
 
-    return Row(
-      children: [
-        SizedBox(
-          width: 140,
-          height: 140,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final stacked = w < 300; // very narrow: pie on top, legend below
+        final pieSize = w < 400 ? 120.0 : 140.0;
+        final gap = w < 400 ? 16.0 : 24.0;
+
+        final pie = SizedBox(
+          width: pieSize,
+          height: pieSize,
           child: PieChart(
             PieChartData(
               sectionsSpace: 2,
-              centerSpaceRadius: 42,
+              centerSpaceRadius: pieSize * 0.3,
               sections: [
-                PieChartSectionData(
-                  color: Colors.grey.shade400,
-                  value: zero.toDouble(),
-                  title: '$zero',
-                  radius: 32,
-                  titleStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                ),
-                PieChartSectionData(
-                  color: const Color(0xFFFF9800),
-                  value: low.toDouble(),
-                  title: '$low',
-                  radius: 32,
-                  titleStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                ),
-                PieChartSectionData(
-                  color: const Color(0xFF1976D2),
-                  value: medium.toDouble(),
-                  title: '$medium',
-                  radius: 32,
-                  titleStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                ),
-                PieChartSectionData(
-                  color: const Color(0xFF2E7D32),
-                  value: high.toDouble(),
-                  title: '$high',
-                  radius: 32,
-                  titleStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                ),
+                _pieSection(zero.toDouble(), total, Colors.grey.shade400),
+                _pieSection(low.toDouble(), total, const Color(0xFFFF9800)),
+                _pieSection(medium.toDouble(), total, const Color(0xFF1976D2)),
+                _pieSection(high.toDouble(), total, const Color(0xFF2E7D32)),
               ],
             ),
           ),
-        ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+        );
+
+        final legend = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Savings Distribution',
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+            ),
+            const SizedBox(height: 12),
+            _buildLegendItem('Zero Balance', zero, Colors.grey.shade400),
+            const SizedBox(height: 8),
+            _buildLegendItem('Low (<100K)', low, const Color(0xFFFF9800)),
+            const SizedBox(height: 8),
+            _buildLegendItem('Medium (100K-500K)', medium, const Color(0xFF1976D2)),
+            const SizedBox(height: 8),
+            _buildLegendItem('High (≥500K)', high, const Color(0xFF2E7D32)),
+          ],
+        );
+
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Savings Distribution', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87)),
-              const SizedBox(height: 12),
-              _buildLegendItem('Zero Balance', zero, Colors.grey.shade400),
-              const SizedBox(height: 8),
-              _buildLegendItem('Low (<100K)', low, const Color(0xFFFF9800)),
-              const SizedBox(height: 8),
-              _buildLegendItem('Medium (100K-500K)', medium, const Color(0xFF1976D2)),
-              const SizedBox(height: 8),
-              _buildLegendItem('High (≥500K)', high, const Color(0xFF2E7D32)),
+              Center(child: pie),
+              const SizedBox(height: 16),
+              legend,
             ],
-          ),
-        ),
-      ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            pie,
+            SizedBox(width: gap),
+            Expanded(child: legend),
+          ],
+        );
+      },
     );
   }
 
@@ -400,114 +460,198 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
       children: [
         Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 8),
-        Text(label, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-        const Spacer(),
+        // Expanded + ellipsis -> long labels shrink instead of overflowing
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ),
+        const SizedBox(width: 8),
         Text('$count', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
       ],
     );
   }
 
+  // ───────────────────────── Dialogs ─────────────────────────
+
+  /// [member] == null  -> "Add Savings": pick a member, enter amount to ADD
+  /// [member] != null  -> "Edit Savings Balance": set the balance directly
   void _showAddEditDialog(Map<String, dynamic>? member) {
     final isEdit = member != null;
     final amountCtrl = TextEditingController(
-      text: isEdit ? member['savingsBalance'].toInt().toString() : '',
+      text: isEdit ? (member['savingsBalance'] as double).toInt().toString() : '',
     );
+    Map<String, dynamic>? selectedMember = member;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(isEdit ? Icons.edit : Icons.add, color: AppTheme.primary, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              isEdit ? 'Edit Savings Balance' : 'Add Savings',
-              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isEdit) ...[
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          title: Row(
+            children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppTheme.primary.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
+                  color: AppTheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.person, color: AppTheme.primary, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                child: Icon(isEdit ? Icons.edit : Icons.add, color: AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  isEdit ? 'Edit Savings Balance' : 'Add Savings',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isEdit) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            member['memberName'],
-                            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
-                          ),
-                          Text(
-                            'Account: ${member['accountNumber']}',
-                            style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary),
+                          Icon(Icons.person, color: AppTheme.primary, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  member['memberName'].toString(),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  'Account: ${member['accountNumber']}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(fontSize: 11, color: AppTheme.textSecondary),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+                  ] else ...[
+                    // Member picker (this was missing before, so "Add" crashed)
+                    Autocomplete<Map<String, dynamic>>(
+                      displayStringForOption: (m) => '${m['memberName']} (${m['accountNumber']})',
+                      optionsBuilder: (value) {
+                        final q = value.text.trim().toLowerCase();
+                        if (q.isEmpty) return const Iterable<Map<String, dynamic>>.empty();
+                        return _membersCache
+                            .where((m) =>
+                                m['memberName'].toString().toLowerCase().contains(q) ||
+                                m['accountNumber'].toString().toLowerCase().contains(q))
+                            .take(8);
+                      },
+                      onSelected: (m) => setDialogState(() => selectedMember = m),
+                      fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          onChanged: (_) {
+                            if (selectedMember != null) {
+                              setDialogState(() => selectedMember = null);
+                            }
+                          },
+                          decoration: InputDecoration(
+                            labelText: 'Member *',
+                            hintText: 'Search name or account number',
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                        );
+                      },
+                    ),
+                    if (selectedMember != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Current balance: UGX ${_currencyFormat.format(selectedMember!['savingsBalance'])}',
+                        style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
                   ],
-                ),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: isEdit ? 'Savings Balance (UGX) *' : 'Amount to add (UGX) *',
+                      hintText: 'e.g., 50000',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-            ],
-            TextField(
-              controller: amountCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Savings Balance (UGX) *',
-                hintText: 'e.g., 50000',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                filled: true,
-                fillColor: Colors.white,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final amount = int.tryParse(amountCtrl.text.trim());
+                if (selectedMember == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please select a member'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+                if (amount == null || amount < 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a valid amount'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+
+                final target = selectedMember!;
+                // Edit = set balance, Add = current balance + amount
+                final newBalance = isEdit
+                    ? amount
+                    : ((target['savingsBalance'] as double) + amount).round();
+
+                Navigator.pop(ctx);
+                await _saveSavings(target['id'], target['memberName'], newBalance);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
+              child: Text(isEdit ? 'Update' : 'Add', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final amount = int.tryParse(amountCtrl.text.trim());
-              if (amount == null || amount < 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a valid amount'), backgroundColor: Colors.red),
-                );
-                return;
-              }
-
-              Navigator.pop(ctx);
-              await _saveSavings(member!['id'], member['memberName'], amount);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: Text(isEdit ? 'Update' : 'Add', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-          ),
-        ],
       ),
     );
   }
@@ -555,11 +699,18 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         title: const Row(
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
             SizedBox(width: 12),
-            Text('Reset Savings?'),
+            Flexible(
+              child: Text(
+                'Reset Savings?',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: Text(

@@ -45,6 +45,39 @@ class FirebaseService {
     _loggedInProfile = profile;
   }
 
+  /// Check if member is using temporary password and needs first login setup
+  static Future<bool> needsFirstLoginSetup(String uid) async {
+    try {
+      final doc = await _db.collection(AppConstants.usersCol).doc(uid).get();
+      final data = doc.data();
+      if (data == null) return false;
+      
+      final tempPassword = data['tempPassword'] as String?;
+      final firstLoginComplete = data['firstLoginComplete'] as bool?;
+      
+      // Needs setup if they have temp password and haven't completed first login
+      return (tempPassword != null && tempPassword.isNotEmpty) && 
+             (firstLoginComplete != true);
+    } catch (e) {
+      print('Error checking first login status: $e');
+      return false;
+    }
+  }
+
+  /// Mark first login as complete and remove temp password
+  static Future<void> completeFirstLogin(String uid) async {
+    try {
+      await _db.collection(AppConstants.usersCol).doc(uid).update({
+        'firstLoginComplete': true,
+        'tempPassword': FieldValue.delete(), // Remove temp password
+        'lastLogin': DateTime.now(),
+      });
+    } catch (e) {
+      print('Error completing first login: $e');
+      rethrow;
+    }
+  }
+
   // Email/password (kept for admin accounts)
   static Future<UserCredential> signInWithEmail(
           String email, String password) =>
@@ -206,6 +239,12 @@ class FirebaseService {
             .get(const GetOptions(source: Source.server));
 
         var stored = doc.data()?['pinHash'] as String?;
+        var tempPassword = doc.data()?['tempPassword'] as String?;
+
+        // Check if using temporary password
+        if (tempPassword != null && tempPassword.isNotEmpty && pin == tempPassword) {
+          return true; // Allow login with temp password
+        }
 
         // pinHash found — verify it
         if (stored != null && stored.isNotEmpty) {
@@ -665,8 +704,14 @@ class FirebaseService {
       currencyOverride: currencyCode,
     );
 
+    // Ensure phone has + prefix for MarzPay API
+    String formattedPhone = phoneNumber.trim();
+    if (!formattedPhone.startsWith('+')) {
+      formattedPhone = '+$formattedPhone';
+    }
+
     final payload = <String, dynamic>{
-      'phone_number': phoneNumber,
+      'phone_number': formattedPhone,
       'amount': amount,
       'country': countryCode,
       'reference': reference,
@@ -690,39 +735,44 @@ class FirebaseService {
   }
 
   static Future<String> marzPayCheckStatus(String uuid) async {
-    final responseBody = await _marzPayRequest('GET', 'status', {}, uuid: uuid);
-    final json = jsonDecode(responseBody) as Map<String, dynamic>;
+    try {
+      final responseBody = await _marzPayRequest('GET', 'status', {}, uuid: uuid);
+      final json = jsonDecode(responseBody) as Map<String, dynamic>;
 
-    // Try every possible location MarzPay might put the status
-    final candidates = [
-      json['data']?['transaction']?['status'],
-      json['data']?['collection']?['status'],
-      json['data']?['status'],
-      json['transaction']?['status'],
-      json['collection']?['status'],
-      json['status'],
-    ];
+      // Try every possible location MarzPay might put the status
+      final candidates = [
+        json['data']?['transaction']?['status'],
+        json['data']?['collection']?['status'],
+        json['data']?['status'],
+        json['transaction']?['status'],
+        json['collection']?['status'],
+        json['status'],
+      ];
 
-    final rawStatus = candidates
-        .whereType<String>()
-        .map((s) => s.toLowerCase().trim())
-        .firstWhere((s) => s.isNotEmpty, orElse: () => 'unknown');
+      final rawStatus = candidates
+          .whereType<String>()
+          .map((s) => s.toLowerCase().trim())
+          .firstWhere((s) => s.isNotEmpty, orElse: () => 'unknown');
 
-    // Broad success matching — MarzPay uses different words per provider
-    const successWords = {
-      'successful', 'completed', 'success', 'complete',
-      'paid', 'approved', 'confirmed', 'processed',
-      'sandbox', // sandbox always counts as success
-    };
-    if (successWords.contains(rawStatus)) return 'completed';
+      // Broad success matching — MarzPay uses different words per provider
+      const successWords = {
+        'successful', 'completed', 'success', 'complete',
+        'paid', 'approved', 'confirmed', 'processed',
+        'sandbox', // sandbox always counts as success
+      };
+      if (successWords.contains(rawStatus)) return 'completed';
 
-    const failWords = {
-      'failed', 'cancelled', 'rejected', 'fail',
-      'declined', 'expired', 'error', 'timeout',
-    };
-    if (failWords.contains(rawStatus)) return 'failed';
+      const failWords = {
+        'failed', 'cancelled', 'rejected', 'fail',
+        'declined', 'expired', 'error', 'timeout',
+      };
+      if (failWords.contains(rawStatus)) return 'failed';
 
-    return rawStatus; // 'pending', 'processing', etc.
+      return rawStatus; // 'pending', 'processing', etc.
+    } catch (e) {
+      print('⚠️ Status check error (will retry): $e');
+      return 'pending'; // Return pending on network error so we keep checking
+    }
   }
 
   /// Routes MarzPay calls through proxy (fixed whitelisted IP 185.27.134.46)
@@ -1321,6 +1371,7 @@ class FirebaseService {
     }
 
     try {
+      // MarzPay phone verification expects format WITHOUT + prefix: 256XXXXXXXXX
       final formattedPhone = formatPhoneForMarzPay(phoneNumber).replaceAll('+', '');
       
       final responseBody = await _marzPayRequest('POST', 'phone-verification/verify', {
@@ -3127,3 +3178,4 @@ class FirebaseService {
     );
   }
 }
+

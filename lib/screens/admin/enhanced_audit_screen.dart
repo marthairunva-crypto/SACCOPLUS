@@ -732,8 +732,16 @@ class _EnhancedAuditScreenState extends State<EnhancedAuditScreen> with SingleTi
               Navigator.pop(context);
               _loadLogs();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.primary),
-            child: const Text('Apply'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ModernTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Apply Filters', 
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),

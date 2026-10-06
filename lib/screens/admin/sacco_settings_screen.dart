@@ -69,10 +69,12 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
     final docId = SaccoService.tenantId;
     try {
       final doc = await _db.collection(AppConstants.saccoCol).doc(docId).get();
+      if (!mounted) return;
       // Fall back to legacy 'config' doc for existing single-SACCO setups
       final d = doc.exists
           ? doc.data()!
           : (await _db.collection(AppConstants.saccoCol).doc('config').get()).data() ?? {};
+      if (!mounted) return;
       if (d.isNotEmpty) {
         _nameCtrl.text        = d['saccoName']   ?? d['name']        ?? AppConstants.appName;
         _taglineCtrl.text     = d['tagline']      ?? AppConstants.appTagline;
@@ -96,6 +98,7 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
         _setDefaults();
       }
     } catch (_) {
+      if (!mounted) return;
       _setDefaults();
     }
     if (mounted) setState(() => _loading = false);
@@ -173,19 +176,39 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('SACCO Settings'),
+        title: Text('SACCO Settings', style: GoogleFonts.poppins(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        )),
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
+          },
         ),
         actions: [
-          TextButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text('Save', style: GoogleFonts.poppins(
-                    color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.save_rounded, color: Colors.white, size: 18),
+              label: Text('Save', style: GoogleFonts.poppins(
+                  color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white.withOpacity(0.2),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
           ),
         ],
       ),

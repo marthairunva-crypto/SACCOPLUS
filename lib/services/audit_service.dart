@@ -1,11 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/firebase_service.dart';
-import '../core/sacco_service.dart';
 
 /// Comprehensive audit trail service for tracking all system actions
 class AuditService {
   static final _db = FirebaseFirestore.instance;
-  static final _tenantId = SaccoService.current.tenantId;
+
+  /// The collection the Audit Trail screen reads from. log() and getLogs()
+  /// MUST use the same one (log() used to write to 'audit_logs', which
+  /// nothing reads).
+  static const String collection = 'saccoplus-audit-logs';
+
+  // Getter (not static final) so it always reflects the current session's tenant.
+  static String get _tenantId => FirebaseService.sessionTenantId;
 
   /// Log an audit event
   static Future<void> log({
@@ -16,15 +22,18 @@ class AuditService {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-      await _db.collection('audit_logs').add({
+      final now = DateTime.now();
+      // Field names match what getLogs() reads.
+      await _db.collection(collection).add({
         'tenantId': _tenantId,
         'action': action,
-        'details': details,
-        'userId': userId,
-        'userName': FirebaseService.sessionProfile?['name'] ?? 'System',
-        'affectedUserId': affectedUserId,
-        'metadata': metadata ?? {},
-        'timestamp': DateTime.now(),
+        'description': details,
+        'actorUid': userId,
+        'actorName': FirebaseService.sessionProfile?['name'] ?? 'System',
+        'targetId': affectedUserId,
+        'meta': metadata ?? {},
+        'timestamp': now,
+        'timestampLocal': now.toIso8601String(),
         'ipAddress': 'N/A', // Could be enhanced with actual IP tracking
       });
     } catch (e) {
@@ -33,7 +42,7 @@ class AuditService {
     }
   }
 
-  /// Get audit logs with filters - Reading from CORRECT collection
+  /// Get audit logs with filters
   static Future<List<Map<String, dynamic>>> getLogs({
     String? userId,
     String? affectedUserId,
@@ -43,11 +52,7 @@ class AuditService {
     int limit = 100,
   }) async {
     try {
-      // Read from saccoplus-audit-logs (where logs are actually written)
-      final snapshot = await _db
-          .collection('saccoplus-audit-logs')
-          .limit(limit)
-          .get();
+      final snapshot = await _db.collection(collection).limit(limit).get();
 
       var logs = snapshot.docs.map((doc) {
         final data = doc.data();
@@ -58,15 +63,17 @@ class AuditService {
           'userId': data['actorUid'] ?? '',
           'userName': data['actorName'] ?? '',
           'affectedUserId': data['targetId'] ?? '',
-          'timestamp': data['timestamp'] != null 
+          'timestamp': data['timestamp'] is Timestamp
               ? (data['timestamp'] as Timestamp).toDate()
-              : DateTime.parse(data['timestampLocal'] ?? DateTime.now().toIso8601String()),
+              : DateTime.tryParse(data['timestampLocal']?.toString() ?? '') ??
+                  DateTime.now(),
           'metadata': data['meta'] ?? {},
         };
       }).toList();
 
       // Sort by timestamp descending
-      logs.sort((a, b) => (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
+      logs.sort((a, b) =>
+          (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
 
       // Apply filters client-side
       if (action != null) {
@@ -74,6 +81,9 @@ class AuditService {
       }
       if (userId != null) {
         logs = logs.where((log) => log['userId'] == userId).toList();
+      }
+      if (affectedUserId != null) {
+        logs = logs.where((log) => log['affectedUserId'] == affectedUserId).toList();
       }
       if (startDate != null) {
         logs = logs.where((log) => (log['timestamp'] as DateTime).isAfter(startDate)).toList();

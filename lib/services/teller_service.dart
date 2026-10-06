@@ -11,9 +11,22 @@ import 'arrears_service.dart';
 /// Teller service for handling deposits and withdrawals
 class TellerService {
   static final _db = FirebaseFirestore.instance;
-  
+
   // Use FirebaseService.sessionTenantId instead of SaccoService to ensure consistency
   static String get _tenantId => FirebaseService.sessionTenantId;
+
+  // ─── Safe runner for non-critical steps ───────────────────────────────────
+  /// Runs a non-critical step (notification, SMS, audit, arrears refresh)
+  /// without letting a failure there turn an already-recorded transaction
+  /// into a "failed" one.
+  static Future<void> _safe(Future<dynamic> Function() job, String label) async {
+    try {
+      await job();
+    } catch (e, st) {
+      print('⚠️ Non-critical step failed ($label): $e');
+      print(st);
+    }
+  }
 
   // ─── Process Deposit ──────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> processDeposit({
@@ -25,6 +38,9 @@ class TellerService {
     required String tellerName,
     required String tellerId,
     String? notes,
+    String? paymentMethod,
+    String? telecomProvider,
+    String? phoneNumber,
   }) async {
     try {
       final transactionRef = _db.collection(AppConstants.tellerTxnCol).doc();
@@ -47,16 +63,20 @@ class TellerService {
         'status': 'completed',
         'timestamp': timestamp,
         'receiptNumber': _generateReceiptNumber(timestamp),
+        'source': 'teller', // Mark as teller transaction
+        'paymentMethod': paymentMethod ?? 'Cash',
+        if (telecomProvider != null) 'telecomProvider': telecomProvider,
+        if (phoneNumber != null) 'phoneNumber': phoneNumber,
       };
 
       // Update member balance based on account type
       final memberRef = _db.collection('saccoplus-members').doc(memberId);
       final memberDoc = await memberRef.get();
-      
+
       print('💰 DEPOSIT: Updating member $memberId ($memberName)');
       print('💰   - Account type: $accountType');
       print('💰   - Deposit amount: $amount');
-      
+
       if (!memberDoc.exists) {
         throw Exception('Member not found');
       }
@@ -64,42 +84,29 @@ class TellerService {
       final memberData = memberDoc.data()!;
       Map<String, dynamic> updateData = {};
 
-      switch (accountType) {
-        case 'wallet':
-          final currentBalance = (memberData['walletBalance'] as num?)?.toInt() ?? 0;
-          final newBalance = currentBalance + amount;
-          updateData['walletBalance'] = newBalance;
-          
-          print('💰   - Current wallet balance: $currentBalance');
-          print('💰   - New wallet balance: $newBalance');
-          
-          // Also create wallet transaction
-          await _db.collection(AppConstants.walletTxnCol).add({
-            'tenantId': _tenantId,
-            'farmerId': memberId,
-            'type': 'deposit',
-            'amount': amount,
-            'timestamp': timestamp,
-            'description': 'Teller deposit by $tellerName',
-            'tellerProcessed': true,
-            'tellerId': tellerId,
-            'tellerName': tellerName,
-          });
-          break;
+      // New balance shown to the member in the notification / SMS.
+      // Stays null for loan payments (they send their own messages).
+      int? newBalanceForMessage;
 
+      switch (accountType) {
         case 'savings':
           final currentBalance = (memberData['savingsBalance'] as num?)?.toInt() ?? 0;
-          updateData['savingsBalance'] = currentBalance + amount;
-          
-          // Create savings transaction
-          await _db.collection(AppConstants.savingsCol).add({
+          final newBalance = currentBalance + amount;
+          updateData['savingsBalance'] = newBalance;
+          newBalanceForMessage = newBalance;
+
+          print('💰   - Current savings balance: $currentBalance');
+          print('💰   - New savings balance: $newBalance');
+
+          // Create savings transaction (use savingsTxnCol and memberId for consistency)
+          await _db.collection(AppConstants.savingsTxnCol).add({
             'tenantId': _tenantId,
-            'farmerId': memberId,
-            'farmerName': memberName,
+            'memberId': memberId,
+            'memberName': memberName,
             'type': 'deposit',
             'amount': amount,
-            'status': 'approved',
-            'timestamp': timestamp,
+            'status': 'Approved',
+            'createdAt': timestamp,
             'approvedBy': tellerName,
             'tellerProcessed': true,
             'tellerId': tellerId,
@@ -111,10 +118,14 @@ class TellerService {
           final sharePrice = SaccoService.current.shareValue;
           final sharesPurchased = (amount / sharePrice).floor();
           final actualAmount = sharesPurchased * sharePrice;
-          
+
           updateData['sharesBalance'] = currentBalance + actualAmount;
-          updateData['sharesCount'] = (memberData['sharesCount'] as num?)?.toInt() ?? 0 + sharesPurchased;
-          
+          // FIX: parentheses added so the purchased shares are really added
+          // to the existing count (before, `?? 0 + n` ignored n).
+          updateData['sharesCount'] =
+              ((memberData['sharesCount'] as num?)?.toInt() ?? 0) + sharesPurchased;
+          newBalanceForMessage = (currentBalance + actualAmount).toInt();
+
           // Create shares transaction
           await _db.collection(AppConstants.sharesCol).add({
             'tenantId': _tenantId,
@@ -130,7 +141,7 @@ class TellerService {
             'tellerProcessed': true,
             'tellerId': tellerId,
           });
-          
+
           transaction['sharesCount'] = sharesPurchased;
           transaction['sharePrice'] = sharePrice;
           break;
@@ -138,7 +149,8 @@ class TellerService {
         case 'fixed_deposit':
           final currentBalance = (memberData['fixedDepositBalance'] as num?)?.toInt() ?? 0;
           updateData['fixedDepositBalance'] = currentBalance + amount;
-          
+          newBalanceForMessage = currentBalance + amount;
+
           // Create fixed deposit transaction
           await _db.collection('saccoplus-fixed-deposits').add({
             'tenantId': _tenantId,
@@ -157,42 +169,49 @@ class TellerService {
 
         case 'loan_payment':
           // Find active loan for this member
-          final loansQuery = await _db.collection('saccoplus-loans')
+          final loansQuery = await _db
+              .collection('saccoplus-loans')
               .where('farmerId', isEqualTo: memberId)
               .where('tenantId', isEqualTo: _tenantId)
               .where('status', whereIn: ['active', 'overdue', 'approved'])
               .get();
-          
+
           if (loansQuery.docs.isEmpty) {
             throw Exception('No active loan found for this member');
           }
-          
+
           // Use the first active loan (or most recent)
           final loanDoc = loansQuery.docs.first;
           final loanData = loanDoc.data();
           final loanId = loanDoc.id;
-          
-          final principalOutstanding = (loanData['principalOutstanding'] as num?)?.toDouble() ?? 0.0;
-          final interestOutstanding = (loanData['interestOriginalBalance'] as num?)?.toDouble() ?? 0.0;
-          
+
+          final principalOutstanding =
+              (loanData['principalOutstanding'] as num?)?.toDouble() ?? 0.0;
+          final interestOutstanding =
+              (loanData['interestOriginalBalance'] as num?)?.toDouble() ?? 0.0;
+
           // Apply payment: first to interest, then to principal
           double remainingPayment = amount.toDouble();
           double interestPayment = 0;
           double principalPayment = 0;
-          
+
           if (interestOutstanding > 0) {
-            interestPayment = remainingPayment > interestOutstanding ? interestOutstanding : remainingPayment;
+            interestPayment = remainingPayment > interestOutstanding
+                ? interestOutstanding
+                : remainingPayment;
             remainingPayment -= interestPayment;
           }
-          
+
           if (remainingPayment > 0 && principalOutstanding > 0) {
-            principalPayment = remainingPayment > principalOutstanding ? principalOutstanding : remainingPayment;
+            principalPayment = remainingPayment > principalOutstanding
+                ? principalOutstanding
+                : remainingPayment;
           }
-          
+
           final newPrincipalOutstanding = principalOutstanding - principalPayment;
           final newInterestOutstanding = interestOutstanding - interestPayment;
           final newTotalOutstanding = newPrincipalOutstanding + newInterestOutstanding;
-          
+
           // Update loan
           await _db.collection('saccoplus-loans').doc(loanId).update({
             'principalOutstanding': newPrincipalOutstanding,
@@ -202,7 +221,7 @@ class TellerService {
             'lastPaymentDate': timestamp,
             'lastPaymentAmount': amount,
           });
-          
+
           // Create loan repayment record
           await _db.collection('saccoplus-loan-repayments').add({
             'tenantId': _tenantId,
@@ -218,33 +237,40 @@ class TellerService {
             'tellerName': tellerName,
             'loanReference': loanData['referenceNumber'] ?? '',
           });
-          
-          // Send in-app notification for loan repayment
-          await FirebaseService.sendNotification(
-            memberId,
-            'Loan Payment Received',
-            'Payment of UGX ${_formatAmount(amount)} received. '
-            'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
-            'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
-            'Outstanding: UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
-            'Receipt: ${transaction['receiptNumber']}',
-            type: 'loan_payment',
+
+          // Send in-app notification for loan repayment (non-critical)
+          await _safe(
+            () => FirebaseService.sendNotification(
+              memberId,
+              'Loan Payment Received',
+              'Payment of UGX ${_formatAmount(amount)} received. '
+              'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
+              'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
+              'Outstanding: UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
+              'Receipt: ${transaction['receiptNumber']}',
+              type: 'loan_payment',
+            ),
+            'loan notification',
           );
 
-          // Send SMS notification for loan repayment
-          final loanSmsMessage = 
+          // Send SMS notification for loan repayment (non-critical)
+          final loanSmsMessage =
+              'MBADIFA SACCO\n'
               'Dear $memberName, your loan payment of UGX ${_formatAmount(amount)} has been received. '
               'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
               'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
               'Outstanding balance: UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
               'Receipt: ${transaction['receiptNumber']}. '
               'Thank you.';
-          
-          await FirebaseService.sendSmsToPhone(memberPhone, loanSmsMessage);
-          
-          // Update arrears and penalties after payment
-          await ArrearsService.updateLoanArrears(loanId);
-          
+
+          await _safe(
+            () => FirebaseService.sendSmsToPhone(memberPhone, loanSmsMessage),
+            'loan sms',
+          );
+
+          // Update arrears and penalties after payment (non-critical)
+          await _safe(() => ArrearsService.updateLoanArrears(loanId), 'arrears update');
+
           transaction['loanId'] = loanId;
           transaction['loanReference'] = loanData['referenceNumber'] ?? '';
           transaction['principalPayment'] = principalPayment;
@@ -252,9 +278,12 @@ class TellerService {
           break;
       }
 
-      // Update member record
-      await memberRef.update(updateData);
-      
+      // Update member record (only if there is something to update;
+      // loan payments don't touch the member document)
+      if (updateData.isNotEmpty) {
+        await memberRef.update(updateData);
+      }
+
       print('💰 DEPOSIT: Member balance updated in Firebase!');
       print('💰   - Updated fields: ${updateData.keys.join(", ")}');
       print('💰   - New values: $updateData');
@@ -262,37 +291,57 @@ class TellerService {
       // Save transaction
       await transactionRef.set(transaction);
 
-      // Send in-app notification to member
-      await FirebaseService.sendNotification(
-        memberId,
-        'Deposit Successful',
-        'Your $accountType account has been credited with UGX ${_formatAmount(amount)}. '
-        'New balance: UGX ${_formatAmount(updateData.values.first as int)}. '
-        'Receipt: ${transaction['receiptNumber']}',
-        type: 'deposit',
-      );
+      // ── Everything below is NON-CRITICAL ─────────────────────────────────
+      // The money has already been recorded, so a failure here must never
+      // report the deposit as failed.
+      if (newBalanceForMessage != null) {
+        final balanceText = _formatAmount(newBalanceForMessage);
 
-      // Send SMS notification
-      final smsMessage = 
-          'Dear $memberName, your $accountType account has been credited with '
-          'UGX ${_formatAmount(amount)}. '
-          'New balance: UGX ${_formatAmount(updateData.values.first as int)}. '
-          'Receipt: ${transaction['receiptNumber']}. '
-          'Thank you.';
-      
-      await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
+        // In-app notification
+        await _safe(
+          () => FirebaseService.sendNotification(
+            memberId,
+            'Deposit Successful',
+            'Your $accountType account has been credited with UGX ${_formatAmount(amount)}. '
+            'New balance: UGX $balanceText. '
+            'Receipt: ${transaction['receiptNumber']}',
+            type: 'deposit',
+          ),
+          'deposit notification',
+        );
+
+        // SMS notification
+        final smsMessage =
+            'MBADIFA SACCO\n'
+            'Dear $memberName, your $accountType account has been credited with '
+            'UGX ${_formatAmount(amount)}. '
+            'New balance: UGX $balanceText. '
+            'Receipt: ${transaction['receiptNumber']}. '
+            'Thank you.';
+
+        await _safe(
+          () => FirebaseService.sendSmsToPhone(memberPhone, smsMessage),
+          'deposit sms',
+        );
+      }
 
       // Audit trail
-      await AuditService.log(
-        action: 'TELLER_DEPOSIT',
-        details: 'Teller $tellerName processed deposit of UGX $amount to $memberName ($accountType)',
-        userId: FirebaseService.currentUser!.uid,
-        affectedUserId: memberId,
-        metadata: {
-          'amount': amount,
-          'accountType': accountType,
-          'transactionId': transactionId,
-        },
+      // FIX: use sessionUid instead of FirebaseService.currentUser!.uid
+      // (currentUser is null with the custom session login → "Unexpected null value")
+      await _safe(
+        () => AuditService.log(
+          action: 'TELLER_DEPOSIT',
+          details:
+              'Teller $tellerName processed deposit of UGX $amount to $memberName ($accountType)',
+          userId: FirebaseService.sessionUid,
+          affectedUserId: memberId,
+          metadata: {
+            'amount': amount,
+            'accountType': accountType,
+            'transactionId': transactionId,
+          },
+        ),
+        'deposit audit',
       );
 
       return {
@@ -300,7 +349,9 @@ class TellerService {
         'transaction': transaction,
         'message': 'Deposit processed successfully. SMS sent to member.',
       };
-    } catch (e) {
+    } catch (e, st) {
+      print('❌ processDeposit error: $e');
+      print(st);
       return {
         'success': false,
         'message': 'Failed to process deposit: ${e.toString()}',
@@ -327,7 +378,7 @@ class TellerService {
       // Check member balance
       final memberRef = _db.collection('saccoplus-members').doc(memberId);
       final memberDoc = await memberRef.get();
-      
+
       if (!memberDoc.exists) {
         throw Exception('Member not found');
       }
@@ -337,36 +388,38 @@ class TellerService {
       int currentBalance = 0;
 
       switch (accountType) {
-        case 'wallet':
-          currentBalance = (memberData['walletBalance'] as num?)?.toInt() ?? 0;
-          if (currentBalance < amount) {
-            throw Exception('Insufficient wallet balance');
-          }
-          updateData['walletBalance'] = currentBalance - amount;
-          
-          // Create wallet transaction
-          await _db.collection(AppConstants.walletTxnCol).add({
-            'tenantId': _tenantId,
-            'farmerId': memberId,
-            'type': 'withdrawal',
-            'amount': amount,
-            'timestamp': timestamp,
-            'description': 'Teller withdrawal by $tellerName',
-            'tellerProcessed': true,
-            'tellerId': tellerId,
-            'tellerName': tellerName,
-          });
-          break;
-
         case 'savings':
           currentBalance = (memberData['savingsBalance'] as num?)?.toInt() ?? 0;
           if (currentBalance < amount) {
             throw Exception('Insufficient savings balance');
           }
           updateData['savingsBalance'] = currentBalance - amount;
-          
-          // Create savings transaction
-          await _db.collection(AppConstants.savingsCol).add({
+
+          // Create savings transaction (use savingsTxnCol and memberId for consistency)
+          await _db.collection(AppConstants.savingsTxnCol).add({
+            'tenantId': _tenantId,
+            'memberId': memberId,
+            'memberName': memberName,
+            'type': 'withdrawal',
+            'amount': amount,
+            'status': 'Approved',
+            'createdAt': timestamp,
+            'approvedBy': tellerName,
+            'tellerProcessed': true,
+            'tellerId': tellerId,
+          });
+          break;
+
+        case 'shares':
+          currentBalance = (memberData['sharesBalance'] as num?)?.toInt() ?? 0;
+          if (currentBalance < amount) {
+            throw Exception(
+                'Insufficient shares balance. Available: UGX ${_formatAmount(currentBalance)}');
+          }
+          updateData['sharesBalance'] = currentBalance - amount;
+
+          // Create shares transaction
+          await _db.collection(AppConstants.sharesCol).add({
             'tenantId': _tenantId,
             'farmerId': memberId,
             'farmerName': memberName,
@@ -400,6 +453,8 @@ class TellerService {
         'status': 'completed',
         'timestamp': timestamp,
         'receiptNumber': _generateReceiptNumber(timestamp),
+        'source': 'teller', // Mark as teller transaction
+        'paymentMethod': 'Cash',
         'balanceBefore': currentBalance,
         'balanceAfter': currentBalance - amount,
       };
@@ -410,38 +465,49 @@ class TellerService {
       // Save transaction
       await transactionRef.set(transaction);
 
-      // Send in-app notification to member
+      // ── Everything below is NON-CRITICAL ─────────────────────────────────
       final newBalance = currentBalance - amount;
-      await FirebaseService.sendNotification(
-        memberId,
-        '💸 Withdrawal Successful',
-        'UGX ${_formatAmount(amount)} has been withdrawn from your $accountType account. '
-        'New balance: UGX ${_formatAmount(newBalance)}. '
-        'Receipt: ${transaction['receiptNumber']}',
-        type: 'withdrawal',
+
+      await _safe(
+        () => FirebaseService.sendNotification(
+          memberId,
+          '💸 Withdrawal Successful',
+          'UGX ${_formatAmount(amount)} has been withdrawn from your $accountType account. '
+          'New balance: UGX ${_formatAmount(newBalance)}. '
+          'Receipt: ${transaction['receiptNumber']}',
+          type: 'withdrawal',
+        ),
+        'withdrawal notification',
       );
 
-      // Send SMS notification
-      final smsMessage = 
+      final smsMessage =
+          'MBADIFA SACCO\n'
           'Dear $memberName, UGX ${_formatAmount(amount)} has been withdrawn from '
           'your $accountType account. '
           'New balance: UGX ${_formatAmount(newBalance)}. '
           'Receipt: ${transaction['receiptNumber']}. '
           'Thank you.';
-      
-      await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
 
-      // Audit trail
-      await AuditService.log(
-        action: 'TELLER_WITHDRAWAL',
-        details: 'Teller $tellerName processed withdrawal of UGX $amount from $memberName ($accountType)',
-        userId: FirebaseService.currentUser!.uid,
-        affectedUserId: memberId,
-        metadata: {
-          'amount': amount,
-          'accountType': accountType,
-          'transactionId': transactionId,
-        },
+      await _safe(
+        () => FirebaseService.sendSmsToPhone(memberPhone, smsMessage),
+        'withdrawal sms',
+      );
+
+      // Audit trail (FIX: sessionUid instead of currentUser!.uid)
+      await _safe(
+        () => AuditService.log(
+          action: 'TELLER_WITHDRAWAL',
+          details:
+              'Teller $tellerName processed withdrawal of UGX $amount from $memberName ($accountType)',
+          userId: FirebaseService.sessionUid,
+          affectedUserId: memberId,
+          metadata: {
+            'amount': amount,
+            'accountType': accountType,
+            'transactionId': transactionId,
+          },
+        ),
+        'withdrawal audit',
       );
 
       return {
@@ -449,7 +515,9 @@ class TellerService {
         'transaction': transaction,
         'message': 'Withdrawal processed successfully. SMS sent to member.',
       };
-    } catch (e) {
+    } catch (e, st) {
+      print('❌ processWithdrawal error: $e');
+      print(st);
       return {
         'success': false,
         'message': 'Failed to process withdrawal: ${e.toString()}',
@@ -457,11 +525,277 @@ class TellerService {
     }
   }
 
+  // ─── Create Fixed Deposit ─────────────────────────────────────────────────────
+  /// Create a new fixed deposit for a member
+  static Future<Map<String, dynamic>> createFixedDeposit({
+    required String memberId,
+    required String memberName,
+    required double amount,
+    required int months,
+  }) async {
+    try {
+      final timestamp = DateTime.now();
+      final maturityDate = timestamp.add(Duration(days: months * 30));
+      final receiptNumber = _generateReceiptNumber(timestamp);
+
+      // Create fixed deposit record
+      final docRef = await _db.collection(AppConstants.fixedDepositCol).add({
+        'tenantId': _tenantId,
+        'memberId': memberId,
+        'memberName': memberName,
+        'amount': amount,
+        'interestRate': 10.0, // 10% per annum
+        'months': months,
+        'depositDate': Timestamp.fromDate(timestamp),
+        'maturityDate': Timestamp.fromDate(maturityDate),
+        'status': 'active',
+        'receiptNumber': receiptNumber,
+        'createdAt': FieldValue.serverTimestamp(),
+        'createdBy': _tenantId, // Use tenant ID as creator
+      });
+
+      // Deduct from member's savings
+      final memberRef = _db.collection('saccoplus-members').doc(memberId);
+      final memberSnap = await memberRef.get();
+      
+      if (memberSnap.exists) {
+        final currentSavings = (memberSnap.data()?['savingsBalance'] ?? 0).toDouble();
+        await memberRef.update({
+          'savingsBalance': currentSavings - amount,
+        });
+      }
+
+      // Record transaction
+      await _db.collection('saccoplus-savings-transactions').add({
+        'tenantId': _tenantId,
+        'memberId': memberId,
+        'memberName': memberName,
+        'type': 'Withdrawal',
+        'amount': amount,
+        'method': 'Fixed Deposit',
+        'description': 'Fixed deposit for $months months',
+        'status': 'Approved',
+        'receiptNumber': receiptNumber,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return {
+        'success': true,
+        'message': 'Fixed deposit created successfully',
+        'depositId': docRef.id,
+        'receiptNumber': receiptNumber,
+      };
+    } catch (e) {
+      print('❌ Error creating fixed deposit: $e');
+      return {
+        'success': false,
+        'message': 'Failed to create fixed deposit: $e',
+      };
+    }
+  }
+
+  // ─── Mature Fixed Deposit ─────────────────────────────────────────────────
+  /// Mature a fixed deposit and transfer principal + interest to savings
+  static Future<Map<String, dynamic>> matureFixedDeposit({
+    required String fixedDepositId,
+    required String tellerId,
+    required String tellerName,
+  }) async {
+    try {
+      final timestamp = DateTime.now();
+
+      // Get fixed deposit details
+      final fdDoc =
+          await _db.collection(AppConstants.fixedDepositCol).doc(fixedDepositId).get();
+
+      if (!fdDoc.exists) {
+        throw Exception('Fixed deposit not found');
+      }
+
+      final fdData = fdDoc.data()!;
+      final memberId = fdData['memberId'] as String;
+      final memberName = fdData['memberName'] as String? ?? 'Unknown';
+      final principal = (fdData['amount'] as num?)?.toInt() ?? 0;
+      final interestRate = (fdData['interestRate'] as num?)?.toDouble() ?? 10.0;
+      final status = fdData['status'] as String? ?? 'active';
+
+      if (status == 'Matured' || status == 'matured') {
+        throw Exception('This fixed deposit has already been matured');
+      }
+
+      // Calculate interest earned
+      final depositDate = (fdData['depositDate'] as Timestamp?)?.toDate() ?? timestamp;
+      final daysElapsed = timestamp.difference(depositDate).inDays;
+      final yearsElapsed = daysElapsed / 365.0;
+      final interestEarned = (principal * (interestRate / 100) * yearsElapsed).round();
+      final totalPayout = principal + interestEarned;
+
+      print('💰 Maturing Fixed Deposit:');
+      print('   - Principal: UGX ${_formatAmount(principal)}');
+      print('   - Interest Rate: $interestRate%');
+      print('   - Days Elapsed: $daysElapsed');
+      print('   - Interest Earned: UGX ${_formatAmount(interestEarned)}');
+      print('   - Total Payout: UGX ${_formatAmount(totalPayout)}');
+
+      // Get member details
+      final memberDoc = await _db.collection('saccoplus-members').doc(memberId).get();
+      if (!memberDoc.exists) {
+        throw Exception('Member not found');
+      }
+
+      final memberData = memberDoc.data()!;
+      final memberPhone = memberData['phone'] as String? ?? '';
+      final currentSavings = (memberData['savingsBalance'] as num?)?.toInt() ?? 0;
+      final newSavings = currentSavings + totalPayout;
+
+      // Update fixed deposit status to matured
+      await _db.collection(AppConstants.fixedDepositCol).doc(fixedDepositId).update({
+        'status': 'Matured',
+        'maturedDate': timestamp,
+        'maturedBy': tellerName,
+        'interestEarned': interestEarned,
+        'totalPayout': totalPayout,
+        'maturedByTellerId': tellerId,
+      });
+
+      // Transfer to savings account
+      await _db.collection('saccoplus-members').doc(memberId).update({
+        'savingsBalance': newSavings,
+      });
+
+      // Create savings transaction for the payout
+      await _db.collection(AppConstants.savingsTxnCol).add({
+        'tenantId': _tenantId,
+        'memberId': memberId,
+        'memberName': memberName,
+        'type': 'fixed_deposit_maturity',
+        'amount': totalPayout,
+        'principal': principal,
+        'interestEarned': interestEarned,
+        'status': 'Approved',
+        'createdAt': timestamp,
+        'approvedBy': tellerName,
+        'tellerProcessed': true,
+        'tellerId': tellerId,
+        'fixedDepositId': fixedDepositId,
+      });
+
+      // Create teller transaction record
+      final receiptNumber = _generateReceiptNumber(timestamp);
+
+      await _db.collection(AppConstants.tellerTxnCol).add({
+        'tenantId': _tenantId,
+        'receiptNumber': receiptNumber,
+        'type': 'fixed_deposit_maturity',
+        'memberId': memberId,
+        'memberName': memberName,
+        'memberPhone': memberPhone,
+        'accountType': 'fixed_deposit',
+        'amount': totalPayout,
+        'principal': principal,
+        'interestEarned': interestEarned,
+        'timestamp': timestamp,
+        'tellerId': tellerId,
+        'tellerName': tellerName,
+        'fixedDepositId': fixedDepositId,
+        'status': 'completed',
+        'source': 'teller',
+      });
+
+      // ── Everything below is NON-CRITICAL ───────────────────────────────────
+      await _safe(
+        () => FirebaseService.sendNotification(
+          memberId,
+          '🎉 Fixed Deposit Matured',
+          'Your fixed deposit of UGX ${_formatAmount(principal)} has matured! '
+          'You earned UGX ${_formatAmount(interestEarned)} interest. '
+          'Total UGX ${_formatAmount(totalPayout)} has been transferred to your savings account. '
+          'New savings balance: UGX ${_formatAmount(newSavings)}.',
+          type: 'fixed_deposit_maturity',
+        ),
+        'maturity notification',
+      );
+
+      final smsMessage =
+          'MBADIFA SACCO\n'
+          'Congratulations! Your fixed deposit of UGX ${_formatAmount(principal)} has matured. '
+          'Interest earned: UGX ${_formatAmount(interestEarned)}. '
+          'Total UGX ${_formatAmount(totalPayout)} transferred to savings. '
+          'New balance: UGX ${_formatAmount(newSavings)}. '
+          'Thank you!';
+
+      await _safe(
+        () => FirebaseService.sendSmsToPhone(memberPhone, smsMessage),
+        'maturity sms',
+      );
+
+      // Audit trail (FIX: sessionUid instead of currentUser!.uid)
+      await _safe(
+        () => AuditService.log(
+          action: 'FIXED_DEPOSIT_MATURED',
+          details: 'Teller $tellerName matured fixed deposit for $memberName. '
+              'Principal: UGX $principal, Interest: UGX $interestEarned, Total: UGX $totalPayout',
+          userId: FirebaseService.sessionUid,
+          affectedUserId: memberId,
+          metadata: {
+            'fixedDepositId': fixedDepositId,
+            'principal': principal,
+            'interestEarned': interestEarned,
+            'totalPayout': totalPayout,
+            'receiptNumber': receiptNumber,
+          },
+        ),
+        'maturity audit',
+      );
+
+      return {
+        'success': true,
+        'principal': principal,
+        'interestEarned': interestEarned,
+        'totalPayout': totalPayout,
+        'receiptNumber': receiptNumber,
+        'message':
+            'Fixed deposit matured successfully. Total UGX ${_formatAmount(totalPayout)} transferred to savings.',
+      };
+    } catch (e, st) {
+      print('❌ matureFixedDeposit error: $e');
+      print(st);
+      return {
+        'success': false,
+        'message': 'Failed to mature fixed deposit: ${e.toString()}',
+      };
+    }
+  }
+
+  // ─── Get Member Fixed Deposits ────────────────────────────────────────────
+  /// Get all fixed deposits for a member
+  static Future<List<Map<String, dynamic>>> getMemberFixedDeposits(String memberId) async {
+    try {
+      final snapshot = await _db
+          .collection(AppConstants.fixedDepositCol)
+          .where('memberId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: _tenantId)
+          .orderBy('depositDate', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          ...data,
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting member fixed deposits: $e');
+      return [];
+    }
+  }
+
   // ─── Get Member Details ───────────────────────────────────────────────────
   static Future<Map<String, dynamic>?> getMemberDetails(String memberId) async {
     try {
       final doc = await _db.collection('saccoplus-members').doc(memberId).get();
-      
+
       if (!doc.exists) return null;
 
       final data = doc.data()!;
@@ -470,7 +804,6 @@ class TellerService {
         'name': data['name'] ?? 'Unknown',
         'phone': data['phone'] ?? '',
         'email': data['email'] ?? '',
-        'walletBalance': (data['walletBalance'] as num?)?.toInt() ?? 0,
         'savingsBalance': (data['savingsBalance'] as num?)?.toInt() ?? 0,
         'sharesValue': (data['sharesValue'] as num?)?.toInt() ?? 0,
         'sharesCount': (data['sharesCount'] as num?)?.toInt() ?? 0,
@@ -487,7 +820,7 @@ class TellerService {
 
     try {
       final queryLower = query.toLowerCase();
-      
+
       // Get all members for this tenant (no role filter - search all users)
       final allMembers = await _db
           .collection('saccoplus-members')
@@ -500,7 +833,7 @@ class TellerService {
         final data = doc.data();
         final name = (data['name'] ?? '').toString().toLowerCase();
         final phone = (data['phone'] ?? '').toString();
-        
+
         // Filter in-memory by name or phone
         if (name.contains(queryLower) || phone.contains(query)) {
           members.add({
@@ -508,7 +841,6 @@ class TellerService {
             'name': data['name'] ?? 'Unknown',
             'phone': data['phone'] ?? '',
             'memberNumber': data['memberNumber'] ?? '',
-            'walletBalance': (data['walletBalance'] as num?)?.toInt() ?? 0,
             'savingsBalance': (data['savingsBalance'] as num?)?.toInt() ?? 0,
             'sharesValue': (data['sharesValue'] as num?)?.toInt() ?? 0,
             'idStatus': data['idStatus'] ?? 'pending',
@@ -529,18 +861,20 @@ class TellerService {
     DateTime? startDate,
     DateTime? endDate,
     int limit = 50,
+    bool includeAllSources = true, // Include both teller and mobile app transactions
   }) async {
     try {
       print('🔍 TellerService.getTransactionHistory: Querying ${AppConstants.tellerTxnCol}');
       print('🔍   - tenantId: $_tenantId');
       print('🔍   - memberId: $memberId');
       print('🔍   - tellerId: $tellerId');
-      
+      print('🔍   - includeAllSources: $includeAllSources');
+
       Query query = _db
           .collection(AppConstants.tellerTxnCol)
           .where('tenantId', isEqualTo: _tenantId);
-          // Removed orderBy to avoid composite index requirement
-          // .orderBy('timestamp', descending: true);
+      // Removed orderBy to avoid composite index requirement
+      // .orderBy('timestamp', descending: true);
 
       if (memberId != null) {
         query = query.where('memberId', isEqualTo: memberId);
@@ -548,6 +882,11 @@ class TellerService {
 
       if (tellerId != null) {
         query = query.where('tellerId', isEqualTo: tellerId);
+      }
+
+      // If includeAllSources is false, only show teller transactions
+      if (!includeAllSources) {
+        query = query.where('source', isEqualTo: 'teller');
       }
 
       if (startDate != null) {
@@ -559,7 +898,7 @@ class TellerService {
       }
 
       final snapshot = await query.limit(limit).get();
-      
+
       print('🔍 TellerService.getTransactionHistory: Found ${snapshot.docs.length} documents');
       if (snapshot.docs.isNotEmpty) {
         print('🔍   First transaction: ${snapshot.docs.first.data()}');
@@ -570,13 +909,19 @@ class TellerService {
         return {
           'id': doc.id,
           ...data,
-          'timestamp': (data['timestamp'] as Timestamp).toDate(),
+          // Null-safe: one record without a timestamp no longer breaks the whole list
+          'timestamp': (data['timestamp'] as Timestamp?)?.toDate() ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+          // Ensure source field exists (default to 'teller' for old records)
+          'source': data['source'] ?? 'teller',
+          'paymentMethod': data['paymentMethod'] ?? 'Cash',
         };
       }).toList();
-      
+
       // Sort in memory since we removed orderBy
-      results.sort((a, b) => (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
-      
+      results.sort((a, b) =>
+          (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
+
       return results;
     } catch (e) {
       print('🔍 TellerService.getTransactionHistory ERROR: $e');
@@ -591,7 +936,8 @@ class TellerService {
   }) async {
     final targetDate = date ?? DateTime.now();
     final startOfDay = DateTime(targetDate.year, targetDate.month, targetDate.day);
-    final endOfDay = DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59);
+    final endOfDay =
+        DateTime(targetDate.year, targetDate.month, targetDate.day, 23, 59, 59);
 
     try {
       // Simplified query - just get all transactions for the day for this tenant
@@ -602,21 +948,22 @@ class TellerService {
           .get();
 
       print('🔍 TellerService.getDailySummary: Found ${snapshot.docs.length} total transactions');
-      
+
       // Filter by date and teller in memory
       final filteredDocs = snapshot.docs.where((doc) {
         final data = doc.data() as Map<String, dynamic>;
         final timestamp = (data['timestamp'] as Timestamp?)?.toDate();
-        
+
         if (timestamp == null) return false;
-        
+
         // Check if transaction is within the target day
-        final isInDateRange = timestamp.isAfter(startOfDay) && timestamp.isBefore(endOfDay);
+        final isInDateRange =
+            timestamp.isAfter(startOfDay) && timestamp.isBefore(endOfDay);
         if (!isInDateRange) return false;
-        
+
         // If tellerId is provided, filter by it
         if (tellerId != null && data['tellerId'] != tellerId) return false;
-        
+
         return true;
       }).toList();
 
@@ -630,7 +977,7 @@ class TellerService {
       for (var doc in filteredDocs) {
         final data = doc.data() as Map<String, dynamic>;
         final amount = (data['amount'] as num?)?.toInt() ?? 0;
-        
+
         if (data['type'] == 'deposit') {
           totalDeposits += amount;
           depositCount++;
@@ -657,7 +1004,7 @@ class TellerService {
       print('');
       print('❌ TELLER SUMMARY ERROR: $e');
       print('');
-      
+
       return {
         'date': targetDate,
         'totalTransactions': 0,
@@ -669,13 +1016,13 @@ class TellerService {
   }
 
   // ─── Bank Transfer Methods ────────────────────────────────────────────────
-  
+
   /// Get list of available banks from MarzPay
   static Future<Map<String, dynamic>> getBankList() async {
     try {
       final url = '${AppConstants.renderProxyUrl}/bank-transfer/banks';
       print('🏦 GET $url');
-      
+
       // Retry up to 3 times (Render free tier may be sleeping)
       for (int attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -686,9 +1033,9 @@ class TellerService {
               'X-Proxy-Key': AppConstants.marzPayProxyKey,
             },
           ).timeout(const Duration(seconds: 30));
-          
+
           print('🏦 Response status: ${response.statusCode}');
-          
+
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
             print('🏦 Success! Banks loaded');
@@ -713,11 +1060,12 @@ class TellerService {
           }
           return {
             'status': 'error',
-            'message': 'Connection timeout. Proxy server may be starting up. Please try again in 30 seconds.',
+            'message':
+                'Connection timeout. Proxy server may be starting up. Please try again in 30 seconds.',
           };
         }
       }
-      
+
       return {'status': 'error', 'message': 'Failed after 3 attempts'};
     } catch (e) {
       print('❌ Error getting bank list: $e');
@@ -781,7 +1129,7 @@ class TellerService {
           'description': narration,
         }),
       );
-      
+
       final responseData = jsonDecode(response.body);
 
       // Log the transaction in Firestore regardless of MarzPay status
@@ -809,19 +1157,23 @@ class TellerService {
 
       await transactionRef.set(transaction);
 
-      // Audit log
-      await AuditService.log(
-        action: 'BANK_TRANSFER',
-        details: 'Bank transfer of $amount to $accountName ($accountNumber) at $bankName',
-        userId: tellerId,
-        metadata: {
-          'amount': amount,
-          'bankName': bankName,
-          'accountNumber': accountNumber,
-          'accountName': accountName,
-          'reference': reference,
-          'status': transaction['status'],
-        },
+      // Audit log (non-critical)
+      await _safe(
+        () => AuditService.log(
+          action: 'BANK_TRANSFER',
+          details:
+              'Bank transfer of $amount to $accountName ($accountNumber) at $bankName',
+          userId: tellerId,
+          metadata: {
+            'amount': amount,
+            'bankName': bankName,
+            'accountNumber': accountNumber,
+            'accountName': accountName,
+            'reference': reference,
+            'status': transaction['status'],
+          },
+        ),
+        'bank transfer audit',
       );
 
       if (responseData['status'] == 'success') {
@@ -856,9 +1208,7 @@ class TellerService {
           .limit(limit)
           .get();
 
-      return snapshot.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList();
+      return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
     } catch (e) {
       print('❌ Error getting bank transfer history: $e');
       return [];
@@ -893,8 +1243,101 @@ class TellerService {
   // ─── Format Amount with Commas ────────────────────────────────────────────
   static String _formatAmount(int amount) {
     return amount.toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (Match m) => '${m[1]},',
-    );
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]},',
+        );
+  }
+
+  // ─── Verify Mobile Money Account ──────────────────────────────────────────
+  /// Verifies a mobile money account and returns the account holder's name
+  static Future<Map<String, dynamic>> verifyMobileMoneyAccount({
+    required String phoneNumber,
+    required String provider,
+  }) async {
+    try {
+      print('🔍 Verifying mobile money account: $phoneNumber ($provider)');
+
+      // Use FirebaseService's verifyPhoneNumber which properly handles the proxy
+      final result =
+          await FirebaseService.verifyPhoneNumber(phoneNumber, countryCode: 'UG');
+
+      print('📥 Verification result: ${result['verified']}');
+
+      if (result['verified'] == true) {
+        return {
+          'success': true,
+          'accountName':
+              result['full_name'] ?? result['first_name'] ?? 'Account Verified',
+          'full_name': result['full_name'] ??
+              '${result['first_name']} ${result['last_name']}'.trim(),
+          'phoneNumber': phoneNumber,
+          'provider': provider,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': result['message'] ?? 'Account verification failed',
+          'canSkip': true,
+        };
+      }
+    } catch (e) {
+      print('❌ Error verifying mobile money account: $e');
+      return {
+        'success': false,
+        'message': 'Verification unavailable — you can still proceed',
+        'canSkip': true,
+      };
+    }
+  }
+
+  // ─── Request Mobile Money Payment ─────────────────────────────────────────
+  /// Sends a payment request to the customer's mobile money account
+  /// Customer will receive a prompt to enter their PIN to approve the payment
+  static Future<Map<String, dynamic>> requestMobileMoneyPayment({
+    required String phoneNumber,
+    required double amount,
+    required String provider,
+    required String narration,
+  }) async {
+    try {
+      print('💳 Requesting mobile money payment:');
+      print('   - Phone: $phoneNumber');
+      print('   - Amount: UGX ${amount.round()}');
+      print('   - Provider: $provider');
+      print('   - Narration: $narration');
+
+      // Use FirebaseService's wallet deposit which properly handles mobile money collections
+      final result = await FirebaseService.walletDeposit(
+        uid: FirebaseService.sessionUid,
+        amount: amount.round(),
+        phoneNumber: phoneNumber,
+        countryCode: 'UG',
+        currencyCode: 'UGX',
+      );
+
+      print('📥 Payment response: ${result['success']}');
+
+      if (result['success'] == true || result['uuid'] != null) {
+        return {
+          'success': true,
+          'message': 'Payment request sent successfully',
+          'transaction_id': result['txnId'] ?? result['uuid'],
+          'transactionId': result['txnId'] ?? result['uuid'],
+          'reference': result['uuid'],
+          'status': 'pending',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': result['message'] ?? 'Payment request failed',
+        };
+      }
+    } catch (e) {
+      print('❌ Error requesting mobile money payment: $e');
+      return {
+        'success': false,
+        'message': 'Error: ${e.toString()}',
+      };
+    }
   }
 }

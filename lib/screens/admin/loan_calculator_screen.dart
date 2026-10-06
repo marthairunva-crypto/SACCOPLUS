@@ -211,7 +211,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                   Row(
                     children: [
                       Expanded(
-                        flex: 2,
+                        flex: 3,
                         child: TextField(
                           controller: _interestController,
                           keyboardType: TextInputType.number,
@@ -225,15 +225,18 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
+                        flex: 2,
                         child: DropdownButtonFormField<String>(
                           value: _interestType,
                           decoration: InputDecoration(
                             labelText: 'Period',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                           ),
+                          isExpanded: true,
                           items: const [
-                            DropdownMenuItem(value: 'yearly', child: Text('Per Year')),
-                            DropdownMenuItem(value: 'monthly', child: Text('Per Month')),
+                            DropdownMenuItem(value: 'yearly', child: Text('Per Year', overflow: TextOverflow.ellipsis)),
+                            DropdownMenuItem(value: 'monthly', child: Text('Per Month', overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: (value) {
                             setState(() => _interestType = value!);

@@ -52,15 +52,19 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(
+      appBar: (canPop || !isMobile) ? AppBar(
         title: const Text('Staff & Roles'),
-        leading: IconButton(
+        leading: canPop ? IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => Navigator.pop(context),
-        ),
-      ),
+        ) : null,
+        automaticallyImplyLeading: canPop,
+      ) : null,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection(AppConstants.usersCol)

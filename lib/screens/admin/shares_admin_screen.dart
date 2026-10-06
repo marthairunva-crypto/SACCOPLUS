@@ -40,7 +40,14 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Shares Management'),
+        title: Text('Shares Management', 
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.embedded
             ? null

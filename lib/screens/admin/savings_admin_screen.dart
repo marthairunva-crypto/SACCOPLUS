@@ -36,12 +36,19 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Savings Management'),
+        title: Text('Savings Management',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.embedded
             ? null
             : IconButton(
-                icon: const Icon(Icons.arrow_back_ios_rounded),
+                icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
               ),
         bottom: TabBar(
@@ -219,40 +226,62 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
         'editedAt': FieldValue.serverTimestamp(),
       });
       
-      // Update member savings summary
-      // If type changed, we need to adjust both old and new type balances
-      if (oldType != newType) {
-        // Remove from old type
-        final oldField = oldType == AppConstants.savingsVoluntary
-            ? 'voluntary'
-            : oldType == AppConstants.savingsCompulsory
-                ? 'compulsory'
-                : 'fixedDeposit';
-        await db.collection(AppConstants.savingsCol).doc(memberId).update({
-          oldField: FieldValue.increment(-oldAmount),
-        });
+      // Update member savings summary only if memberId exists and is valid
+      if (memberId.isNotEmpty) {
+        // Check if the savings document exists
+        final savingsDoc = await db.collection(AppConstants.savingsCol).doc(memberId).get();
         
-        // Add to new type
-        final newField = newType == AppConstants.savingsVoluntary
-            ? 'voluntary'
-            : newType == AppConstants.savingsCompulsory
-                ? 'compulsory'
-                : 'fixedDeposit';
-        await db.collection(AppConstants.savingsCol).doc(memberId).update({
-          newField: FieldValue.increment(newAmount),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        });
-      } else if (amountDiff != 0) {
-        // Same type, just adjust the amount
-        final field = newType == AppConstants.savingsVoluntary
-            ? 'voluntary'
-            : newType == AppConstants.savingsCompulsory
-                ? 'compulsory'
-                : 'fixedDeposit';
-        await db.collection(AppConstants.savingsCol).doc(memberId).update({
-          field: FieldValue.increment(amountDiff),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        });
+        // If type changed, we need to adjust both old and new type balances
+        if (oldType != newType) {
+          // Remove from old type
+          final oldField = oldType == AppConstants.savingsVoluntary
+              ? 'voluntary'
+              : oldType == AppConstants.savingsCompulsory
+                  ? 'compulsory'
+                  : 'fixedDeposit';
+          
+          // Add to new type
+          final newField = newType == AppConstants.savingsVoluntary
+              ? 'voluntary'
+              : newType == AppConstants.savingsCompulsory
+                  ? 'compulsory'
+                  : 'fixedDeposit';
+          
+          if (savingsDoc.exists) {
+            await db.collection(AppConstants.savingsCol).doc(memberId).update({
+              oldField: FieldValue.increment(-oldAmount),
+              newField: FieldValue.increment(newAmount),
+              'lastUpdated': FieldValue.serverTimestamp(),
+            });
+          } else {
+            // Create new savings document
+            await db.collection(AppConstants.savingsCol).doc(memberId).set({
+              oldField: -oldAmount,
+              newField: newAmount,
+              'lastUpdated': FieldValue.serverTimestamp(),
+            });
+          }
+        } else if (amountDiff != 0) {
+          // Same type, just adjust the amount
+          final field = newType == AppConstants.savingsVoluntary
+              ? 'voluntary'
+              : newType == AppConstants.savingsCompulsory
+                  ? 'compulsory'
+                  : 'fixedDeposit';
+          
+          if (savingsDoc.exists) {
+            await db.collection(AppConstants.savingsCol).doc(memberId).update({
+              field: FieldValue.increment(amountDiff),
+              'lastUpdated': FieldValue.serverTimestamp(),
+            });
+          } else {
+            // Create new savings document
+            await db.collection(AppConstants.savingsCol).doc(memberId).set({
+              field: amountDiff,
+              'lastUpdated': FieldValue.serverTimestamp(),
+            });
+          }
+        }
       }
       
       AuditService.log(
@@ -353,16 +382,23 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
       // Delete the transaction
       await db.collection(AppConstants.savingsTxnCol).doc(docId).delete();
       
-      // Update member savings summary (deduct the amount)
-      final field = type == AppConstants.savingsVoluntary
-          ? 'voluntary'
-          : type == AppConstants.savingsCompulsory
-              ? 'compulsory'
-              : 'fixedDeposit';
-      await db.collection(AppConstants.savingsCol).doc(memberId).update({
-        field: FieldValue.increment(-amount),
-        'lastUpdated': FieldValue.serverTimestamp(),
-      });
+      // Update member savings summary (deduct the amount) only if memberId exists and is valid
+      if (memberId.isNotEmpty) {
+        // Check if the savings document exists
+        final savingsDoc = await db.collection(AppConstants.savingsCol).doc(memberId).get();
+        
+        if (savingsDoc.exists) {
+          final field = type == AppConstants.savingsVoluntary
+              ? 'voluntary'
+              : type == AppConstants.savingsCompulsory
+                  ? 'compulsory'
+                  : 'fixedDeposit';
+          await db.collection(AppConstants.savingsCol).doc(memberId).update({
+            field: FieldValue.increment(-amount),
+            'lastUpdated': FieldValue.serverTimestamp(),
+          });
+        }
+      }
       
       AuditService.log(
         action: AuditService.kSavingsDelete,

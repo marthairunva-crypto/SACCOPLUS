@@ -1,5 +1,5 @@
 name: saccoplus_pro
-description: "SACCOPLUS Pro — Modern SACCO & Cooperative Fintech Platform"
+description: "MBADIFA SACCO — Modern SACCO & Cooperative Fintech Platform"
 publish_to: 'none'
 
 version: 2.0.0+1
@@ -42,7 +42,11 @@ dependencies:
   path_provider: ^2.1.4
   csv: ^6.0.0
   msix: ^3.18.0
-
+  device_preview: ^1.2.0
+  # device_preview: INCOMPATIBLE with Flutter 3.44.5
+  # All versions use deprecated APIs (subtitle2, headline6, backgroundColor, toggleableActiveColor)
+  # Alternative: Use Chrome DevTools device emulation or resize the window manually
+      
 dev_dependencies:
   flutter_test:
     sdk: flutter

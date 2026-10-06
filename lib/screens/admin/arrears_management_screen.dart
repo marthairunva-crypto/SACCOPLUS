@@ -1,235 +1,263 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../services/arrears_service.dart';
 import 'loan_details_screen.dart';
 
+/// Palette tuned to the navy sidebar. Red is reserved for money that is
+/// actually overdue, so it carries meaning instead of decorating the page.
+class _C {
+  static const surface = Color(0xFFF6F7F9);
+  static const card = Colors.white;
+  static const ink = Color(0xFF0F1B2D);
+  static const muted = Color(0xFF6B7686);
+  static const line = Color(0xFFE3E6EB);
+  static const navy = Color(0xFF16243B);
+  static const warn = Color(0xFFB7791F); // 1 month
+  static const high = Color(0xFFC2410C); // 2 months
+  static const critical = Color(0xFFB42318); // 3+ months
+}
+
 class ArrearsManagementScreen extends StatefulWidget {
   const ArrearsManagementScreen({Key? key}) : super(key: key);
 
   @override
-  State<ArrearsManagementScreen> createState() => _ArrearsManagementScreenState();
+  State<ArrearsManagementScreen> createState() =>
+      _ArrearsManagementScreenState();
 }
 
 class _ArrearsManagementScreenState extends State<ArrearsManagementScreen> {
-  final _currencyFormat = NumberFormat('#,###', 'en_US');
+  final _money = NumberFormat('#,###', 'en_US');
   bool _isLoading = false;
   bool _isUpdating = false;
-  List<Map<String, dynamic>> _loansWithArrears = [];
+  String? _error;
+  DateTime? _lastChecked;
+  List<Map<String, dynamic>> _loans = [];
 
   @override
   void initState() {
     super.initState();
-    _loadLoansWithArrears();
+    _load();
   }
 
-  Future<void> _loadLoansWithArrears() async {
-    setState(() => _isLoading = true);
-    final loans = await ArrearsService.getLoansWithArrears();
+  double _num(Map<String, dynamic> l, String k) => (l[k] ?? 0).toDouble();
+
+  Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
-      _loansWithArrears = loans;
-      _isLoading = false;
+      _isLoading = true;
+      _error = null;
     });
+    try {
+      final loans = await ArrearsService.getLoansWithArrears();
+      loans.sort((a, b) => _num(b, 'totalDue').compareTo(_num(a, 'totalDue')));
+      if (!mounted) return;
+      setState(() {
+        _loans = loans;
+        _lastChecked = DateTime.now();
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load loans in arrears. Check your connection and try again.';
+        _isLoading = false;
+      });
+    }
   }
 
-  Future<void> _updateAllArrears() async {
+  Future<void> _recalculate() async {
+    if (!mounted) return;
     setState(() => _isUpdating = true);
-    
     final result = await ArrearsService.updateAllLoansArrears();
-    
+    if (!mounted) return;
     setState(() => _isUpdating = false);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Updated ${result['success']} loans. Failed: ${result['failed']}',
-          ),
-          backgroundColor: Colors.green,
+
+    final failed = result['failed'] ?? 0;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _C.navy,
+        width: 420,
+        content: Text(
+          failed == 0
+              ? 'Arrears recalculated for ${result['success']} loans'
+              : 'Recalculated ${result['success']} loans, $failed failed',
+          style: GoogleFonts.inter(fontSize: 13),
         ),
-      );
-      
-      // Reload the list
-      _loadLoansWithArrears();
-    }
+      ),
+    );
+    _load();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: _C.surface,
       appBar: AppBar(
+        backgroundColor: _C.card,
+        foregroundColor: _C.ink,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        titleSpacing: 24,
         title: Text(
-          'Arrears Management',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          'Arrears management',
+          style: GoogleFonts.inter(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: _C.ink,
+          ),
         ),
-        backgroundColor: Colors.red.shade700,
-        actions: [
-          if (_isUpdating)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                ),
-              ),
-            )
-          else
-            IconButton(
-              onPressed: _updateAllArrears,
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Update All Arrears',
-            ),
-        ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, thickness: 1, color: _C.line),
+        ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _loansWithArrears.isEmpty
-              ? _buildEmptyState()
-              : _buildLoansList(),
+      body: _isLoading && _loans.isEmpty
+          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          : _error != null
+              ? _Notice(
+                  title: 'Something went wrong',
+                  body: _error!,
+                  actionLabel: 'Try again',
+                  onAction: _load,
+                )
+              : _loans.isEmpty
+                  ? _Notice(
+                      title: 'No loans are in arrears',
+                      body: _lastChecked == null
+                          ? 'Every active loan is up to date.'
+                          : 'Every active loan is up to date. Last checked at ${DateFormat('HH:mm').format(_lastChecked!)}.',
+                      actionLabel: 'Check again',
+                      onAction: _load,
+                    )
+                  : _buildContent(),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.check_circle_outline, size: 80, color: Colors.green.shade300),
-          const SizedBox(height: 16),
-          Text(
-            'No Loans in Arrears',
-            style: GoogleFonts.inter(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'All loans are up to date!',
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              color: Colors.grey.shade500,
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _loadLoansWithArrears,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildContent() {
+    final totalArrears = _loans.fold<double>(0, (s, l) => s + _num(l, 'arrears'));
+    final totalPenalties =
+        _loans.fold<double>(0, (s, l) => s + _num(l, 'penalties'));
+    final totalDue = totalArrears + totalPenalties;
 
-  Widget _buildLoansList() {
-    // Calculate totals
-    double totalArrears = 0;
-    double totalPenalties = 0;
-    
-    for (var loan in _loansWithArrears) {
-      totalArrears += (loan['arrears'] ?? 0).toDouble();
-      totalPenalties += (loan['penalties'] ?? 0).toDouble();
-    }
-
-    return Column(
-      children: [
-        // Summary Cards
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.white,
-          child: Row(
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1180),
+        child: LayoutBuilder(builder: (context, box) {
+          final wide = box.maxWidth >= 860;
+          return ListView(
+            padding: EdgeInsets.all(wide ? 24 : 16),
             children: [
-              Expanded(
-                child: _buildSummaryCard(
-                  'Total Arrears',
-                  'UGX ${_currencyFormat.format(totalArrears.round())}',
-                  Icons.money_off,
-                  Colors.orange,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildSummaryCard(
-                  'Total Penalties',
-                  'UGX ${_currencyFormat.format(totalPenalties.round())}',
-                  Icons.warning,
-                  Colors.red,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildSummaryCard(
-                  'Affected Loans',
-                  '${_loansWithArrears.length}',
-                  Icons.account_balance_wallet,
-                  Colors.deepOrange,
-                ),
-              ),
+              _header(),
+              const SizedBox(height: 20),
+              _stats(wide, totalDue, totalArrears, totalPenalties),
+              const SizedBox(height: 20),
+              wide ? _table() : _stackedList(),
             ],
-          ),
-        ),
-        const Divider(height: 1),
-        
-        // Loans List
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _header() {
+    final sub = _lastChecked == null
+        ? '${_loans.length} loans past their due date'
+        : '${_loans.length} loans past their due date, as of ${DateFormat('d MMM, HH:mm').format(_lastChecked!)}';
+    return Row(
+      children: [
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _loansWithArrears.length,
-            itemBuilder: (context, index) {
-              return _buildLoanCard(_loansWithArrears[index]);
-            },
+          child: Text(sub,
+              style: GoogleFonts.inter(fontSize: 13, color: _C.muted)),
+        ),
+        OutlinedButton(
+          onPressed: _isLoading ? null : _load,
+          style: _outlined,
+          child: const Text('Refresh list'),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: _isUpdating ? null : _recalculate,
+          style: FilledButton.styleFrom(
+            backgroundColor: _C.navy,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            textStyle:
+                GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
           ),
+          child: _isUpdating
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Recalculate arrears'),
         ),
       ],
     );
   }
 
-  Widget _buildSummaryCard(String label, String value, IconData icon, Color color) {
+  ButtonStyle get _outlined => OutlinedButton.styleFrom(
+        foregroundColor: _C.ink,
+        side: const BorderSide(color: _C.line),
+        backgroundColor: _C.card,
+        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        textStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+      );
+
+  // One bordered strip with dividers instead of three separate coloured cards.
+  Widget _stats(bool wide, double due, double arrears, double penalties) {
+    final cells = [
+      _stat('Total due', 'UGX ${_money.format(due.round())}', emphasis: true),
+      _stat('Arrears', 'UGX ${_money.format(arrears.round())}'),
+      _stat('Penalties', 'UGX ${_money.format(penalties.round())}'),
+      _stat('Loans affected', '${_loans.length}'),
+    ];
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color, width: 2),
-      ),
+      decoration: _boxed,
+      child: wide
+          ? IntrinsicHeight(
+              child: Row(children: [
+                for (var i = 0; i < cells.length; i++) ...[
+                  if (i > 0) const VerticalDivider(width: 1, color: _C.line),
+                  Expanded(child: cells[i]),
+                ]
+              ]),
+            )
+          : Column(children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) const Divider(height: 1, color: _C.line),
+                cells[i],
+              ]
+            ]),
+    );
+  }
+
+  Widget _stat(String label, String value, {bool emphasis = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          Text(label,
+              style: GoogleFonts.inter(fontSize: 12, color: _C.muted)),
+          const SizedBox(height: 6),
           Text(
             value,
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+            style: _figures(
+              size: emphasis ? 20 : 17,
+              weight: FontWeight.w600,
+              color: emphasis ? _C.critical : _C.ink,
             ),
           ),
         ],
@@ -237,204 +265,267 @@ class _ArrearsManagementScreenState extends State<ArrearsManagementScreen> {
     );
   }
 
-  Widget _buildLoanCard(Map<String, dynamic> loan) {
-    final memberName = loan['memberName'] ?? 'N/A';
-    final accountNumber = loan['accountNumber'] ?? 'N/A';
-    final referenceNumber = loan['referenceNumber'] ?? 'N/A';
-    final arrears = (loan['arrears'] ?? 0).toDouble();
-    final penalties = (loan['penalties'] ?? 0).toDouble();
-    final monthsOverdue = loan['monthsOverdue'] ?? 0;
-    final totalDue = (loan['totalDue'] ?? 0).toDouble();
-    final phoneNumber = loan['phoneNumber'] ?? '';
+  BoxDecoration get _boxed => BoxDecoration(
+        color: _C.card,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _C.line),
+      );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => LoanDetailsScreen(
-                loanId: loan['loanId'],
-                initialLoanData: loan,
-              ),
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              colors: [Colors.red.shade50, Colors.white],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+  TextStyle _figures({
+    double size = 13,
+    FontWeight weight = FontWeight.w400,
+    Color color = _C.ink,
+  }) =>
+      GoogleFonts.inter(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      );
+
+  Color _severity(int months) =>
+      months >= 3 ? _C.critical : (months == 2 ? _C.high : _C.warn);
+
+  void _open(Map<String, dynamic> loan) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            LoanDetailsScreen(loanId: loan['loanId'], initialLoanData: loan),
+      ),
+    );
+  }
+
+  // ---- Wide layout: a real table, numbers right-aligned -------------------
+
+  static const _flex = [26, 22, 14, 13, 13, 14]; // member, ref, overdue, arrears, penalties, total
+
+  Widget _table() {
+    return Container(
+      decoration: _boxed,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            color: _C.surface,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(children: [
+              _th('Member', _flex[0]),
+              _th('Account / reference', _flex[1]),
+              _th('Overdue', _flex[2]),
+              _th('Arrears', _flex[3], right: true),
+              _th('Penalties', _flex[4], right: true),
+              _th('Total due', _flex[5], right: true),
+            ]),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade700,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.warning_amber, color: Colors.white, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          memberName,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        Text(
-                          'A/C: $accountNumber • Ref: $referenceNumber',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade700,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$monthsOverdue MO',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-              
-              // Financial Details
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildDetailChip(
-                      'Arrears',
-                      'UGX ${_currencyFormat.format(arrears.round())}',
-                      Colors.orange,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildDetailChip(
-                      'Penalties',
-                      'UGX ${_currencyFormat.format(penalties.round())}',
-                      Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 12),
-              
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade700,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'TOTAL DUE:',
-                      style: GoogleFonts.inter(
+          for (final loan in _loans) ...[
+            const Divider(height: 1, color: _C.line),
+            _row(loan),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _th(String t, int flex, {bool right = false}) => Expanded(
+        flex: flex,
+        child: Text(
+          t,
+          textAlign: right ? TextAlign.right : TextAlign.left,
+          style: GoogleFonts.inter(
+              fontSize: 12, fontWeight: FontWeight.w600, color: _C.muted),
+        ),
+      );
+
+  Widget _row(Map<String, dynamic> loan) {
+    final months = (loan['monthsOverdue'] ?? 0) as int;
+    final phone = (loan['phoneNumber'] ?? '').toString();
+    return InkWell(
+      onTap: () => _open(loan),
+      hoverColor: _C.surface,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(children: [
+          Expanded(
+            flex: _flex[0],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(loan['memberName'] ?? 'Unknown member',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
                         fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Text(
-                      'UGX ${_currencyFormat.format(totalDue.round())}',
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              if (phoneNumber.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(Icons.phone, size: 16, color: Colors.grey.shade600),
-                    const SizedBox(width: 4),
-                    Text(
-                      phoneNumber,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
+                        fontWeight: FontWeight.w600,
+                        color: _C.ink)),
+                if (phone.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(phone,
+                        style: _figures(size: 12, color: _C.muted)),
+                  ),
               ],
-            ],
+            ),
           ),
+          Expanded(
+            flex: _flex[1],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${loan['accountNumber'] ?? '-'}',
+                    style: _figures(size: 13)),
+                const SizedBox(height: 2),
+                Text('${loan['referenceNumber'] ?? '-'}',
+                    style: _figures(size: 12, color: _C.muted)),
+              ],
+            ),
+          ),
+          Expanded(flex: _flex[2], child: _overdue(months)),
+          Expanded(
+            flex: _flex[3],
+            child: Text(_money.format(_num(loan, 'arrears').round()),
+                textAlign: TextAlign.right, style: _figures()),
+          ),
+          Expanded(
+            flex: _flex[4],
+            child: Text(_money.format(_num(loan, 'penalties').round()),
+                textAlign: TextAlign.right, style: _figures()),
+          ),
+          Expanded(
+            flex: _flex[5],
+            child: Text(_money.format(_num(loan, 'totalDue').round()),
+                textAlign: TextAlign.right,
+                style: _figures(weight: FontWeight.w600)),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _overdue(int months) {
+    final c = _severity(months);
+    return Row(children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 8),
+      Text(
+        months == 1 ? '1 month' : '$months months',
+        style: GoogleFonts.inter(fontSize: 13, color: _C.ink),
+      ),
+    ]);
+  }
+
+  // ---- Narrow layout: compact rows ----------------------------------------
+
+  Widget _stackedList() {
+    return Container(
+      decoration: _boxed,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var i = 0; i < _loans.length; i++) ...[
+            if (i > 0) const Divider(height: 1, color: _C.line),
+            _compact(_loans[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _compact(Map<String, dynamic> loan) {
+    final months = (loan['monthsOverdue'] ?? 0) as int;
+    return InkWell(
+      onTap: () => _open(loan),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(
+                child: Text(loan['memberName'] ?? 'Unknown member',
+                    style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _C.ink)),
+              ),
+              _overdue(months),
+            ]),
+            const SizedBox(height: 2),
+            Text(
+              'A/C ${loan['accountNumber'] ?? '-'}   Ref ${loan['referenceNumber'] ?? '-'}',
+              style: _figures(size: 12, color: _C.muted),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Arrears ${_money.format(_num(loan, 'arrears').round())}  Penalties ${_money.format(_num(loan, 'penalties').round())}',
+                  style: _figures(size: 12, color: _C.muted),
+                ),
+                Text('UGX ${_money.format(_num(loan, 'totalDue').round())}',
+                    style: _figures(weight: FontWeight.w600)),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildDetailChip(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color, width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: color,
+/// Shared empty / error state: plain text, one action, no hero icon.
+class _Notice extends StatelessWidget {
+  final String title;
+  final String body;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  const _Notice({
+    required this.title,
+    required this.body,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                    fontSize: 18, fontWeight: FontWeight.w600, color: _C.ink)),
+            const SizedBox(height: 8),
+            Text(body,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                    fontSize: 14, height: 1.5, color: _C.muted)),
+            const SizedBox(height: 20),
+            OutlinedButton(
+              onPressed: onAction,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _C.ink,
+                side: const BorderSide(color: _C.line),
+                backgroundColor: _C.card,
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6)),
+                textStyle: GoogleFonts.inter(
+                    fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              child: Text(actionLabel),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

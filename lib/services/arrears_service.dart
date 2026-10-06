@@ -1,115 +1,150 @@
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../core/constants.dart';
 
 class ArrearsService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  /// Calculate arrears for a loan based on payment schedule vs actual payments
+  /// Statuses that mean the loan is live (cover both casings).
+  static const List<String> _liveStatuses = [
+    'disbursed', 'Disbursed',
+    'active', 'Active',
+    'overdue', 'Overdue',
+  ];
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+  static double _d(dynamic v, [double fallback = 0]) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
+  /// SINGLE SOURCE OF TRUTH for interest.
+  /// [ratePerPeriod] is the rate per payment period (10 = 10% per month
+  /// for a monthly loan). Flat: principal × rate% × periods.
+  static double calculateInterest({
+    required double principal,
+    required double ratePerPeriod,
+    required int periods,
+    String method = 'flat',
+  }) {
+    if (principal <= 0 || ratePerPeriod <= 0 || periods <= 0) return 0;
+    final r = ratePerPeriod / 100;
+
+    if (method == 'reducing') {
+      final f = math.pow(1 + r, periods).toDouble();
+      final payment = principal * r * f / (f - 1);
+      return (payment * periods - principal).roundToDouble();
+    }
+    return (principal * r * periods).roundToDouble();
+  }
+
+  // ─── Arrears calculation ────────────────────────────────────────────────────
+  /// Arrears = what should have been paid by now − what was actually paid.
   static Future<Map<String, dynamic>> calculateLoanArrears(String loanId) async {
     try {
-      // Get loan details
-      final loanDoc = await _db.collection('saccoplus-loans').doc(loanId).get();
+      final loanDoc =
+          await _db.collection(AppConstants.loansCol).doc(loanId).get();
       if (!loanDoc.exists) {
         return {'error': 'Loan not found'};
       }
 
       final loanData = loanDoc.data()!;
-      final principal = (loanData['loanAmount'] ?? 0).toDouble();
-      final interestRate = (loanData['interestRate'] ?? 0).toDouble();
-      final duration = (loanData['duration'] ?? 12) as int;
-      final interestMethod = loanData['interestMethod'] ?? 'flat';
-      final penaltyRate = (loanData['penaltyRate'] ?? 5).toDouble();
-      final paymentFrequency = loanData['paymentFrequency'] ?? 'monthly'; // monthly, weekly, daily
-      
-      // Get disbursement date
+      final principal = _d(loanData['loanAmount'], _d(loanData['amount']));
+      final interestRate = _d(loanData['interestRate']);
+      final duration = _d(loanData['duration'], 12).round();
+      final interestMethod =
+          (loanData['interestMethod'] ?? 'flat').toString().toLowerCase();
+      final penaltyRate = _d(loanData['penaltyRate'], 5);
+      final paymentFrequency =
+          (loanData['paymentFrequency'] ?? 'monthly').toString().toLowerCase();
+
+      if (duration <= 0) {
+        return {'error': 'Invalid loan duration'};
+      }
+
+      // Disbursement date
       DateTime? disbursementDate;
       if (loanData['disbursementDate'] is Timestamp) {
         disbursementDate = (loanData['disbursementDate'] as Timestamp).toDate();
       } else if (loanData['disbursedAt'] is Timestamp) {
         disbursementDate = (loanData['disbursedAt'] as Timestamp).toDate();
       }
-
       if (disbursementDate == null) {
         return {'error': 'Disbursement date not set'};
       }
 
-      // Calculate total loan amount with interest
-      double totalInterest;
-      if (interestMethod == 'reducing') {
-        final r = interestRate / (100 * 12);
-        final n = duration.toDouble();
-        if (r > 0) {
-          final powValue = _pow(1.0 + r, n);
-          final monthlyPayment = principal * r * powValue / (powValue - 1);
-          totalInterest = (monthlyPayment * n) - principal;
-        } else {
-          totalInterest = 0;
-        }
-      } else {
-        totalInterest = (principal * interestRate * duration) / (100 * 12);
-      }
-
+      // Interest & totals
+      final totalInterest = calculateInterest(
+        principal: principal,
+        ratePerPeriod: interestRate,
+        periods: duration,
+        method: interestMethod,
+      );
       final totalLoanAmount = principal + totalInterest;
-      
-      // Calculate expected payment based on frequency
-      double expectedPayment;
-      int periodsElapsed;
-      
+      final expectedPayment = totalLoanAmount / duration;
+
+      // Periods elapsed since disbursement
       final now = DateTime.now();
-      
+      int periodsElapsed;
       switch (paymentFrequency) {
         case 'daily':
-          expectedPayment = totalLoanAmount / duration; // duration in days
           periodsElapsed = now.difference(disbursementDate).inDays;
           break;
         case 'weekly':
-          expectedPayment = totalLoanAmount / duration; // duration in weeks
           periodsElapsed = (now.difference(disbursementDate).inDays / 7).floor();
           break;
         case 'monthly':
         default:
-          expectedPayment = totalLoanAmount / duration;
           periodsElapsed = _monthsBetween(disbursementDate, now);
       }
+      if (periodsElapsed < 0) periodsElapsed = 0;
 
-      // Get all repayments
+      // Actual payments (same collection the screen writes to)
       final repaymentsSnapshot = await _db
-          .collection('saccoplus-loans')
-          .doc(loanId)
-          .collection('repayments')
-          .orderBy('timestamp', descending: false)
+          .collection(AppConstants.repaymentsCol)
+          .where('loanId', isEqualTo: loanId)
           .get();
 
       double totalPaid = 0;
-      for (var doc in repaymentsSnapshot.docs) {
-        totalPaid += (doc.data()['amount'] ?? 0).toDouble();
-      }
-
-      // Calculate expected amount paid based on periods elapsed
-      final expectedAmountPaid = periodsElapsed > 0 
-        ? expectedPayment * periodsElapsed.clamp(0, duration)
-        : 0.0;
-
-      // Calculate arrears
-      double arrearsAmount = 0;
-      int periodsOverdue = 0;
-
-      // Only calculate arrears if at least one period has passed
-      if (periodsElapsed >= 1 && periodsElapsed <= duration) {
-        arrearsAmount = (expectedAmountPaid - totalPaid).clamp(0, double.infinity);
-        if (arrearsAmount > 0) {
-          periodsOverdue = (arrearsAmount / expectedPayment).ceil();
+      for (final doc in repaymentsSnapshot.docs) {
+        final data = doc.data();
+        var amount = _d(data['amount']);
+        if (amount <= 0) amount = _d(data['totalAmount']);
+        if (amount <= 0) {
+          amount = _d(data['principalAmount']) +
+              _d(data['interestAmount']) +
+              _d(data['chargesAmount']);
         }
+        if (amount <= 0) {
+          amount = _d(data['principalPaid']) +
+              _d(data['interestPaid']) +
+              _d(data['chargesPaid']);
+        }
+        totalPaid += amount;
       }
 
-      // Calculate penalty on arrears
+      // Installments that should be settled by now (capped at the full term,
+      // so arrears keep showing after the loan has matured).
+      final periodsDue = math.min(periodsElapsed, duration);
+      final expectedAmountPaid = expectedPayment * periodsDue;
+
+      double arrearsAmount = math.max(0.0, expectedAmountPaid - totalPaid);
+      if (arrearsAmount < 1) arrearsAmount = 0; // ignore rounding dust
+
+      int periodsOverdue = 0;
+      if (arrearsAmount > 0 && expectedPayment > 0) {
+        periodsOverdue = (arrearsAmount / expectedPayment).ceil();
+      }
+
+      // Penalty on arrears
       double penaltyAmount = 0;
       if (arrearsAmount > 0) {
         penaltyAmount = (arrearsAmount * penaltyRate / 100) * periodsOverdue;
       }
 
-      // Calculate remaining balance
-      final remainingBalance = (totalLoanAmount - totalPaid).clamp(0, double.infinity);
+      final remainingBalance = math.max(0.0, totalLoanAmount - totalPaid);
       final totalDue = remainingBalance + penaltyAmount;
 
       return {
@@ -131,7 +166,8 @@ class ArrearsService {
         'duration': duration,
         'disbursementDate': disbursementDate,
         'isOverdue': arrearsAmount > 0,
-        'status': _getLoanStatus(periodsElapsed, duration, arrearsAmount, remainingBalance),
+        'status': _getLoanStatus(
+            periodsElapsed, duration, arrearsAmount, remainingBalance),
       };
     } catch (e) {
       print('Error calculating arrears: $e');
@@ -139,22 +175,23 @@ class ArrearsService {
     }
   }
 
-  /// Update arrears for a specific loan in Firestore
+  /// Save the latest arrears figures on the loan document.
   static Future<bool> updateLoanArrears(String loanId) async {
     try {
-      final arrearsData = await calculateLoanArrears(loanId);
-      
-      if (arrearsData.containsKey('error')) {
-        print('Cannot update arrears: ${arrearsData['error']}');
+      final a = await calculateLoanArrears(loanId);
+
+      if (a.containsKey('error')) {
+        print('Cannot update arrears: ${a['error']}');
         return false;
       }
 
-      await _db.collection('saccoplus-loans').doc(loanId).update({
-        'arrears': arrearsData['arrearsAmount'],
-        'penalties': arrearsData['penaltyAmount'],
-        'monthsOverdue': arrearsData['monthsOverdue'],
-        'totalDue': arrearsData['totalDue'],
-        'remainingBalance': arrearsData['remainingBalance'],
+      await _db.collection(AppConstants.loansCol).doc(loanId).update({
+        'arrears': a['arrearsAmount'],
+        'penalties': a['penaltyAmount'],
+        'periodsOverdue': a['periodsOverdue'],
+        'monthsOverdue': a['periodsOverdue'], // kept for older screens
+        'totalDue': a['totalDue'],
+        'remainingBalance': a['remainingBalance'],
         'lastArrearsUpdate': FieldValue.serverTimestamp(),
       });
 
@@ -165,18 +202,18 @@ class ArrearsService {
     }
   }
 
-  /// Update arrears for all active loans
+  /// Update arrears for every live loan.
   static Future<Map<String, int>> updateAllLoansArrears() async {
     int successCount = 0;
     int failCount = 0;
-    
+
     try {
       final loansSnapshot = await _db
-          .collection('saccoplus-loans')
-          .where('status', isEqualTo: 'approved')
+          .collection(AppConstants.loansCol)
+          .where('status', whereIn: _liveStatuses)
           .get();
 
-      for (var doc in loansSnapshot.docs) {
+      for (final doc in loansSnapshot.docs) {
         final success = await updateLoanArrears(doc.id);
         if (success) {
           successCount++;
@@ -195,93 +232,58 @@ class ArrearsService {
     };
   }
 
-  /// Get loans with arrears
+  /// Live loans that currently have arrears (filtered in memory so no
+  /// composite Firestore index is needed).
   static Future<List<Map<String, dynamic>>> getLoansWithArrears() async {
     try {
       final loansSnapshot = await _db
-          .collection('saccoplus-loans')
-          .where('status', isEqualTo: 'approved')
-          .where('arrears', isGreaterThan: 0)
+          .collection(AppConstants.loansCol)
+          .where('status', whereIn: _liveStatuses)
           .get();
 
-      final loansWithArrears = <Map<String, dynamic>>[];
-      
-      for (var doc in loansSnapshot.docs) {
+      final result = <Map<String, dynamic>>[];
+
+      for (final doc in loansSnapshot.docs) {
         final loanData = doc.data();
+        if (_d(loanData['arrears']) <= 0) continue;
         loanData['loanId'] = doc.id;
-        
-        // Get member details
+
         final memberId = loanData['memberId'];
         if (memberId != null) {
-          final memberDoc = await _db.collection('saccoplus-members').doc(memberId).get();
+          final memberDoc =
+              await _db.collection('saccoplus-members').doc(memberId).get();
           if (memberDoc.exists) {
             loanData['memberName'] = memberDoc.data()?['fullName'];
             loanData['accountNumber'] = memberDoc.data()?['accountNumber'];
             loanData['phoneNumber'] = memberDoc.data()?['phoneNumber'];
           }
         }
-        
-        loansWithArrears.add(loanData);
+
+        result.add(loanData);
       }
 
-      return loansWithArrears;
+      return result;
     } catch (e) {
       print('Error getting loans with arrears: $e');
       return [];
     }
   }
 
-  /// Helper: Calculate months between two dates
+  /// Completed months between two dates.
   static int _monthsBetween(DateTime start, DateTime end) {
-    int months = (end.year - start.year) * 12;
-    months += end.month - start.month;
-    
-    // If the end day is before the start day, subtract one month
-    if (end.day < start.day) {
-      months--;
-    }
-    
-    return months.clamp(0, 1000); // Clamp to reasonable range
+    int months = (end.year - start.year) * 12 + (end.month - start.month);
+    if (end.day < start.day) months--;
+    return months.clamp(0, 1000);
   }
 
-  /// Helper: Power function
-  static double _pow(double base, double exponent) {
-    if (exponent == 0) return 1;
-    if (exponent == 1) return base;
-    
-    double result = 1;
-    bool isNegative = exponent < 0;
-    double exp = isNegative ? -exponent : exponent;
-    
-    for (int i = 0; i < exp.toInt(); i++) {
-      result *= base;
-    }
-    
-    // Handle fractional exponent (approximation)
-    if (exp % 1 != 0) {
-      final fraction = exp - exp.truncate();
-      result *= (1 + (base - 1) * fraction);
-    }
-    
-    return isNegative ? 1 / result : result;
+  static String _getLoanStatus(
+      int periodsElapsed, int duration, double arrears, double remaining) {
+    if (remaining <= 0) return 'Fully Paid';
+    if (periodsElapsed >= duration) return 'Defaulted';
+    if (arrears > 0) return 'In Arrears';
+    return 'Active';
   }
 
-  /// Helper: Determine loan status
-  static String _getLoanStatus(int monthsElapsed, int duration, double arrears, double remaining) {
-    if (remaining <= 0) {
-      return 'Fully Paid';
-    } else if (monthsElapsed >= duration && remaining > 0) {
-      return 'Defaulted';
-    } else if (arrears > 0) {
-      return 'In Arrears';
-    } else if (monthsElapsed < duration) {
-      return 'Active';
-    } else {
-      return 'Unknown';
-    }
-  }
-
-  /// Format currency
   static String formatCurrency(double amount) {
     final formatter = NumberFormat('#,###', 'en_US');
     return 'UGX ${formatter.format(amount.round())}';

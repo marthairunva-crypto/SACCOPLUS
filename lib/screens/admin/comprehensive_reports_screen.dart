@@ -32,7 +32,6 @@ class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen>
     {'icon': Icons.account_balance, 'title': 'Balance Sheet', 'subtitle': 'Assets & Liabilities'},
     {'icon': Icons.verified_user, 'title': 'KYC', 'subtitle': 'Member Verification'},
     {'icon': Icons.credit_card, 'title': 'Loans', 'subtitle': 'Loan Portfolio'},
-    {'icon': Icons.wallet, 'title': 'Wallet', 'subtitle': 'Transactions'},
     {'icon': Icons.people, 'title': 'Members', 'subtitle': 'Member Directory'},
   ];
 
@@ -57,10 +56,12 @@ class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen>
     }
     
     final fmt = NumberFormat('#,###', 'en_US');
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final hideAppBar = widget.embedded && isMobile;
     
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
+      appBar: hideAppBar ? null : AppBar(
         title: Text('Financial Reports', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         backgroundColor: ModernTheme.primary,
         elevation: 0,
@@ -81,20 +82,58 @@ class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen>
           }).toList(),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController!,
-        children: [
-          _MonthlyReportTab(fmt: fmt),
-          _IncomeReportTab(fmt: fmt),
-          _ExpenseReportTab(fmt: fmt),
-          _TrialBalanceTab(fmt: fmt),
-          _BalanceSheetTab(fmt: fmt),
-          _KYCReportTab(fmt: fmt),
-          _LoanReportTab(fmt: fmt),
-          _WalletReportTab(fmt: fmt),
-          _MemberReportTab(fmt: fmt),
-        ],
-      ),
+      body: hideAppBar 
+        ? Column(
+            children: [
+              // Mobile tab bar when AppBar is hidden
+              Container(
+                color: ModernTheme.primary,
+                child: TabBar(
+                  controller: _tabController!,
+                  isScrollable: true,
+                  indicatorColor: Colors.white,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  labelStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
+                  unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+                  tabs: _reports.map((report) {
+                    return Tab(
+                      icon: Icon(report['icon'] as IconData, size: 18),
+                      text: report['title'],
+                    );
+                  }).toList(),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController!,
+                  children: [
+                    _MonthlyReportTab(fmt: fmt),
+                    _IncomeReportTab(fmt: fmt),
+                    _ExpenseReportTab(fmt: fmt),
+                    _TrialBalanceTab(fmt: fmt),
+                    _BalanceSheetTab(fmt: fmt),
+                    _KYCReportTab(fmt: fmt),
+                    _LoanReportTab(fmt: fmt),
+                    _MemberReportTab(fmt: fmt),
+                  ],
+                ),
+              ),
+            ],
+          )
+        : TabBarView(
+            controller: _tabController!,
+            children: [
+              _MonthlyReportTab(fmt: fmt),
+              _IncomeReportTab(fmt: fmt),
+              _ExpenseReportTab(fmt: fmt),
+              _TrialBalanceTab(fmt: fmt),
+              _BalanceSheetTab(fmt: fmt),
+              _KYCReportTab(fmt: fmt),
+              _LoanReportTab(fmt: fmt),
+              _MemberReportTab(fmt: fmt),
+            ],
+          ),
     );
   }
 }
@@ -179,56 +218,114 @@ class _MonthlyReportTabState extends State<_MonthlyReportTab> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
+    // For mobile, wrap everything in horizontal scroll with minimum width
+    if (isMobile) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: 800, // Minimum width to prevent overflow
+          child: _buildContent(context, false), // false = not mobile layout
+        ),
+      );
+    }
+    
+    return _buildContent(context, true); // true = use mobile layout optimizations
+  }
+  
+  Widget _buildContent(BuildContext context, bool useMobileLayout) {
+    final isMobile = useMobileLayout;
+    
     return Container(
       color: const Color(0xFFF5F7FA),
       child: Column(
         children: [
           // Header
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(isMobile ? 16 : 24),
             color: Colors.white,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Monthly Report',
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'Income and expense summary',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: ModernTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Row(
+            child: isMobile
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildMonthYearSelector(),
-                    const SizedBox(width: 12),
-                    if (_report != null && !_loading)
-                      ElevatedButton.icon(
-                        onPressed: () => _exportCSV(),
-                        icon: const Icon(Icons.file_download, size: 18),
-                        label: const Text('Export CSV'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: ModernTheme.success,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        ),
+                    Text(
+                      'Monthly Report',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
+                    ),
+                    Text(
+                      'Income and expense summary',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: ModernTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildMonthYearSelector(),
+                        if (_report != null && !_loading)
+                          ElevatedButton.icon(
+                            onPressed: () => _exportCSV(),
+                            icon: const Icon(Icons.file_download, size: 16),
+                            label: const Text('Export'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ModernTheme.success,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Monthly Report',
+                            style: GoogleFonts.poppins(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Income and expense summary',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: ModernTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _buildMonthYearSelector(),
+                        const SizedBox(width: 12),
+                        if (_report != null && !_loading)
+                          ElevatedButton.icon(
+                            onPressed: () => _exportCSV(),
+                            icon: const Icon(Icons.file_download, size: 18),
+                            label: const Text('Export CSV'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ModernTheme.success,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
           ),
           // Content
           Expanded(
@@ -675,6 +772,7 @@ class _TrialBalanceTabState extends State<_TrialBalanceTab> {
                 ),
                 // Assets Section
                 _buildSection('ASSETS', [
+                  _AccountLine('Cash in Hand', widget.fmt.format(_report!['assets']['cashInHand']), ''),
                   _AccountLine('Loans Receivable - Principal', widget.fmt.format(_report!['assets']['loansReceivable']['principal']), ''),
                   _AccountLine('Loans Receivable - Interest', widget.fmt.format(_report!['assets']['loansReceivable']['interest']), ''),
                   _AccountLine('Total Assets', widget.fmt.format(_report!['assets']['total']), '', isBold: true),

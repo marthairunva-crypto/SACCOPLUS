@@ -26,8 +26,10 @@ class _LiquidityMonitorScreenState extends State<LiquidityMonitorScreen> {
   }
 
   Future<void> _loadLiquidityAnalysis() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     final analysis = await _liquidityService.getLiquidityAnalysis(widget.tenantId);
+    if (!mounted) return;
     setState(() {
       _analysis = analysis;
       _isLoading = false;

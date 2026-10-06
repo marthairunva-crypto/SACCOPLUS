@@ -22,7 +22,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   final _durationController = TextEditingController(text: '12');
   final _purposeController = TextEditingController();
   final _notesController = TextEditingController();
-  
+
   String? _selectedMemberId;
   String? _selectedMemberName;
   String? _selectedMemberPhone;
@@ -33,6 +33,13 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   bool _autoApprove = true;
 
   final _currencyFormat = NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0);
+
+  // ── Responsive breakpoints (measured on the space the page actually gets,
+  //    i.e. AFTER the sidebar, because we use LayoutBuilder) ──
+  static const double _wideBreakpoint = 900; // >= this -> two columns
+  static const double _maxWidthWide = 1100; // content cap on desktop / web
+  static const double _maxWidthNarrow = 720; // content cap for single column
+  static const double _columnGap = 20;
 
   @override
   void dispose() {
@@ -46,39 +53,193 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(
-        title: Text('Create & Disburse Loan', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildInfoCard(),
-              const SizedBox(height: 16),
-              _buildMemberSelector(),
-              const SizedBox(height: 16),
-              _buildLoanDetails(),
-              const SizedBox(height: 16),
-              _buildLoanTypeSection(),
-              const SizedBox(height: 16),
-              _buildCalculatedDetails(),
-              const SizedBox(height: 24),
-              _buildSubmitButton(),
-            ],
+      appBar: canPop
+          ? AppBar(
+              title: Text(
+                'Create & Disburse Loan',
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_rounded),
+                onPressed: () => Navigator.pop(context),
+              ),
+            )
+          : null,
+      body: SafeArea(
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final wide = w >= _wideBreakpoint;
+              final hPad = w < 360 ? 12.0 : (wide ? 24.0 : 16.0);
+              final vPad = wide ? 24.0 : 16.0;
+              final maxW = wide ? _maxWidthWide : _maxWidthNarrow;
+
+              // Scroll view spans the full width so the scrollbar sits at the
+              // window edge; content is centred and capped inside it.
+              return SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxW),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(hPad, vPad, hPad, vPad),
+                      child: Form(
+                        key: _formKey,
+                        child: wide ? _buildWideBody() : _buildNarrowBody(),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),
     );
   }
+
+  // ───────────────────────── Layouts ─────────────────────────
+
+  /// Phones / small windows: everything in one column.
+  Widget _buildNarrowBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildInfoCard(),
+        const SizedBox(height: 16),
+        _buildMemberSelector(),
+        const SizedBox(height: 16),
+        _buildLoanDetails(),
+        const SizedBox(height: 16),
+        _buildLoanTypeSection(),
+        if (_hasSummary) ...[
+          const SizedBox(height: 16),
+          _buildCalculatedDetails(),
+        ],
+        const SizedBox(height: 24),
+        _buildSubmitButton(),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  /// Desktop / web / tablets landscape: two balanced columns.
+  ///   Left : member + loan details
+  ///   Right: configuration + live summary
+  Widget _buildWideBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildInfoCard(),
+        const SizedBox(height: 20),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildMemberSelector(),
+                  const SizedBox(height: 20),
+                  _buildLoanDetails(),
+                ],
+              ),
+            ),
+            const SizedBox(width: _columnGap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildLoanTypeSection(),
+                  if (_hasSummary) ...[
+                    const SizedBox(height: 20),
+                    _buildCalculatedDetails(),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _buildSubmitButton(),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // ───────────────────────── Shared helpers ─────────────────────────
+
+  Widget _card({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+    );
+  }
+
+  /// Two fields side by side, stacked only when the CARD itself is very narrow
+  /// (so it also behaves correctly inside a two-column desktop layout).
+  Widget _responsiveRow(Widget first, Widget second) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 320) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [first, const SizedBox(height: 16), second],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: 12),
+            Expanded(child: second),
+          ],
+        );
+      },
+    );
+  }
+
+  DropdownMenuItem<String> _item(String value, String label) {
+    return DropdownMenuItem(
+      value: value,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.poppins(),
+      ),
+    );
+  }
+
+  // ───────────────────────── Sections ─────────────────────────
 
   Widget _buildInfoCard() {
     return Container(
@@ -104,23 +265,11 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   Widget _buildMemberSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Select Member', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+          _sectionTitle('Select Member'),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -134,25 +283,51 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
               }
 
               final members = snapshot.data!.docs;
-              
+
+              String labelFor(QueryDocumentSnapshot doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final name = data['name'] ?? data['fullName'] ?? 'Unknown';
+                final phone = data['phone'] ?? data['phoneNumber'] ?? '';
+                return phone.toString().isEmpty ? '$name' : '$name ($phone)';
+              }
+
+              final validValue =
+                  members.any((d) => d.id == _selectedMemberId) ? _selectedMemberId : null;
+
               return DropdownButtonFormField<String>(
-                value: _selectedMemberId,
+                value: validValue,
+                isExpanded: true,
+                menuMaxHeight: 360, // scrolls instead of covering the screen
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: 'Choose a member',
                   prefixIcon: Icon(Icons.person),
                 ),
                 validator: (value) => value == null ? 'Please select a member' : null,
-                items: members.map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final name = data['name'] ?? data['fullName'] ?? 'Unknown';
-                  final phone = data['phone'] ?? data['phoneNumber'] ?? '';
-                  return DropdownMenuItem(
-                    value: doc.id,
-                    child: Text('$name ($phone)', style: GoogleFonts.poppins()),
-                  );
-                }).toList(),
+                selectedItemBuilder: (context) => members
+                    .map((doc) => Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            labelFor(doc),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ))
+                    .toList(),
+                items: members
+                    .map((doc) => DropdownMenuItem<String>(
+                          value: doc.id,
+                          child: Text(
+                            labelFor(doc),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ))
+                    .toList(),
                 onChanged: (value) {
+                  if (value == null) return;
                   final memberDoc = members.firstWhere((doc) => doc.id == value);
                   final data = memberDoc.data() as Map<String, dynamic>;
                   setState(() {
@@ -170,23 +345,11 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   Widget _buildLoanDetails() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Loan Details', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+          _sectionTitle('Loan Details'),
           const SizedBox(height: 16),
           TextFormField(
             controller: _amountController,
@@ -205,46 +368,39 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _interestRateController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Interest Rate (%)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.percent),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return 'Enter rate';
-                    final rate = double.tryParse(value);
-                    if (rate == null || rate < 0 || rate > 100) return 'Invalid rate';
-                    return null;
-                  },
-                  onChanged: (_) => setState(() {}),
-                ),
+          _responsiveRow(
+            TextFormField(
+              controller: _interestRateController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Interest (%)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.percent),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _durationController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Duration (months)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.calendar_today),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return 'Enter duration';
-                    final months = int.tryParse(value);
-                    if (months == null || months < 1 || months > 60) return 'Invalid duration';
-                    return null;
-                  },
-                  onChanged: (_) => setState(() {}),
-                ),
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Enter rate';
+                final rate = double.tryParse(value);
+                if (rate == null || rate < 0 || rate > 100) return 'Invalid rate';
+                return null;
+              },
+              onChanged: (_) => setState(() {}),
+            ),
+            TextFormField(
+              controller: _durationController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Months',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.calendar_today),
               ),
-            ],
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Enter duration';
+                final months = int.tryParse(value);
+                if (months == null || months < 1 || months > 60) return 'Invalid duration';
+                return null;
+              },
+              onChanged: (_) => setState(() {}),
+            ),
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -256,7 +412,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
               hintText: 'e.g., Business expansion, School fees',
             ),
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Enter loan purpose';
+              if (value == null || value.trim().isEmpty) return 'Enter loan purpose';
               return null;
             },
           ),
@@ -276,72 +432,64 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   Widget _buildLoanTypeSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Loan Configuration', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+          _sectionTitle('Loan Configuration'),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             value: _loanType,
+            isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Loan Type',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.category),
             ),
             items: [
-              DropdownMenuItem(value: 'personal', child: Text('Personal Loan', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'business', child: Text('Business Loan', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'emergency', child: Text('Emergency Loan', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'education', child: Text('Education Loan', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'agriculture', child: Text('Agriculture Loan', style: GoogleFonts.poppins())),
+              _item('personal', 'Personal Loan'),
+              _item('business', 'Business Loan'),
+              _item('emergency', 'Emergency Loan'),
+              _item('education', 'Education Loan'),
+              _item('agriculture', 'Agriculture Loan'),
             ],
             onChanged: (value) => setState(() => _loanType = value!),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             value: _paymentFrequency,
+            isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Payment Frequency',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.schedule),
             ),
             items: [
-              DropdownMenuItem(value: 'daily', child: Text('Daily (Emergency)', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'weekly', child: Text('Weekly', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'biweekly', child: Text('Bi-Weekly', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'monthly', child: Text('Monthly', style: GoogleFonts.poppins())),
+              _item('daily', 'Daily (Emergency)'),
+              _item('weekly', 'Weekly'),
+              _item('biweekly', 'Bi-Weekly'),
+              _item('monthly', 'Monthly'),
             ],
             onChanged: (value) => setState(() => _paymentFrequency = value!),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             value: _interestMethod,
+            isExpanded: true,
             decoration: const InputDecoration(
-              labelText: 'Interest Calculation Method',
+              labelText: 'Interest Method',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.calculate),
             ),
             items: [
-              DropdownMenuItem(value: 'flat', child: Text('Flat Rate (Simple Interest)', style: GoogleFonts.poppins())),
-              DropdownMenuItem(value: 'reducing', child: Text('Reducing Balance (Amortized)', style: GoogleFonts.poppins())),
+              _item('flat', 'Flat Rate (Simple Interest)'),
+              _item('reducing', 'Reducing Balance (Amortized)'),
             ],
             onChanged: (value) => setState(() => _interestMethod = value!),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           SwitchListTile(
+            contentPadding: EdgeInsets.zero,
             title: Text('Auto-Approve & Disburse', style: GoogleFonts.poppins(fontSize: 14)),
             subtitle: Text(
               'Loan will be approved and disbursed immediately',
@@ -356,47 +504,27 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
     );
   }
 
-  Widget _buildCalculatedDetails() {
-    if (_amountController.text.isEmpty || _interestRateController.text.isEmpty || _durationController.text.isEmpty) {
-      return const SizedBox.shrink();
+  /// True when the live summary has enough valid input to be shown.
+  bool get _hasSummary {
+    if (_amountController.text.isEmpty ||
+        _interestRateController.text.isEmpty ||
+        _durationController.text.isEmpty) {
+      return false;
     }
+    final principal = int.tryParse(_amountController.text) ?? 0;
+    final months = int.tryParse(_durationController.text) ?? 0;
+    return principal != 0 && months != 0;
+  }
+
+  Widget _buildCalculatedDetails() {
+    if (!_hasSummary) return const SizedBox.shrink();
 
     final principal = int.tryParse(_amountController.text) ?? 0;
     final rate = double.tryParse(_interestRateController.text) ?? 0;
     final months = int.tryParse(_durationController.text) ?? 0;
 
-    if (principal == 0 || months == 0) return const SizedBox.shrink();
+    final calc = _calculate(principal, rate, months);
 
-    // Calculate interest based on method
-    double interest;
-    double totalAmount;
-    double periodicPayment;
-    
-    if (_interestMethod == 'reducing') {
-      // Reducing Balance (Amortized) - using compound interest formula
-      final monthlyRate = rate / (100 * 12);
-      if (monthlyRate > 0) {
-        final pow = (1 + monthlyRate);
-        double powN = 1;
-        for (int i = 0; i < months; i++) {
-          powN *= pow;
-        }
-        periodicPayment = (principal * monthlyRate * powN) / (powN - 1);
-        totalAmount = periodicPayment * months;
-        interest = totalAmount - principal;
-      } else {
-        interest = 0;
-        totalAmount = principal.toDouble();
-        periodicPayment = principal / months;
-      }
-    } else {
-      // Flat Rate (Simple Interest)
-      interest = (principal * rate * months) / 100;
-      totalAmount = principal + interest;
-      periodicPayment = totalAmount / months;
-    }
-
-    // Adjust payment label based on frequency
     String paymentLabel;
     switch (_paymentFrequency) {
       case 'daily':
@@ -430,43 +558,87 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             children: [
               Icon(Icons.calculate, color: AppTheme.success),
               const SizedBox(width: 8),
-              Text('Loan Summary', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+              Expanded(child: _sectionTitle('Loan Summary')),
             ],
           ),
           const Divider(height: 24),
           _buildSummaryRow('Principal Amount', _currencyFormat.format(principal)),
           _buildSummaryRow(
-            'Interest (${_interestMethod == 'reducing' ? 'Reducing' : 'Flat'} $rate% for $months months)', 
-            _currencyFormat.format(interest)
+            'Interest (${_interestMethod == 'reducing' ? 'Reducing' : 'Flat'} $rate% for $months months)',
+            _currencyFormat.format(calc.interest),
           ),
           const Divider(height: 16),
-          _buildSummaryRow('Total Repayment', _currencyFormat.format(totalAmount), isTotal: true),
-          _buildSummaryRow(paymentLabel, _currencyFormat.format(periodicPayment), isHighlight: true),
+          _buildSummaryRow('Total Repayment', _currencyFormat.format(calc.total), isTotal: true),
+          _buildSummaryRow(paymentLabel, _currencyFormat.format(calc.periodic), isHighlight: true),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryRow(String label, String value, {bool isTotal = false, bool isHighlight = false}) {
+  /// Single place for loan maths (used by the summary AND by _createLoan)
+  ({double interest, double total, double periodic}) _calculate(
+      int principal, double rate, int months) {
+    double interest;
+    double total;
+    double periodic;
+
+    if (_interestMethod == 'reducing') {
+      final monthlyRate = rate / (100 * 12);
+      if (monthlyRate > 0) {
+        double powN = 1;
+        for (int i = 0; i < months; i++) {
+          powN *= (1 + monthlyRate);
+        }
+        periodic = (principal * monthlyRate * powN) / (powN - 1);
+        total = periodic * months;
+        interest = total - principal;
+      } else {
+        interest = 0;
+        total = principal.toDouble();
+        periodic = principal / months;
+      }
+    } else {
+      // Flat: rate is per month
+      interest = (principal * rate / 100) * months;
+      total = principal + interest;
+      periodic = total / months;
+    }
+    return (interest: interest, total: total, periodic: periodic);
+  }
+
+  Widget _buildSummaryRow(String label, String value,
+      {bool isTotal = false, bool isHighlight = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: isTotal ? 15 : 14,
-              fontWeight: isTotal ? FontWeight.w600 : FontWeight.w500,
-              color: isHighlight ? AppTheme.success : AppTheme.textPrimary,
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: isTotal ? 15 : 14,
+                fontWeight: isTotal ? FontWeight.w600 : FontWeight.w500,
+                color: isHighlight ? AppTheme.success : AppTheme.textPrimary,
+              ),
             ),
           ),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: FontWeight.w600,
-              color: isTotal ? AppTheme.success : (isHighlight ? AppTheme.success : AppTheme.textPrimary),
+          const SizedBox(width: 8),
+          Flexible(
+            flex: 4,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: GoogleFonts.poppins(
+                  fontSize: isTotal ? 16 : 14,
+                  fontWeight: FontWeight.w600,
+                  color: isTotal || isHighlight ? AppTheme.success : AppTheme.textPrimary,
+                ),
+              ),
             ),
           ),
         ],
@@ -479,7 +651,8 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       onPressed: _isLoading ? null : _createLoan,
       style: ElevatedButton.styleFrom(
         backgroundColor: AppTheme.primary,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        minimumSize: const Size.fromHeight(52),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       child: _isLoading
@@ -488,11 +661,36 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
               width: 20,
               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
             )
-          : Text(
-              _autoApprove ? 'Create & Disburse Loan' : 'Create Loan (Pending Approval)',
-              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
+          : FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                _autoApprove ? 'Create & Disburse Loan' : 'Create Loan (Pending Approval)',
+                maxLines: 1,
+                style: GoogleFonts.poppins(
+                    fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
+              ),
             ),
     );
+  }
+
+  // ───────────────────────── Actions ─────────────────────────
+
+  void _resetForm() {
+    _formKey.currentState?.reset();
+    _amountController.clear();
+    _purposeController.clear();
+    _notesController.clear();
+    _interestRateController.text = '15';
+    _durationController.text = '12';
+    setState(() {
+      _selectedMemberId = null;
+      _selectedMemberName = null;
+      _selectedMemberPhone = null;
+      _loanType = 'personal';
+      _paymentFrequency = 'monthly';
+      _interestMethod = 'flat';
+      _autoApprove = true;
+    });
   }
 
   Future<void> _createLoan() async {
@@ -508,34 +706,12 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       final principal = int.parse(_amountController.text);
       final rate = double.parse(_interestRateController.text);
       final months = int.parse(_durationController.text);
-      
-      // Calculate interest based on method
-      double interest;
-      double totalAmount;
-      
-      if (_interestMethod == 'reducing') {
-        // Reducing Balance calculation
-        final monthlyRate = rate / (100 * 12);
-        if (monthlyRate > 0) {
-          final pow = (1 + monthlyRate);
-          double powN = 1;
-          for (int i = 0; i < months; i++) {
-            powN *= pow;
-          }
-          final periodicPayment = (principal * monthlyRate * powN) / (powN - 1);
-          totalAmount = periodicPayment * months;
-          interest = totalAmount - principal;
-        } else {
-          interest = 0;
-          totalAmount = principal.toDouble();
-        }
-      } else {
-        // Flat Rate calculation
-        interest = (principal * rate * months) / 100;
-        totalAmount = principal + interest;
-      }
 
-      final loanData = {
+      final calc = _calculate(principal, rate, months);
+      final interest = calc.interest;
+      final totalAmount = calc.total;
+
+      final loanData = <String, dynamic>{
         'tenantId': FirebaseService.sessionTenantId,
         'farmerId': _selectedMemberId,
         'farmerName': _selectedMemberName,
@@ -570,18 +746,22 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         loanData['disbursedBy'] = FirebaseService.sessionUid;
       }
 
-      await FirebaseFirestore.instance
-          .collection(AppConstants.loansCol)
-          .add(loanData);
+      await FirebaseFirestore.instance.collection(AppConstants.loansCol).add(loanData);
 
       if (!mounted) return;
-      Navigator.pop(context);
+      final message =
+          _autoApprove ? 'Loan created and disbursed successfully!' : 'Loan created, pending approval';
+
+      // When opened as a tab (no back stack) don't pop the root route
+      if (Navigator.of(context).canPop()) {
+        Navigator.pop(context);
+      } else {
+        _resetForm();
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _autoApprove ? 'Loan created and disbursed successfully!' : 'Loan created, pending approval',
-            style: GoogleFonts.poppins(),
-          ),
+          content: Text(message, style: GoogleFonts.poppins()),
           backgroundColor: AppTheme.success,
         ),
       );
@@ -593,6 +773,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins()),
@@ -604,6 +785,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
 extension StringExtension on String {
   String capitalize() {
+    if (isEmpty) return this;
     return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

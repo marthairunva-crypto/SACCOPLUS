@@ -14,7 +14,13 @@ import 'loan_details_screen.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
   final bool embedded;
-  const LoanApprovalScreen({super.key, this.embedded = false});
+  final Function(String loanId, Map<String, dynamic> loanData)? onLoanTap;
+  
+  const LoanApprovalScreen({
+    super.key, 
+    this.embedded = false,
+    this.onLoanTap,
+  });
 
   @override
   State<LoanApprovalScreen> createState() => _LoanApprovalScreenState();
@@ -25,9 +31,11 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(
+      appBar: (widget.embedded && isMobile) ? null : AppBar(
         title: const Text('Loan Center'),
         automaticallyImplyLeading: !widget.embedded,
         leading: widget.embedded
@@ -109,23 +117,33 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
           // Recovered = Total Disbursed - Outstanding
           final totalRecovered = totalLoanAmount - totalOutstanding;
 
-          return Column(
-            children: [
-              // Stats Cards Row
-              Container(
-                margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isSmallScreen = constraints.maxWidth < 600;
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                // Stats Cards Row
+                Container(
+                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isSmallScreen = constraints.maxWidth < 600;
                     
                     if (isSmallScreen) {
-                      return Column(
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          _buildStatCard('Total Loans', 'UGX ${fmt.format(totalLoanAmount.round())}', Icons.account_balance_wallet, const Color(0xFF1565C0)),
-                          const SizedBox(height: 8),
-                          _buildStatCard('Outstanding', 'UGX ${fmt.format(totalOutstanding.round())}', Icons.pending_actions, const Color(0xFFD32F2F)),
-                          const SizedBox(height: 8),
-                          _buildStatCard('Recovered', 'UGX ${fmt.format(totalRecovered.round())}', Icons.check_circle, const Color(0xFF2E7D32)),
+                          SizedBox(
+                            width: (constraints.maxWidth - 8) / 2,
+                            child: _buildStatCard('Total Loans', 'UGX ${fmt.format(totalLoanAmount.round())}', Icons.account_balance_wallet, const Color(0xFF1565C0)),
+                          ),
+                          SizedBox(
+                            width: (constraints.maxWidth - 8) / 2,
+                            child: _buildStatCard('Outstanding', 'UGX ${fmt.format(totalOutstanding.round())}', Icons.pending_actions, const Color(0xFFD32F2F)),
+                          ),
+                          SizedBox(
+                            width: (constraints.maxWidth - 8) / 2,
+                            child: _buildStatCard('Recovered', 'UGX ${fmt.format(totalRecovered.round())}', Icons.check_circle, const Color(0xFF2E7D32)),
+                          ),
                         ],
                       );
                     }
@@ -321,10 +339,9 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 ),
               ),
               // Table Section
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final availableWidth = constraints.maxWidth - 24;
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final availableWidth = constraints.maxWidth - 24;
                     
                     return Container(
                       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -635,8 +652,8 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                       );
                     },
                   ),
-                ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -1048,6 +1065,13 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
     print('Outstanding: ${loan['principalOutstanding']}');
     print('========================');
     
+    // If embedded in dashboard with callback, use it
+    if (widget.onLoanTap != null) {
+      widget.onLoanTap!(loanId, loan);
+      return;
+    }
+    
+    // Otherwise, navigate to new page
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => LoanDetailsScreen(loanId: loanId, initialLoanData: loan),

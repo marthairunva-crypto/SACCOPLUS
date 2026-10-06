@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:device_preview/device_preview.dart'; // ✅ ADDED
 import 'firebase_options.dart';
 import 'core/sacco_service.dart';
 import 'theme/modern_theme.dart';
@@ -34,37 +35,43 @@ void main() async {
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    
+
     // Check if it's a Firestore index error
     final errorString = details.exception.toString();
     if (errorString.contains('index') && errorString.contains('firebase')) {
-      print('');
-      print('╔═══════════════════════════════════════════════════════════════════════╗');
-      print('║  ⚠️  FIRESTORE COMPOSITE INDEX REQUIRED                                ║');
-      print('╚═══════════════════════════════════════════════════════════════════════╝');
-      print('');
-      
+      debugPrint('');
+      debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
+      debugPrint('║  ⚠️  FIRESTORE COMPOSITE INDEX REQUIRED                                ║');
+      debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
+      debugPrint('');
+
       // Extract and print the index URL if present
-      final urlMatch = RegExp(r'https://console\.firebase\.google\.com[^\s\)]+').firstMatch(errorString);
+      final urlMatch = RegExp(r'https://console\.firebase\.google\.com[^\s\)]+')
+          .firstMatch(errorString);
       if (urlMatch != null) {
         final url = urlMatch.group(0)!;
-        print('🔗 CLICK THIS LINK TO AUTO-CREATE THE INDEX:');
-        print('');
-        print(url);  // Plain print for clickable link
-        print('');
-        print('💡 TIP: Ctrl+Click (or Cmd+Click on Mac) to open in your browser');
+        debugPrint('🔗 CLICK THIS LINK TO AUTO-CREATE THE INDEX:');
+        debugPrint('');
+        debugPrint(url);
+        debugPrint('');
+        debugPrint('💡 TIP: Ctrl+Click (or Cmd+Click on Mac) to open in your browser');
       } else {
-        print('🔗 Manually create indexes at:');
-        print('https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
+        debugPrint('🔗 Manually create indexes at:');
+        debugPrint('https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
       }
-      print('');
-      print('═══════════════════════════════════════════════════════════════════════');
-      print('');
+      debugPrint('');
+      debugPrint('═══════════════════════════════════════════════════════════════════════');
+      debugPrint('');
     }
   };
 
-  // DevicePreview disabled for production builds
-  runApp(const SaccoPlusApp());
+  // Run app with DevicePreview
+  runApp(
+    DevicePreview(
+      enabled: false, // Enabled in debug/profile mode only
+      builder: (context) => const SaccoPlusApp(),
+    ),
+  );
 }
 
 class SaccoPlusApp extends StatefulWidget {
@@ -88,11 +95,17 @@ class _SaccoPlusAppState extends State<SaccoPlusApp> {
     final theme = ModernTheme.lightTheme;
 
     return MaterialApp(
-      title: SaccoService.current.saccoName.isNotEmpty 
-          ? SaccoService.current.saccoName 
-          : 'SACCOPLUS',
+      title: SaccoService.current.saccoName.isNotEmpty
+          ? SaccoService.current.saccoName
+          : 'MBADIFA SACCO',
       debugShowCheckedModeBanner: false,
       theme: theme,
+
+      // Device Preview configuration
+      useInheritedMediaQuery: true,
+      locale: DevicePreview.locale(context),
+      builder: DevicePreview.appBuilder,
+
       home: const SplashScreen(),
     );
   }

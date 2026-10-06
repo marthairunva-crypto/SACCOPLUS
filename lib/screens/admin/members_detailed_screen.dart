@@ -99,15 +99,17 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        title: Text('All Members', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+      appBar: isMobile ? null : AppBar(
+        title: Text('All Members', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.white)),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.file_download_outlined),
+            icon: const Icon(Icons.file_download_outlined, color: Colors.white),
             tooltip: 'Export Members',
             onPressed: () async {
               final snapshot = await FirebaseFirestore.instance

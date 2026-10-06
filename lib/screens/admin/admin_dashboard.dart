@@ -21,6 +21,8 @@ import 'loan_data_correction_screen.dart';
 import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
 import 'teller_screen.dart';
+import 'teller_center_reorganized.dart';
+import 'member_activation_screen.dart';
 import 'enhanced_audit_screen.dart';
 import 'loan_portfolio_screen.dart';
 import 'admin_notification_screen.dart';
@@ -44,7 +46,7 @@ import 'kyc_verification_screen.dart';
 import 'dormant_accounts_screen.dart';
 import 'loan_products_screen.dart';
 import 'loan_calculator_screen.dart';
-import 'collections_screen.dart';
+import 'loan_details_screen.dart';
 import 'arrears_management_screen.dart';
 import 'risk_provisioning_screen.dart';
 import 'payment_screens.dart';
@@ -52,6 +54,7 @@ import 'finance_screens.dart';
 import '../../scripts/reconcile_savings.dart';
 import '../../services/update_service.dart';
 import '../../widgets/update_dialog.dart';
+import 'admin_nav_panel.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -61,70 +64,143 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
-  int _selectedIndex = 0;
   String _selectedScreen = 'dashboard';
-  
-  // Cache screens to maintain state  
-  // NOTE: If you add new screens, do a Hot Restart (not just Hot Reload) to rebuild the cache
-  Map<String, Widget>? _screenCacheInstance;
-  
-  Map<String, Widget> get _screenCache {
-    _screenCacheInstance ??= {
-      'dashboard': _AdminHomeTab(onNavigate: (screen) => setState(() => _selectedScreen = screen)),
-      
+  String? _selectedLoanId;
+  Map<String, dynamic>? _selectedLoanData;
+  bool? _navCollapsed; // null = follow window width
+
+  void _openLoan(String loanId, Map<String, dynamic>? loanData) {
+    setState(() {
+      _selectedLoanId = loanId;
+      _selectedLoanData = loanData;
+      _selectedScreen = 'loan_details';
+    });
+  }
+
+  /// Builds ONLY the requested screen.
+  ///
+  /// Previously every screen (~40) was constructed and mounted at once inside
+  /// an IndexedStack on desktop. Every setState rebuilt all of them, which is
+  /// what triggered "_dependents.isEmpty", "Duplicate GlobalKey" and
+  /// "dirty widget in the wrong build scope" when navigating back.
+  Widget _buildScreen(String key) {
+    switch (key) {
+      case 'dashboard':
+        return _AdminHomeTab(
+          onNavigate: (screen) => setState(() => _selectedScreen = screen),
+        );
+
       // MEMBERS
-      'members': const MembersDetailedScreen(),
-      'member_360': Member360Screen(),
-      'kyc': const KYCVerificationScreen(),
-      'dormant': const DormantAccountsScreen(),
-      
+      case 'members':
+        return const MembersDetailedScreen();
+      case 'member_activation':
+        return const MemberActivationScreen();
+      case 'member_360':
+        return Member360Screen();
+      case 'kyc':
+        return const KYCVerificationScreen();
+      case 'dormant':
+        return const DormantAccountsScreen();
+
       // SAVINGS & SHARES
-      'savings': const SavingsAdminScreen(embedded: true),
-      'savings_summary': const SavingsSummaryScreen(),
-      'shares': const SharesAdminScreen(embedded: true),
-      'fixed_deposits': const FixedDepositsAdminScreen(embedded: true),
-      'dividends': const DividendDistributionScreen(),
-      
+      case 'savings':
+        return const SavingsAdminScreen(embedded: true);
+      case 'savings_summary':
+        return const SavingsSummaryScreen(embedded: true);
+      case 'shares':
+        return const SharesAdminScreen(embedded: true);
+      case 'fixed_deposits':
+        return const FixedDepositsAdminScreen(embedded: true);
+      case 'dividends':
+        return const DividendDistributionScreen();
+
       // LOANS
-      'loans': const LoanApprovalScreen(embedded: true),
-      'loan_portfolio': const LoanPortfolioScreen(embedded: true),
-      'create_loan': const CreateLoanScreen(),
-      'loan_correction': const LoanDataCorrectionScreen(),
-      'loan_products': const LoanProductsScreen(),
-      'loan_calc': const LoanCalculatorScreen(),
-      'collections': const CollectionsScreen(),
-      'arrears': const ArrearsManagementScreen(),
-      'risk_provision': const RiskProvisioningScreen(),
-      
-      // PAYMENTS
-      'teller': const TellerScreen(embedded: true),
-      'payment_hub': const PaymentHubScreen(),
-      'mobile_money': const MobileMoneyScreen(),
-      'bank_transfers': const BankTransfersScreen(),
-      'reconciliation': const ReconciliationScreen(),
-      
+      case 'loans':
+        return LoanApprovalScreen(embedded: true, onLoanTap: _openLoan);
+      case 'loan_details':
+        return _selectedLoanId != null
+            ? LoanDetailsScreen(
+                // Key by loan id so opening a different loan fully resets state.
+                key: ValueKey('loan_details_$_selectedLoanId'),
+                loanId: _selectedLoanId!,
+                initialLoanData: _selectedLoanData,
+              )
+            : const Center(child: Text('No loan selected'));
+      case 'loan_portfolio':
+        return const LoanPortfolioScreen(embedded: true);
+      case 'create_loan':
+        return const CreateLoanScreen();
+      case 'loan_correction':
+        return const LoanDataCorrectionScreen();
+      case 'loan_products':
+        return const LoanProductsScreen();
+      case 'loan_calc':
+        return const LoanCalculatorScreen();
+      case 'arrears':
+        return const ArrearsManagementScreen();
+      case 'risk_provision':
+        return const RiskProvisioningScreen();
+
+      // TELLER CENTER
+      case 'teller':
+        return TellerCenterReorganized(onLoanTap: _openLoan);
+      case 'payment_hub':
+        return const PaymentHubScreen();
+      case 'mobile_money':
+        return const MobileMoneyScreen();
+      case 'bank_transfers':
+        return const BankTransfersScreen();
+      case 'reconciliation':
+        return const ReconciliationScreen();
+
       // FINANCE
-      'cash_bank': const CashBankScreen(),
-      'income': const IncomeScreen(),
-      'expenses': const ExpensesScreen(),
-      'ledger': const GeneralLedgerScreen(),
-      'financial_reports': const ComprehensiveReportsScreen(embedded: true),
-      
+      case 'cash_bank':
+        return const CashBankScreen();
+      case 'income':
+        return const IncomeScreen();
+      case 'expenses':
+        return const ExpensesScreen();
+      case 'ledger':
+        return const GeneralLedgerScreen();
+      case 'financial_reports':
+        return const ComprehensiveReportsScreen(embedded: true);
+
       // INTELLIGENCE
-      'risk_center': LoanRiskCenterScreen(tenantId: FirebaseService.sessionTenantId),
-      'liquidity': LiquidityMonitorScreen(tenantId: FirebaseService.sessionTenantId),
-      
+      case 'risk_center':
+        return LoanRiskCenterScreen(tenantId: FirebaseService.sessionTenantId);
+      case 'liquidity':
+        return LiquidityMonitorScreen(tenantId: FirebaseService.sessionTenantId);
+
       // OPERATIONS
-      'staff': const StaffManagementScreen(),
-      'notifications': const AdminNotificationsScreen(),
-      
+      case 'staff':
+        return const StaffManagementScreen();
+      case 'notifications':
+        return const AdminNotificationsScreen();
+
       // SYSTEM
-      'settings': const SaccoSettingsScreen(),
-      'audit': const EnhancedAuditScreen(embedded: true),
-      'reports': const ReportsScreen(embedded: true),
-      'data_reconciliation': const DataReconciliationScreen(),
-    };
-    return _screenCacheInstance!;
+      case 'settings':
+        return const SaccoSettingsScreen();
+      case 'audit':
+        return const EnhancedAuditScreen(embedded: true);
+      case 'reports':
+        return const ReportsScreen(embedded: true);
+      case 'data_reconciliation':
+        return const DataReconciliationScreen();
+
+      default:
+        return _AdminHomeTab(
+          onNavigate: (screen) => setState(() => _selectedScreen = screen),
+        );
+    }
+  }
+
+  /// One screen at a time, each with its own key so the previous screen is
+  /// completely disposed before the next one mounts.
+  Widget _currentScreen() {
+    return KeyedSubtree(
+      key: ValueKey(_selectedScreen),
+      child: _buildScreen(_selectedScreen),
+    );
   }
 
   @override
@@ -133,58 +209,104 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final isDesktop = screenWidth > 900;
 
     if (isDesktop) {
-      // Desktop layout with persistent sidebar and IndexedStack to maintain state
+      final navCollapsed = _navCollapsed ?? screenWidth < 1100;
       return Scaffold(
         backgroundColor: const Color(0xFFF5F7FA),
         body: Row(
           children: [
-            // Persistent Sidebar
-            Container(
-              width: 260,
-              decoration: const BoxDecoration(
-                color: Color(0xFF1A2332),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 8,
-                    offset: Offset(2, 0),
-                  ),
-                ],
-              ),
-              child: _buildSidebar(),
-            ),
-            // Main content area with IndexedStack to preserve state
-            Expanded(
-              child: IndexedStack(
-                index: _getScreenIndex(_selectedScreen),
-                children: _screenCache.values.toList(),
+            // Persistent sidebar: full menu on wide windows, icon rail on
+            // narrower ones. The toggle in the panel overrides the default.
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: navCollapsed
+                  ? 76.0
+                  : (screenWidth * 0.16).clamp(232.0, 272.0).toDouble(),
+              child: AdminNavPanel(
+                currentScreen: _selectedScreen,
+                onNavigate: (screen) => setState(() => _selectedScreen = screen),
+                onLogout: () => _confirmLogout(context),
+                onToggleCollapse: () =>
+                    setState(() => _navCollapsed = !navCollapsed),
               ),
             ),
+            // Main content: only the selected screen is mounted.
+            Expanded(child: _currentScreen()),
           ],
         ),
       );
     } else {
-      // Mobile layout with drawer
-      final pages = [
-        _screenCache['dashboard']!,
-        _screenCache['loans']!,
-        _screenCache['members']!,
-        _screenCache['reports']!,
-      ];
+      // Mobile layout with drawer - show current screen only
+      final wrappedScreen = Container(
+        color: const Color(0xFFF5F7FA),
+        child: _currentScreen(),
+      );
 
       return Scaffold(
         backgroundColor: const Color(0xFFF5F7FA),
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: ModernTheme.primaryBlue,
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              tooltip: 'Menu',
+            ),
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Image.asset(
+                  'assets/images/mbadifa-logo.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'MBADIFA SACCO',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: () {
+                // Force rebuild to reload data
+                setState(() {});
+              },
+              tooltip: 'Refresh',
+            ),
+          ],
+        ),
         drawer: _AdminDrawer(
+          currentScreen: _selectedScreen,
           onNavigate: (screen) {
             Navigator.pop(context);
-            setState(() => _selectedScreen = screen);
+            setState(() {
+              _selectedScreen = screen;
+            });
           },
-          onLogout: () => _confirmLogout(context),
+          onLogout: () {
+            Navigator.pop(context); // close the drawer
+            _confirmLogout(context);
+          },
         ),
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: pages,
-        ),
+        body: wrappedScreen,
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -196,8 +318,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ],
           ),
           child: BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            onTap: (i) => setState(() => _selectedIndex = i),
+            currentIndex: _getBottomNavIndex(_selectedScreen),
+            onTap: (i) {
+              setState(() {
+                if (i == 0) {
+                  _selectedScreen = 'dashboard';
+                } else if (i == 1) {
+                  _selectedScreen = 'loans';
+                } else if (i == 2) {
+                  _selectedScreen = 'members';
+                } else if (i == 3) {
+                  _selectedScreen = 'financial_reports';
+                }
+              });
+            },
             type: BottomNavigationBarType.fixed,
             backgroundColor: Colors.white,
             selectedItemColor: ModernTheme.primary,
@@ -222,398 +356,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  int _getScreenIndex(String screenKey) {
-    final keys = _screenCache.keys.toList();
-    final index = keys.indexOf(screenKey);
-    if (kDebugMode) {
-      print('🔍 _getScreenIndex: screenKey=$screenKey, index=$index, keys.length=${keys.length}');
-      if (index == -1) {
-        print('   ❌ Screen not found! Available keys: ${keys.take(20).join(", ")}...');
-      }
+  int _getBottomNavIndex(String screenKey) {
+    // Map screen keys to bottom nav indices
+    switch (screenKey) {
+      case 'dashboard':
+        return 0;
+      case 'loans':
+      case 'loan_details':
+      case 'loan_portfolio':
+      case 'create_loan':
+      case 'loan_correction':
+      case 'loan_products':
+      case 'loan_calc':
+      case 'arrears':
+      case 'risk_provision':
+        return 1;
+      case 'members':
+      case 'member_activation':
+      case 'member_360':
+      case 'kyc':
+      case 'dormant':
+        return 2;
+      case 'financial_reports':
+      case 'reports':
+      case 'cash_bank':
+      case 'income':
+      case 'expenses':
+      case 'ledger':
+        return 3;
+      default:
+        return 0; // Default to Dashboard for other screens
     }
-    return index == -1 ? 0 : index;
-  }
-
-  Widget _buildSidebar() {
-    return Column(
-      children: [
-        // Header
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Column(
-            children: [
-              // SACCO Plus Logo with elegant circular background
-              Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.2),
-                    width: 2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(14),
-                child: Image.asset(
-                  'assets/images/mbadifa-logo.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-              
-              const SizedBox(height: 14),
-              
-              // Administrator title
-              Text(
-                'Administrator',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              
-              const SizedBox(height: 6),
-              
-              // Luganda slogan with better styling
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  AppConstants.appSubtitle,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white.withOpacity(0.95),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 8),
-              
-              // Admin badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF4A90E2).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  'Admin',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 16),
-            children: [
-              _drawerItem(Icons.dashboard_rounded, 'Dashboard', 'dashboard'),
-              
-              const SizedBox(height: 8),
-              
-              // MEMBERS SECTION - Collapsible
-              _buildExpansionSection(
-                'Members',
-                Icons.people_rounded,
-                [
-                  {'icon': Icons.people_rounded, 'label': 'All Members', 'route': 'members'},
-                  {'icon': Icons.person_search_rounded, 'label': 'Member 360', 'route': 'member_360'},
-                  {'icon': Icons.verified_user_rounded, 'label': 'KYC & Verification', 'route': 'kyc'},
-                  {'icon': Icons.account_box_rounded, 'label': 'Dormant Accounts', 'route': 'dormant'},
-                ],
-              ),
-              
-              // SAVINGS & SHARES SECTION - Collapsible
-              _buildExpansionSection(
-                'Savings & Shares',
-                Icons.savings_rounded,
-                [
-                  {'icon': Icons.savings_rounded, 'label': 'Savings Management', 'route': 'savings'},
-                  {'icon': Icons.list_alt_rounded, 'label': 'Savings Summary', 'route': 'savings_summary'},
-                  {'icon': Icons.pie_chart_rounded, 'label': 'Shares Management', 'route': 'shares'},
-                  {'icon': Icons.account_balance_rounded, 'label': 'Fixed Deposits', 'route': 'fixed_deposits'},
-                  {'icon': Icons.card_giftcard_rounded, 'label': 'Dividends', 'route': 'dividends'},
-                ],
-              ),
-              
-              // LOANS SECTION - Collapsible
-              _buildExpansionSection(
-                'Loans',
-                Icons.account_tree_rounded,
-                [
-                  {'icon': Icons.add_card_rounded, 'label': 'Create & Disburse Loan', 'route': 'create_loan'},
-                  {'icon': Icons.fact_check_rounded, 'label': 'Loan Applications', 'route': 'loans'},
-                  {'icon': Icons.account_tree_rounded, 'label': 'Loan Portfolio', 'route': 'loan_portfolio'},
-                  {'icon': Icons.edit_note, 'label': 'Correct Loan Data', 'route': 'loan_correction'},
-                  {'icon': Icons.inventory_2_rounded, 'label': 'Loan Products', 'route': 'loan_products'},
-                  {'icon': Icons.calculate_rounded, 'label': 'Loan Calculator', 'route': 'loan_calc'},
-                  {'icon': Icons.payment_rounded, 'label': 'Collections', 'route': 'collections'},
-                  {'icon': Icons.warning_amber_rounded, 'label': 'Arrears Management', 'route': 'arrears'},
-                  {'icon': Icons.gavel_rounded, 'label': 'Risk & Provisioning', 'route': 'risk_provision'},
-                ],
-              ),
-              
-              // PAYMENTS SECTION - Collapsible
-              _buildExpansionSection(
-                'Payments',
-                Icons.point_of_sale_rounded,
-                [
-                  {'icon': Icons.point_of_sale_rounded, 'label': 'Teller Operations', 'route': 'teller'},
-                  {'icon': Icons.hub_rounded, 'label': 'Payment Hub', 'route': 'payment_hub'},
-                  {'icon': Icons.phone_android_rounded, 'label': 'Mobile Money', 'route': 'mobile_money'},
-                  {'icon': Icons.transform_rounded, 'label': 'Bank Transfers', 'route': 'bank_transfers'},
-                  {'icon': Icons.sync_rounded, 'label': 'Reconciliation', 'route': 'reconciliation'},
-                ],
-              ),
-              
-              // FINANCE SECTION - Collapsible
-              _buildExpansionSection(
-                'Finance',
-                Icons.account_balance_wallet_rounded,
-                [
-                  {'icon': Icons.account_balance_wallet_rounded, 'label': 'Cash & Bank', 'route': 'cash_bank'},
-                  {'icon': Icons.receipt_long_rounded, 'label': 'Income', 'route': 'income'},
-                  {'icon': Icons.money_off_rounded, 'label': 'Expenses', 'route': 'expenses'},
-                  {'icon': Icons.book_rounded, 'label': 'General Ledger', 'route': 'ledger'},
-                  {'icon': Icons.assessment_rounded, 'label': 'Financial Reports', 'route': 'financial_reports'},
-                ],
-              ),
-              
-              // INTELLIGENCE SECTION - Collapsible
-              _buildExpansionSection(
-                'Intelligence',
-                Icons.psychology_rounded,
-                [
-                  {'icon': Icons.shield_rounded, 'label': 'Risk Center', 'route': 'risk_center'},
-                  {'icon': Icons.water_rounded, 'label': 'Liquidity Monitor', 'route': 'liquidity'},
-                ],
-              ),
-              
-              
-              // OPERATIONS SECTION - Collapsible
-              _buildExpansionSection(
-                'Operations',
-                Icons.settings_rounded,
-                [
-                  {'icon': Icons.badge_rounded, 'label': 'Staff Management', 'route': 'staff'},
-                  {'icon': Icons.mail_rounded, 'label': 'Notifications', 'route': 'notifications'},
-                ],
-              ),
-              
-              // SYSTEM SECTION - Collapsible
-              _buildExpansionSection(
-                'System',
-                Icons.settings_applications_rounded,
-                [
-                  {'icon': Icons.tune_rounded, 'label': 'Settings', 'route': 'settings'},
-                  {'icon': Icons.history_rounded, 'label': 'Audit Trail', 'route': 'audit'},
-                  {'icon': Icons.description_rounded, 'label': 'Reports', 'route': 'reports'},
-                  // DISABLED: Data reconciliation caused issues
-                  // {'icon': Icons.sync_rounded, 'label': 'Data Reconciliation', 'route': 'data_reconciliation'},
-                ],
-              ),
-              
-              Divider(color: Colors.white.withOpacity(0.1), indent: 16, endIndent: 16, height: 32),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: OutlinedButton.icon(
-                  onPressed: () => _confirmLogout(context),
-                  icon: const Icon(Icons.logout_rounded,
-                      color: Color(0xFFEF4444)),
-                  label: Text('Sign Out',
-                      style: GoogleFonts.poppins(
-                          color: const Color(0xFFEF4444),
-                          fontWeight: FontWeight.w600)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFEF4444)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _drawerItem(IconData icon, String label, String screenKey, {Color? color}) {
-    final isSelected = _selectedScreen == screenKey;
-    
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        leading: Icon(icon, color: isSelected ? ModernTheme.accent : (color ?? Colors.white70), size: 22),
-        title: Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: isSelected ? ModernTheme.accent : (color ?? Colors.white),
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500)),
-        onTap: () => setState(() => _selectedScreen = screenKey),
-        horizontalTitleGap: 8,
-        dense: true,
-        selected: isSelected,
-        selectedTileColor: ModernTheme.accent.withOpacity(0.1),
-        hoverColor: Colors.white.withOpacity(0.05),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      ),
-    );
-  }
-
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: GoogleFonts.poppins(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Colors.white.withOpacity(0.5),
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-
-  // Collapsible Expansion Section for Sidebar
-  Widget _buildExpansionSection(String title, IconData icon, List<Map<String, dynamic>> items) {
-    return Material(
-      color: Colors.transparent,
-      child: Theme(
-        data: ThemeData(
-          dividerColor: Colors.transparent,
-          splashColor: Colors.white.withOpacity(0.05),
-          highlightColor: Colors.white.withOpacity(0.05),
-        ),
-        child: ExpansionTile(
-          leading: Icon(icon, color: Colors.white70, size: 22),
-          title: Text(
-            title,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          iconColor: Colors.white70,
-          collapsedIconColor: Colors.white70,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          childrenPadding: const EdgeInsets.only(left: 16),
-          children: items.map((item) {
-            final route = item['route'] as String;
-            final isSelected = _selectedScreen == route;
-            
-            return Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  if (kDebugMode) {
-                    print('🎯 Sidebar item clicked: $route, current: $_selectedScreen');
-                  }
-                  setState(() {
-                    _selectedScreen = route;
-                    if (kDebugMode) {
-                      print('✅ State updated: $_selectedScreen');
-                    }
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  margin: const EdgeInsets.only(bottom: 2),
-                  decoration: BoxDecoration(
-                    color: isSelected 
-                        ? const Color(0xFF4A90E2).withOpacity(0.15)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: isSelected
-                        ? Border(
-                            left: BorderSide(
-                              color: const Color(0xFF4A90E2),
-                              width: 3,
-                            ),
-                          )
-                        : null,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        item['icon'] as IconData,
-                        size: 18,
-                        color: isSelected 
-                            ? const Color(0xFF4A90E2)
-                            : Colors.white60,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          item['label'] as String,
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                            color: isSelected ? Colors.white : Colors.white70,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
   }
 
   void _confirmLogout(BuildContext context) {
-    Navigator.pop(context);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -647,150 +423,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
 // ─── Admin Drawer (Mobile) ────────────────────────────────────────────────────
 class _AdminDrawer extends StatelessWidget {
+  final String currentScreen;
   final ValueChanged<String> onNavigate;
   final VoidCallback onLogout;
 
   const _AdminDrawer({
+    required this.currentScreen,
     required this.onNavigate,
     required this.onLogout,
   });
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Drawer(
-      backgroundColor: const Color(0xFF1A2332),
-      child: Column(
-        children: [
-          // Header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Column(
-              children: [
-                // SACCO Plus Logo with elegant circular background
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(14),
-                  child: Image.asset(
-                    'assets/images/logo2.png',
-                    fit: BoxFit.contain,
-                  ),
-                ),
-                
-                const SizedBox(height: 14),
-                
-                // Administrator title
-                Text(
-                  'Administrator',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                
-                const SizedBox(height: 8),
-                
-                // Luganda slogan with better styling
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    AppConstants.appSubtitle,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.95),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: 16),
-              children: [
-                _drawerItem(Icons.dashboard_rounded, 'Dashboard', () => onNavigate('dashboard')),
-                _drawerItem(Icons.point_of_sale_rounded, 'Teller', () => onNavigate('teller')),
-                _drawerItem(Icons.fact_check_rounded, 'Loans', () => onNavigate('loans')),
-                _drawerItem(Icons.account_tree_rounded, 'Portfolio', () => onNavigate('loan_portfolio')),
-                _drawerItem(Icons.people_rounded, 'Members', () => onNavigate('members')),
-                _drawerItem(Icons.assessment_rounded, 'Reports', () => onNavigate('financial_reports')),
-                _drawerItem(Icons.history_rounded, 'Audit', () => onNavigate('audit')),
-                Divider(color: Colors.white.withOpacity(0.1), indent: 16, endIndent: 16),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: OutlinedButton.icon(
-                    onPressed: onLogout,
-                    icon: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444)),
-                    label: Text('Sign Out',
-                        style: GoogleFonts.poppins(
-                            color: const Color(0xFFEF4444),
-                            fontWeight: FontWeight.w600)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFEF4444)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _drawerItem(IconData icon, String label, VoidCallback onTap, {Color? color}) {
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        leading: Icon(icon, color: color ?? Colors.white70, size: 22),
-        title: Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: color ?? Colors.white,
-                fontWeight: FontWeight.w500)),
-        onTap: onTap,
-        horizontalTitleGap: 8,
-        dense: true,
-        hoverColor: Colors.white.withOpacity(0.05),
+      width: screenWidth * 0.86 > 304 ? 304 : screenWidth * 0.86,
+      backgroundColor: AdminNavPanel.background,
+      shape: const RoundedRectangleBorder(),
+      child: AdminNavPanel(
+        currentScreen: currentScreen,
+        onNavigate: onNavigate,
+        onLogout: onLogout,
       ),
     );
   }
@@ -799,7 +452,7 @@ class _AdminDrawer extends StatelessWidget {
 // ─── Admin Home Tab ───────────────────────────────────────────────────────────
 class _AdminHomeTab extends StatefulWidget {
   final Function(String) onNavigate;
-  
+
   const _AdminHomeTab({required this.onNavigate});
 
   @override
@@ -831,7 +484,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   EnhancedMetrics? _enhancedMetrics;
   LoanRiskAnalysis? _riskAnalysis;
   LiquidityAnalysis? _liquidityAnalysis;
-  
+
   // Chart time period selection
   String _selectedPeriod = 'Last 6 months';
 
@@ -841,39 +494,43 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     _load();
     _checkForUpdates();
   }
-  
+
   /// Check for app updates on startup
   Future<void> _checkForUpdates() async {
-    // Only check for updates on Windows
-    if (!Platform.isWindows) return;
-    
-    // Wait a bit for the UI to load
-    await Future.delayed(const Duration(seconds: 2));
-    
-    if (!mounted) return;
-    
-    final updateInfo = await UpdateService.checkForUpdates();
-    
-    if (updateInfo['hasUpdate'] == true && mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => UpdateDialog(updateInfo: updateInfo),
-      );
+    try {
+      // Only check for updates on Windows desktop (not web)
+      if (!kIsWeb && Platform.isWindows) {
+        // Wait a bit for the UI to load
+        await Future.delayed(const Duration(seconds: 2));
+
+        if (!mounted) return;
+
+        final updateInfo = await UpdateService.checkForUpdates();
+
+        if (updateInfo['hasUpdate'] == true && mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => UpdateDialog(updateInfo: updateInfo),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking for updates: $e');
     }
   }
 
   Future<void> _load() async {
     if (mounted) setState(() => _loading = _cachedStats['totalLoans'] == 0);
     try {
-      print('🔄 Dashboard: Loading data...');
-      
+      debugPrint('🔄 Dashboard: Loading data...');
+
       // Load only essential data - simple and fast
       final loans = await FirebaseService.getAllLoansOnce();
       final members = await FirebaseService.getAllFarmersOnce();
-      
-      print('📊 Dashboard: Got ${loans.length} loans, ${members.length} members');
-      
+
+      debugPrint('📊 Dashboard: Got ${loans.length} loans, ${members.length} members');
+
       // Calculate from REAL data
       int totalLoans = loans.length;
       int activeLoans = 0;
@@ -881,23 +538,23 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       double totalOutstanding = 0;
       double overdueAmount = 0;
       int overdueCount = 0;
-      
+
       final now = DateTime.now();
-      
+
       for (final loan in loans) {
         final status = (loan['status'] ?? '').toString().toLowerCase();
         final amount = (loan['amount'] ?? loan['loanAmount'] ?? 0).toDouble();
         final outstanding = (loan['principalOutstanding'] ?? 0).toDouble();
-        
+
         if (status == 'active' || status == 'disbursed' || status == 'overdue') {
           activeLoans++;
           totalOutstanding += outstanding;
         }
-        
+
         if (status == 'approved' || status == 'active' || status == 'disbursed' || status == 'paid' || status == 'overdue') {
           totalDisbursed += amount;
         }
-        
+
         // Check for overdue
         final dueDate = loan['dueDate'];
         if (dueDate != null && outstanding > 0) {
@@ -907,23 +564,23 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
           } else if (dueDate is String) {
             dueDateObj = DateTime.tryParse(dueDate);
           }
-          
+
           if (dueDateObj != null && dueDateObj.isBefore(now)) {
             overdueAmount += outstanding;
             overdueCount++;
           }
         }
       }
-      
+
       // Calculate savings from members
       double totalSavings = 0;
       double totalShares = 0;
-      
+
       for (final member in members) {
         totalSavings += (member['savingsBalance'] ?? 0).toDouble();
         totalShares += (member['sharesBalance'] ?? 0).toDouble();
       }
-      
+
       // Update cache with REAL data
       if (mounted) {
         setState(() {
@@ -945,29 +602,29 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             'overdueCount': overdueCount.toDouble(),
           };
           _loading = false;
-          
+
           _tellerData = {'byAccountType': {}, 'netFlow': 0, 'recentTransactions': []};
           _depositTrends = [];
         });
-        
-        print('✅ Dashboard: Loaded successfully');
-        print('   Total Loans: $totalLoans');
-        print('   Active Loans: $activeLoans');
-        print('   Total Outstanding: ${totalOutstanding.toStringAsFixed(0)}');
-        print('   Total Savings: ${totalSavings.toStringAsFixed(0)}');
-        print('   Overdue: $overdueCount loans, ${overdueAmount.toStringAsFixed(0)}');
+
+        debugPrint('✅ Dashboard: Loaded successfully');
+        debugPrint('   Total Loans: $totalLoans');
+        debugPrint('   Active Loans: $activeLoans');
+        debugPrint('   Total Outstanding: ${totalOutstanding.toStringAsFixed(0)}');
+        debugPrint('   Total Savings: ${totalSavings.toStringAsFixed(0)}');
+        debugPrint('   Overdue: $overdueCount loans, ${overdueAmount.toStringAsFixed(0)}');
       }
     } catch (e, stackTrace) {
-      print('❌ Dashboard: Error loading data: $e');
-      print('Stack: $stackTrace');
-      
+      debugPrint('❌ Dashboard: Error loading data: $e');
+      debugPrint('Stack: $stackTrace');
+
       // Check if it's a Firestore index error and print the link
       final errorString = e.toString();
       if (errorString.contains('index') || errorString.contains('Index')) {
         debugPrint('');
         debugPrint('⚠️  FIRESTORE INDEX REQUIRED!');
         debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        
+
         // Extract and print the index URL if present
         final urlMatch = RegExp(r'https://[^\s\)]+').firstMatch(errorString);
         if (urlMatch != null) {
@@ -980,7 +637,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         debugPrint('');
       }
-      
+
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -990,7 +647,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   Widget _buildActionRequiredSection(bool isDesktop) {
     // Build alert items from real data only
     final actionItems = <Map<String, dynamic>>[];
-    
+
     // Overdue loans
     final overdueCount = _alerts['overdueLoans']?['count'] ?? 0;
     if (overdueCount > 0) {
@@ -1002,7 +659,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         'action': 'view_overdue_loans',
       });
     }
-    
+
     // Pending loan approvals
     final pendingLoansCount = _alerts['pendingLoanApprovals']?['count'] ?? 0;
     if (pendingLoansCount > 0) {
@@ -1014,7 +671,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         'action': 'view_pending_loans',
       });
     }
-    
+
     // Pending KYC
     final pendingKYCCount = _alerts['pendingKYC']?['count'] ?? 0;
     if (pendingKYCCount > 0) {
@@ -1026,7 +683,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         'action': 'view_kyc',
       });
     }
-    
+
     // Liquidity warnings
     final liquidityStatus = _alerts['liquidityStatus']?['status'] ?? 'healthy';
     if (liquidityStatus == 'caution' || liquidityStatus == 'critical') {
@@ -1038,7 +695,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         'action': 'view_liquidity',
       });
     }
-    
+
     // Failed transactions
     final failedTxnCount = _alerts['failedTransactions']?['count'] ?? 0;
     if (failedTxnCount > 0) {
@@ -1136,7 +793,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
     Color severityColor;
     Color bgColor;
-    
+
     switch (severity) {
       case 'critical':
         severityColor = const Color(0xFFEF4444);
@@ -1230,7 +887,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
     Color severityColor;
     IconData severityIcon;
-    
+
     switch (severity) {
       case 'critical':
         severityColor = const Color(0xFFDC2626);
@@ -1302,7 +959,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   List<Map<String, dynamic>> _generateMonthlyData(List<Map<String, dynamic>> loans) {
     final now = DateTime.now();
     final monthlyData = <Map<String, dynamic>>[];
-    
+
     for (int i = 5; i >= 0; i--) {
       final month = DateTime(now.year, now.month - i, 1);
       final monthLoans = loans.where((loan) {
@@ -1311,13 +968,13 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             createdAt.year == month.year &&
             createdAt.month == month.month;
       }).length;
-      
+
       monthlyData.add({
         'month': DateFormat('MMM').format(month),
         'loans': monthLoans,
       });
     }
-    
+
     return monthlyData;
   }
 
@@ -1345,11 +1002,11 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             Container(
               padding: EdgeInsets.all(isDesktop ? 20 : 16),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1E3A5F), Color(0xFF2C5282)],
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade100, Colors.blue.shade200],
                 ),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                border: Border.all(color: Colors.blue.shade300),
               ),
               child: Row(
                 children: [
@@ -1360,7 +1017,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                         Text(
                           'MBADIFA SACCO',
                           style: GoogleFonts.poppins(
-                            color: Colors.white,
+                            color: Colors.blue.shade900,
                             fontSize: isDesktop ? 24 : 18,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.2,
@@ -1370,7 +1027,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                         Text(
                           AppConstants.appSubtitle,
                           style: GoogleFonts.poppins(
-                            color: Colors.white70,
+                            color: Colors.blue.shade700,
                             fontSize: isDesktop ? 14 : 12,
                           ),
                         ),
@@ -1378,7 +1035,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                    icon: Icon(Icons.refresh_rounded, color: Colors.blue.shade900),
                     onPressed: _load,
                     tooltip: 'Refresh',
                   ),
@@ -1389,7 +1046,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             SizedBox(height: isDesktop ? 24 : 16),
 
             // ACTION REQUIRED CENTER
-            if (_alerts.isNotEmpty && _alerts['totalAlerts'] > 0)
+            if (_alerts.isNotEmpty && (_alerts['totalAlerts'] ?? 0) > 0)
               _buildActionRequiredSection(isDesktop),
 
             SizedBox(height: isDesktop ? 24 : 16),
@@ -1482,109 +1139,6 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
             SizedBox(height: isDesktop ? 24 : 16),
 
-            // ========== NEW PHASE 1 COMMAND CENTER SECTIONS (TEMPORARILY DISABLED) ==========
-            // TODO: Fix layout issues and re-enable
-            /*
-            // Enhanced Portfolio Health Metrics
-            if (_enhancedMetrics != null) ...[
-              Text(
-                'PORTFOLIO HEALTH METRICS',
-                style: GoogleFonts.poppins(
-                  color: const Color(0xFF1E3A5F),
-                  fontSize: isDesktop ? 18 : 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              SizedBox(height: isDesktop ? 16 : 12),
-              EnhancedMetricsCard(
-                metrics: _enhancedMetrics!,
-                onTap: () {},
-              ),
-              SizedBox(height: isDesktop ? 24 : 16),
-            ],
-
-            // Enhanced Metrics Compact Cards Grid
-            if (_enhancedMetrics != null && _riskAnalysis != null && _liquidityAnalysis != null) ...[
-              isDesktop
-                  ? Row(
-                      children: [
-                        Expanded(
-                          child: EnhancedMetricsCompactCard(
-                            title: 'Portfolio Health',
-                            value: '${_enhancedMetrics!.portfolioHealthScore.toStringAsFixed(0)}/100',
-                            subtitle: _enhancedMetrics!.healthStatus,
-                            icon: Icons.health_and_safety,
-                            color: _getHealthColor(_enhancedMetrics!.portfolioHealthScore),
-                            onTap: () {},
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: EnhancedMetricsCompactCard(
-                            title: 'Loan Risk Center',
-                            value: '${_riskAnalysis!.riskScore.toStringAsFixed(0)}/100',
-                            subtitle: _getRiskLabel(_riskAnalysis!.riskScore),
-                            icon: Icons.shield,
-                            color: _getRiskColor(_riskAnalysis!.riskScore),
-                            onTap: () {
-                              setState(() => _selectedScreen = 'risk_center');
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: EnhancedMetricsCompactCard(
-                            title: 'Liquidity Monitor',
-                            value: _liquidityAnalysis!.liquidityStatus,
-                            subtitle: '${_liquidityAnalysis!.liquidityRatio.toStringAsFixed(1)}% ratio',
-                            icon: Icons.water_drop,
-                            color: _getLiquidityColor(_liquidityAnalysis!.liquidityStatus),
-                            onTap: () {
-                              setState(() => _selectedScreen = 'liquidity');
-                            },
-                          ),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      children: [
-                        EnhancedMetricsCompactCard(
-                          title: 'Portfolio Health',
-                          value: '${_enhancedMetrics!.portfolioHealthScore.toStringAsFixed(0)}/100',
-                          subtitle: _enhancedMetrics!.healthStatus,
-                          icon: Icons.health_and_safety,
-                          color: _getHealthColor(_enhancedMetrics!.portfolioHealthScore),
-                          onTap: () {},
-                        ),
-                        const SizedBox(height: 12),
-                        EnhancedMetricsCompactCard(
-                          title: 'Loan Risk Center',
-                          value: '${_riskAnalysis!.riskScore.toStringAsFixed(0)}/100',
-                          subtitle: _getRiskLabel(_riskAnalysis!.riskScore),
-                          icon: Icons.shield,
-                          color: _getRiskColor(_riskAnalysis!.riskScore),
-                          onTap: () {
-                            widget.onNavigate('risk_center');
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        EnhancedMetricsCompactCard(
-                          title: 'Liquidity Monitor',
-                          value: _liquidityAnalysis!.liquidityStatus,
-                          subtitle: '${_liquidityAnalysis!.liquidityRatio.toStringAsFixed(1)}% ratio',
-                          icon: Icons.water_drop,
-                          color: _getLiquidityColor(_liquidityAnalysis!.liquidityStatus),
-                          onTap: () {
-                            widget.onNavigate('liquidity');
-                          },
-                        ),
-                      ],
-                    ),
-              SizedBox(height: isDesktop ? 24 : 16),
-            ],
-            */
-
             // Bottom Info Cards
             _buildBottomStatsRow(stats, isDesktop),
           ],
@@ -1597,101 +1151,101 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   Widget _buildProfessionalMetricsGrid(Map<String, dynamic> stats, bool isDesktop) {
     final totalAssets = (stats['totalLoansOutstanding'] ?? 0.0) + (stats['totalSavings'] ?? 0.0);
     final totalSavings = stats['totalSavings'] ?? 0.0;
-    
+
     // Get real shares from cached stats
     final totalShares = (stats['totalShares'] ?? 0.0).toDouble();
-    
+
     final totalLoansOutstanding = stats['totalLoansOutstanding'] ?? 0.0;
     final activeLoans = stats['activeLoans'] ?? 0.0;
     final totalDisbursed = stats['totalDisbursed'] ?? 0.0;
     final totalRepaid = stats['totalRepaid'] ?? 0.0;
-    
+
     // Calculate balances from teller data and account types
     final byAccountType = Map<String, dynamic>.from(_tellerData['byAccountType'] as Map? ?? {});
     final netFlow = _tellerData['netFlow'] ?? 0;
-    
+
     // Estimate cash balance as net flow (could be refined with actual balance tracking)
     final cashBalance = (byAccountType['cash'] ?? netFlow * 0.4).toDouble();
     final bankBalance = (byAccountType['bank'] ?? netFlow * 0.5).toDouble();
     final mobileMoneyBalance = (byAccountType['mobile_money'] ?? netFlow * 0.1).toDouble();
-    
+
     // Calculate available liquidity as sum of all liquid assets
     final availableLiquidity = cashBalance + bankBalance + mobileMoneyBalance;
-    
+
     // Calculate overdue amount: loans where dueDate has passed and amount not fully repaid
     final overdueAmount = (stats['overdueAmount'] ?? 0.0).toDouble();
 
     final metrics = [
       {
-        'label': 'Total Assets',
+        'label': 'Assets',
         'value': 'UGX ${NumberFormat('#,###').format(totalAssets)}',
-        'icon': Icons.account_balance_wallet,
+        'icon': Icons.account_balance_wallet_rounded,
         'color': const Color(0xFF3B82F6),
       },
       {
-        'label': 'Total Savings',
+        'label': 'Savings',
         'value': 'UGX ${NumberFormat('#,###').format(totalSavings)}',
-        'icon': Icons.savings,
+        'icon': Icons.savings_rounded,
         'color': const Color(0xFF10B981),
       },
       {
-        'label': 'Total Shares',
+        'label': 'Shares',
         'value': 'UGX ${NumberFormat('#,###').format(totalShares)}',
-        'icon': Icons.pie_chart,
+        'icon': Icons.pie_chart_rounded,
         'color': const Color(0xFF8B5CF6),
       },
       {
-        'label': 'Total Loans Outstanding',
+        'label': 'Loans Outstanding',
         'value': 'UGX ${NumberFormat('#,###').format(totalLoansOutstanding)}',
-        'icon': Icons.trending_up,
+        'icon': Icons.trending_up_rounded,
         'color': const Color(0xFFF59E0B),
       },
       {
         'label': 'Active Loans',
-        'value': '$activeLoans',
-        'icon': Icons.list_alt,
+        'value': '${activeLoans.toInt()}',
+        'icon': Icons.description_rounded,
         'color': const Color(0xFF06B6D4),
       },
       {
         'label': 'Total Disbursed',
         'value': 'UGX ${NumberFormat('#,###').format(totalDisbursed)}',
-        'icon': Icons.payment,
+        'icon': Icons.payments_rounded,
         'color': const Color(0xFF14B8A6),
       },
       {
         'label': 'Total Repaid',
         'value': 'UGX ${NumberFormat('#,###').format(totalRepaid)}',
-        'icon': Icons.check_circle,
+        'icon': Icons.check_circle_rounded,
         'color': const Color(0xFF22C55E),
       },
       {
         'label': 'Available Liquidity',
         'value': 'UGX ${NumberFormat('#,###').format(availableLiquidity)}',
-        'icon': Icons.water_drop,
+        'icon': Icons.water_drop_rounded,
         'color': const Color(0xFF0EA5E9),
       },
       {
         'label': 'Cash Balance',
         'value': 'UGX ${NumberFormat('#,###').format(cashBalance)}',
-        'icon': Icons.money,
+        'icon': Icons.account_balance_wallet_rounded,
         'color': const Color(0xFF84CC16),
       },
       {
         'label': 'Bank Balance',
         'value': 'UGX ${NumberFormat('#,###').format(bankBalance)}',
-        'icon': Icons.account_balance,
+        'icon': Icons.account_balance_rounded,
         'color': const Color(0xFF6366F1),
       },
       {
         'label': 'Mobile Money Balance',
         'value': 'UGX ${NumberFormat('#,###').format(mobileMoneyBalance)}',
-        'icon': Icons.phone_android,
+        'icon': Icons.phone_android_rounded,
         'color': const Color(0xFFA855F7),
       },
       {
         'label': 'Overdue Amount',
         'value': 'UGX ${NumberFormat('#,###').format(overdueAmount)}',
-        'icon': Icons.warning,
+        'icon': Icons.warning_rounded,
         'color': const Color(0xFFEF4444),
       },
     ];
@@ -1751,53 +1305,62 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
   Widget _buildProfessionalMetricCard(Map<String, dynamic> metric) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            color: (metric['color'] as Color).withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: (metric['color'] as Color).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  metric['icon'] as IconData,
-                  color: metric['color'] as Color,
-                  size: 24,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            metric['label'] as String,
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+          // Icon with colored background
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (metric['color'] as Color).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              metric['icon'] as IconData,
+              color: metric['color'] as Color,
+              size: 26,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 14),
+          // Label
           Text(
-            metric['value'] as String,
-            style: GoogleFonts.poppins(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF1E3A5F),
+            metric['label'] as String,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          // Value
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              metric['value'] as String,
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade900,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
         ],
@@ -1817,7 +1380,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       {'label': 'PAR 90', 'value': par90, 'target': 2.0},
     ];
 
-    Color _getParColor(double value, double target) {
+    Color getParColor(double value, double target) {
       if (value <= target * 0.5) return Colors.green;
       if (value <= target * 0.75) return Colors.lightGreen;
       if (value <= target) return Colors.orange;
@@ -1840,7 +1403,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         ),
         child: Row(
           children: parData.map((par) {
-            final color = _getParColor(par['value'] as double, par['target'] as double);
+            final color = getParColor(par['value'] as double, par['target'] as double);
             return Expanded(
               child: Row(
                 children: [
@@ -1921,7 +1484,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         ),
         child: Column(
           children: parData.map((par) {
-            final color = _getParColor(par['value'] as double, par['target'] as double);
+            final color = getParColor(par['value'] as double, par['target'] as double);
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
@@ -2484,12 +2047,12 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                 final amount = (loan['amount'] as num?)?.toInt() ?? 0;
                 final status = loan['status'] as String? ?? 'pending';
                 final farmerName = loan['farmerName'] as String? ?? 'Unknown';
-                
+
                 // ⏰ Calculate overdue days
                 int? overdueDays;
                 final dueDate = loan['dueDate'];
                 final repaid = (loan['totalRepaid'] as num?)?.toInt() ?? 0;
-                
+
                 if (dueDate != null && repaid < amount) {
                   DateTime? due;
                   if (dueDate is Timestamp) {
@@ -2497,7 +2060,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                   } else if (dueDate is DateTime) {
                     due = dueDate;
                   }
-                  
+
                   if (due != null && due.isBefore(DateTime.now())) {
                     overdueDays = DateTime.now().difference(due).inDays;
                   }
@@ -2684,7 +2247,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
               ),
             ),
             FractionallySizedBox(
-              widthFactor: percentage / 100,
+              widthFactor: (percentage / 100).clamp(0.0, 1.0),
               child: Container(
                 height: 8,
                 decoration: BoxDecoration(
@@ -3054,7 +2617,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         children: [
           Row(
             children: [
-              Icon(Icons.receipt_long_rounded, color: const Color(0xFF1E3A5F), size: 20),
+              const Icon(Icons.receipt_long_rounded, color: Color(0xFF1E3A5F), size: 20),
               const SizedBox(width: 8),
               Text(
                 'RECENT TELLER TRANSACTIONS',
@@ -3209,7 +2772,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         children: [
           Row(
             children: [
-              Icon(Icons.receipt_long_rounded, color: const Color(0xFF1E3A5F), size: 20),
+              const Icon(Icons.receipt_long_rounded, color: Color(0xFF1E3A5F), size: 20),
               const SizedBox(width: 8),
               Text(
                 'RECENT TELLER TRANSACTIONS',
@@ -3314,7 +2877,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       {
         'icon': Icons.groups_rounded,
         'label': 'Total Members',
-        'value': '${stats['totalFarmers'] ?? 6}',
+        'value': '${(stats['totalMembers'] ?? stats['totalFarmers'] ?? 0).toInt()}',
         'subtitle': 'Unique members',
         'color': const Color(0xFF3B82F6),
         'showIndicator': false,
@@ -3323,7 +2886,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         'icon': Icons.trending_up_rounded,
         'label': 'Repayment Rate',
         'value': '${repaymentRate.toStringAsFixed(1)}%',
-        'subtitle': '${repaymentRate >= 80 ? '+0.0%' : '-2.1%'}',
+        'subtitle': repaymentRate >= 80 ? '+0.0%' : '-2.1%',
         'color': const Color(0xFF10B981),
         'showIndicator': true,
         'indicatorValue': '+0.0%',
@@ -3694,12 +3257,11 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 }
 
-
 // ─── Placeholder Screen ───────────────────────────────────────────────────────
 class _PlaceholderScreen extends StatelessWidget {
   final String title;
   final IconData icon;
-  
+
   const _PlaceholderScreen({
     required this.title,
     required this.icon,
@@ -3753,7 +3315,6 @@ class _PlaceholderScreen extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
               ),
-
             ],
           ),
         ),

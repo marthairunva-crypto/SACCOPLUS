@@ -52,15 +52,19 @@ class ReportService {
       // Filter loans by date
       for (var doc in loansSnapshot.docs) {
         final data = doc.data();
-        final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+        final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ??
+                         (data['disbursedAt'] as Timestamp?)?.toDate() ??
+                         (data['timestamp'] as Timestamp?)?.toDate();
         if (createdAt == null || createdAt.isBefore(startDate) || createdAt.isAfter(endDate)) {
           continue;
         }
 
         final status = data['status'] as String? ?? '';
-        if (status == 'approved' || status == 'paid') {
+        // Include Ongoing, Disbursed, and other active statuses
+        if (status == 'Ongoing' || status == 'Disbursed' || status == 'approved' || status == 'active') {
           totalLoansDisbursed++;
-          totalLoansAmount += (data['amount'] as num?)?.toInt() ?? 0;
+          totalLoansAmount += (data['loanAmount'] as num?)?.toInt() ?? 
+                             (data['amount'] as num?)?.toInt() ?? 0;
         }
       }
 
@@ -150,6 +154,8 @@ class ReportService {
   }) async {
     final cutoffDate = asOfDate ?? DateTime.now();
 
+    print('📊 Trial Balance: Starting calculation...');
+
     // Get all member balances
     final membersSnapshot = await _db
         .collection('saccoplus-members')
@@ -158,48 +164,74 @@ class ReportService {
 
     int totalSavingsBalance = 0;
     int totalSharesBalance = 0;
-    int totalLoansPrincipal = 0;
-    int totalLoansInterest = 0;
     int totalFixedDeposits = 0;
+    int cashInHand = 0;
 
     for (var doc in membersSnapshot.docs) {
       final data = doc.data();
-      totalSavingsBalance += (data['savingsBalance'] as num?)?.toInt() ?? 0;
-      totalSharesBalance += (data['sharesValue'] as num?)?.toInt() ?? 0;
+      final savings = (data['savingsBalance'] as num?)?.toInt() ?? 0;
+      final shares = (data['sharesBalance'] as num?)?.toInt() ?? 0;
+      final wallet = (data['walletBalance'] as num?)?.toInt() ?? 0;
+      
+      totalSavingsBalance += savings;
+      totalSharesBalance += shares;
+      cashInHand += wallet;
     }
 
-    // Get all active loans
+    print('📊 Member Balances: Savings=$totalSavingsBalance, Shares=$totalSharesBalance, Cash=$cashInHand');
+
+    // Get all active loans - use actual field names from your data
     final loansSnapshot = await _db
         .collection(AppConstants.loansCol)
         .where('tenantId', isEqualTo: _tenantId)
-        .where('status', whereIn: ['approved', 'paid'])
         .get();
 
+    int totalLoansPrincipal = 0;
+    int totalLoansInterest = 0;
+    int loanCount = 0;
+
     for (var doc in loansSnapshot.docs) {
-      final principal = (doc['amount'] as num?)?.toInt() ?? 0;
-      final repaid = (doc.data() as Map).containsKey('totalRepaid') 
-          ? (doc['totalRepaid'] as num?)?.toInt() ?? 0
-          : (doc.data() as Map).containsKey('amountPaid')
-              ? (doc['amountPaid'] as num?)?.toInt() ?? 0
-              : 0;
-      final outstanding = principal - repaid;
+      final data = doc.data();
+      
+      // Only count ongoing/active loans
+      final status = (data['status'] as String? ?? '').toLowerCase();
+      if (!['ongoing', 'active', 'overdue', 'disbursed'].contains(status)) {
+        continue;
+      }
+      
+      // Get principal outstanding - use stored corrected value if available
+      int outstanding = 0;
+      if (data.containsKey('principalOutstanding')) {
+        outstanding = (data['principalOutstanding'] as num?)?.toInt() ?? 0;
+      } else {
+        // Fallback: calculate from loan amount - paid
+        final loanAmount = (data['loanAmount'] as num?)?.toInt() ?? 
+                          (data['amount'] as num?)?.toInt() ?? 0;
+        final principalPaid = (data['principalPaid'] as num?)?.toInt() ?? 0;
+        outstanding = loanAmount - principalPaid;
+      }
       
       if (outstanding > 0) {
         totalLoansPrincipal += outstanding;
-        // Calculate interest on outstanding (simplified)
-        // Safe field access - handle missing or null interestRate
-        try {
-          final data = doc.data() as Map<String, dynamic>;
-          final interestRate = (data['interestRate'] as num?)?.toDouble() ?? 
-                               (data['interest'] as num?)?.toDouble() ?? 
-                               15.0; // Default interest rate
-          totalLoansInterest += (outstanding * interestRate / 100).toInt();
-        } catch (e) {
-          // If field doesn't exist, use default 15% interest
-          totalLoansInterest += (outstanding * 15.0 / 100).toInt();
+        loanCount++;
+        
+        // Get interest outstanding - use stored corrected value if available
+        if (data.containsKey('interestOutstanding')) {
+          final interestOut = (data['interestOutstanding'] as num?)?.toInt() ?? 0;
+          totalLoansInterest += interestOut;
+        } else {
+          // Fallback: calculate from total interest - paid
+          final totalInterest = (data['interest'] as num?)?.toInt() ?? 0;
+          final interestPaid = (data['interestPaid'] as num?)?.toInt() ?? 0;
+          final interestOut = totalInterest - interestPaid;
+          if (interestOut > 0) {
+            totalLoansInterest += interestOut;
+          }
         }
       }
     }
+
+    print('📊 Loans: Count=$loanCount, Principal=$totalLoansPrincipal, Interest=$totalLoansInterest');
 
     // Get fixed deposits
     final fdsSnapshot = await _db
@@ -212,14 +244,23 @@ class ReportService {
       totalFixedDeposits += (doc['amount'] as num?)?.toInt() ?? 0;
     }
 
-    // Calculate totals
-    final totalAssets = totalLoansPrincipal + totalLoansInterest;
+    print('📊 Fixed Deposits: $totalFixedDeposits');
+
+    // Calculate totals - Assets = Liabilities + Equity
+    // ASSETS: Cash + Loans Receivable (what we own)
+    // LIABILITIES: Member Savings + Shares + Fixed Deposits (what we owe)
+    // EQUITY: Assets - Liabilities
+    final totalAssets = cashInHand + totalLoansPrincipal + totalLoansInterest;
     final totalLiabilities = totalSavingsBalance + totalSharesBalance + totalFixedDeposits;
-    final netPosition = totalAssets - totalLiabilities;
+    final equity = totalAssets - totalLiabilities;
+
+    print('📊 TOTALS: Assets=$totalAssets, Liabilities=$totalLiabilities, Equity=$equity');
+    print('📊 Balanced: ${totalAssets == (totalLiabilities + equity)}');
 
     return {
       'asOfDate': cutoffDate,
       'assets': {
+        'cashInHand': cashInHand,
         'loansReceivable': {
           'principal': totalLoansPrincipal,
           'interest': totalLoansInterest,
@@ -234,10 +275,10 @@ class ReportService {
         'total': totalLiabilities,
       },
       'equity': {
-        'retainedEarnings': netPosition,
-        'total': netPosition,
+        'retainedEarnings': equity,
+        'total': equity,
       },
-      'balanced': totalAssets == (totalLiabilities + netPosition),
+      'balanced': true, // Always balanced mathematically
       'generatedAt': DateTime.now(),
     };
   }
@@ -248,6 +289,8 @@ class ReportService {
   }) async {
     final cutoffDate = asOfDate ?? DateTime.now();
     
+    print('💰 Balance Sheet: Starting calculation...');
+    
     // Get all members and their balances
     final membersSnapshot = await _db
         .collection('saccoplus-members')
@@ -257,33 +300,71 @@ class ReportService {
     int totalSavings = 0;
     int totalShares = 0;
     int totalFixedDeposits = 0;
-    int totalWalletBalance = 0;
+    int cashInHand = 0;
 
     for (var doc in membersSnapshot.docs) {
       final data = doc.data();
-      totalSavings += (data['savingsBalance'] as num?)?.toInt() ?? 0;
-      totalShares += (data['sharesValue'] as num?)?.toInt() ?? 0;
-      totalWalletBalance += (data['walletBalance'] as num?)?.toInt() ?? 0;
+      final savings = (data['savingsBalance'] as num?)?.toInt() ?? 0;
+      final shares = (data['sharesBalance'] as num?)?.toInt() ?? 0;
+      final wallet = (data['walletBalance'] as num?)?.toInt() ?? 0;
+      
+      totalSavings += savings;
+      totalShares += shares;
+      cashInHand += wallet;
     }
+
+    print('💰 Member Balances: Savings=$totalSavings, Shares=$totalShares, Cash=$cashInHand');
 
     // Get all active loans (money we lent out = our asset)
     final loansSnapshot = await _db
         .collection(AppConstants.loansCol)
         .where('tenantId', isEqualTo: _tenantId)
-        .where('status', whereIn: ['approved', 'active', 'disbursed', 'overdue'])
         .get();
 
-    int totalLoansOutstanding = 0;
+    int totalLoansPrincipal = 0;
+    int totalLoansInterest = 0;
+    int loanCount = 0;
+
     for (var doc in loansSnapshot.docs) {
       final data = doc.data();
-      final principal = (data['amount'] as num?)?.toInt() ?? 0;
-      final repaid = (data['totalRepaid'] as num?)?.toInt() ?? 
-                     (data['amountPaid'] as num?)?.toInt() ?? 0;
-      final outstanding = principal - repaid;
-      if (outstanding > 0) {
-        totalLoansOutstanding += outstanding;
+      
+      // Only count active/ongoing loans
+      final status = (data['status'] as String? ?? '').toLowerCase();
+      if (!['ongoing', 'active', 'overdue', 'disbursed'].contains(status)) {
+        continue;
+      }
+      
+      // Get principal outstanding - use stored corrected value if available
+      int principalOut = 0;
+      if (data.containsKey('principalOutstanding')) {
+        principalOut = (data['principalOutstanding'] as num?)?.toInt() ?? 0;
+      } else {
+        final loanAmount = (data['loanAmount'] as num?)?.toInt() ?? 
+                          (data['amount'] as num?)?.toInt() ?? 0;
+        final principalPaid = (data['principalPaid'] as num?)?.toInt() ?? 0;
+        principalOut = loanAmount - principalPaid;
+      }
+      
+      if (principalOut > 0) {
+        totalLoansPrincipal += principalOut;
+        loanCount++;
+        
+        // Get interest outstanding
+        if (data.containsKey('interestOutstanding')) {
+          final interestOut = (data['interestOutstanding'] as num?)?.toInt() ?? 0;
+          totalLoansInterest += interestOut;
+        } else {
+          final totalInterest = (data['interest'] as num?)?.toInt() ?? 0;
+          final interestPaid = (data['interestPaid'] as num?)?.toInt() ?? 0;
+          final interestOut = totalInterest - interestPaid;
+          if (interestOut > 0) {
+            totalLoansInterest += interestOut;
+          }
+        }
       }
     }
+
+    print('💰 Loans: Count=$loanCount, Principal=$totalLoansPrincipal, Interest=$totalLoansInterest');
 
     // Get fixed deposits
     final fdsSnapshot = await _db
@@ -296,9 +377,11 @@ class ReportService {
       totalFixedDeposits += (doc['amount'] as num?)?.toInt() ?? 0;
     }
 
+    print('💰 Fixed Deposits: $totalFixedDeposits');
+
     // CORRECT ACCOUNTING:
     // ASSETS (What we own):
-    //   - Cash in hand/wallet
+    //   - Cash in hand
     //   - Loans outstanding (money members owe us)
     //
     // LIABILITIES (What we owe):
@@ -308,10 +391,12 @@ class ReportService {
     //
     // EQUITY = ASSETS - LIABILITIES
 
-    final cashInHand = totalWalletBalance;
+    final totalLoansOutstanding = totalLoansPrincipal + totalLoansInterest;
     final totalAssets = cashInHand + totalLoansOutstanding;
     final totalLiabilities = totalSavings + totalShares + totalFixedDeposits;
     final totalEquity = totalAssets - totalLiabilities;
+
+    print('💰 TOTALS: Assets=$totalAssets, Liabilities=$totalLiabilities, Equity=$totalEquity');
 
     return {
       'asOfDate': cutoffDate,
