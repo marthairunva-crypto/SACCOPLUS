@@ -63,8 +63,13 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
       future: TellerService.getDailySummary(tellerId: FirebaseService.sessionUid),
       builder: (context, snapshot) {
         final summary = snapshot.data ?? {};
-        final totalDeposits = (summary['totalDeposits'] as num?)?.toInt() ?? 0;
-        final totalWithdrawals = (summary['totalWithdrawals'] as num?)?.toInt() ?? 0;
+        
+        // Fix: Access nested deposits/withdrawals structure
+        final deposits = summary['deposits'] as Map<String, dynamic>? ?? {};
+        final withdrawals = summary['withdrawals'] as Map<String, dynamic>? ?? {};
+        
+        final totalDeposits = (deposits['amount'] as num?)?.toInt() ?? 0;
+        final totalWithdrawals = (withdrawals['amount'] as num?)?.toInt() ?? 0;
         final balance = totalDeposits - totalWithdrawals;
         
         return Container(
@@ -73,7 +78,21 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Row(
             children: [
-              Expanded(child: _statusChip('BALANCE', 'UGX ${_currencyFormat.format(balance)}', Colors.green)),
+              Expanded(
+                child: _statusChip(
+                  'Deposits',
+                  'UGX ${_currencyFormat.format(totalDeposits)}',
+                  Colors.green,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _statusChip(
+                  'Withdrawals',
+                  'UGX ${_currencyFormat.format(totalWithdrawals)}',
+                  Colors.orange,
+                ),
+              ),
             ],
           ),
         );
