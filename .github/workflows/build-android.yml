@@ -28,6 +28,9 @@ jobs:
           channel: 'stable'
           cache: true
       
+      - name: Accept Android Licenses
+        run: yes | flutter doctor --android-licenses || true
+      
       - name: Flutter Doctor
         run: flutter doctor -v
       
