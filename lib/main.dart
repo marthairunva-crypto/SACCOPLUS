@@ -24,17 +24,17 @@ void main() async {
   // Print Firebase console links to CMD
   debugPrint('');
   debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
-  debugPrint('║                     🔥 FIREBASE CONSOLE LINKS                         ║');
+  debugPrint('║                      FIREBASE CONSOLE LINKS                           ║');
   debugPrint('╠═══════════════════════════════════════════════════════════════════════╣');
   debugPrint('║                                                                       ║');
-  debugPrint('║  📊 Firestore Database:                                               ║');
+  debugPrint('║  Firestore Database:                                                  ║');
   debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore ║');
   debugPrint('║                                                                       ║');
-  debugPrint('║  � Firestore Indexes:                                                ║');
+  debugPrint('║  Firestore Indexes:                                                   ║');
   debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore/indexes ║');
   debugPrint('║                                                                       ║');
-  debugPrint('║  💡 TIP: Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open       ║');
-  debugPrint('║  💡 Or select the link and copy with Ctrl+C / Cmd+C                  ║');
+  debugPrint('║  TIP: Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open          ║');
+  debugPrint('║  Or select the link and copy with Ctrl+C / Cmd+C                     ║');
   debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
   debugPrint('');
 
@@ -47,7 +47,7 @@ void main() async {
     if (errorString.contains('index') && errorString.contains('firebase')) {
       debugPrint('');
       debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
-      debugPrint('║                  ⚠️  FIRESTORE INDEX REQUIRED ⚠️                       ║');
+      debugPrint('║                   FIRESTORE INDEX REQUIRED                            ║');
       debugPrint('╠═══════════════════════════════════════════════════════════════════════╣');
       debugPrint('║                                                                       ║');
 
@@ -56,18 +56,18 @@ void main() async {
           .firstMatch(errorString);
       if (urlMatch != null) {
         final url = urlMatch.group(0)!;
-        debugPrint('║  🔗 CLICK THIS LINK TO AUTO-CREATE THE INDEX:                        ║');
+        debugPrint('║  CLICK THIS LINK TO AUTO-CREATE THE INDEX:                           ║');
         debugPrint('║                                                                       ║');
         debugPrint('║  $url');
         debugPrint('║                                                                       ║');
-        debugPrint('║  💡 Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open            ║');
-        debugPrint('║  💡 Or copy the link above with Ctrl+C / Cmd+C                       ║');
-        debugPrint('║  💡 The link will automatically create the required index            ║');
+        debugPrint('║  TIP: Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open         ║');
+        debugPrint('║  Or copy the link above with Ctrl+C / Cmd+C                          ║');
+        debugPrint('║  The link will automatically create the required index               ║');
       } else {
-        debugPrint('║  🔗 Manually create indexes at:                                      ║');
+        debugPrint('║  Manually create indexes at:                                         ║');
         debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore/indexes ║');
         debugPrint('║                                                                       ║');
-        debugPrint('║  💡 Copy the link above and paste in your browser                    ║');
+        debugPrint('║  TIP: Copy the link above and paste in your browser                  ║');
       }
       debugPrint('║                                                                       ║');
       debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
