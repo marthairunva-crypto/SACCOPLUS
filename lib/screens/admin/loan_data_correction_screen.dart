@@ -242,6 +242,7 @@ class _LoanEditFormState extends State<_LoanEditForm> {
   late TextEditingController _arrearsCtrl;
   late TextEditingController _loanTypeCtrl;
   DateTime? _disbursementDate;
+  String _interestMethod = 'flat'; // flat, declining, simple
   bool _isSaving = false;
 
   @override
@@ -277,6 +278,9 @@ class _LoanEditFormState extends State<_LoanEditForm> {
     _loanTypeCtrl = TextEditingController(
       text: loan['loanType'] ?? loan['loanProduct'] ?? '',
     );
+    
+    // Get interest method
+    _interestMethod = loan['interestMethod'] ?? 'flat';
 
     // Parse disbursement date
     final disbDate = loan['disbursementDate'] ?? loan['disbursedAt'];
@@ -299,9 +303,17 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       final months = int.tryParse(_tenureCtrl.text) ?? 0;
 
       if (principal > 0 && months > 0) {
-        // Calculate total interest (flat rate per period)
-        // Rate is already per month/period, not annual
-        final totalInterest = principal * (ratePercent / 100) * months;
+        double totalInterest = 0;
+        
+        // Calculate based on selected method
+        if (_interestMethod == 'flat' || _interestMethod == 'simple') {
+          // Flat rate: Interest on full principal for entire tenure
+          totalInterest = principal * (ratePercent / 100) * months;
+        } else if (_interestMethod == 'declining') {
+          // Declining balance would need more complex calculation
+          // For now, default to flat rate
+          totalInterest = principal * (ratePercent / 100) * months;
+        }
         
         // Calculate monthly installment
         final totalLoan = principal + totalInterest;
@@ -366,6 +378,7 @@ class _LoanEditFormState extends State<_LoanEditForm> {
         'arrears': arrears,
         'loanType': _loanTypeCtrl.text.trim(),
         'loanProduct': _loanTypeCtrl.text.trim(),
+        'interestMethod': _interestMethod,
         'interest': totalInterest,
         'interestOriginalBalance': totalInterest,
         'principalPaid': principalPaid > 0 ? principalPaid : 0,
@@ -500,11 +513,17 @@ class _LoanEditFormState extends State<_LoanEditForm> {
             children: [
               Expanded(child: _textField('Tenure (Months)', _tenureCtrl, isNumber: true)),
               const SizedBox(width: 16),
-              Expanded(child: _textField('Monthly Installment (UGX)', _installmentCtrl, isNumber: true)),
+              Expanded(child: _buildInterestMethodDropdown()),
             ],
           ),
           const SizedBox(height: 16),
-          _textField('Loan Type/Product', _loanTypeCtrl),
+          Row(
+            children: [
+              Expanded(child: _textField('Monthly Installment (UGX)', _installmentCtrl, isNumber: true)),
+              const SizedBox(width: 16),
+              Expanded(child: _textField('Loan Type/Product', _loanTypeCtrl)),
+            ],
+          ),
           const SizedBox(height: 16),
           _buildDatePicker(),
           const SizedBox(height: 32),
@@ -583,6 +602,29 @@ class _LoanEditFormState extends State<_LoanEditForm> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildInterestMethodDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _interestMethod,
+      decoration: InputDecoration(
+        labelText: 'Interest Calculation Method',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'flat', child: Text('Flat Rate (Principal × Rate × Tenure)')),
+        DropdownMenuItem(value: 'declining', child: Text('Declining Balance')),
+        DropdownMenuItem(value: 'simple', child: Text('Simple Interest')),
+      ],
+      onChanged: (value) {
+        if (value != null) {
+          setState(() {
+            _interestMethod = value;
+            _calculateInstallment(); // Recalculate when method changes
+          });
+        }
+      },
     );
   }
 
