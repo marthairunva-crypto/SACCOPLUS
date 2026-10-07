@@ -1446,7 +1446,7 @@ class TellerService {
       await _safe(
         () => AuditService.log(
           action: 'JOURNAL_ENTRY',
-          details: 'Journal entry: $description - ${money(amount)}',
+          details: 'Journal entry: $description - ${_formatAmount(amount)}',
           userId: tellerId,
           metadata: {
             'description': description,
@@ -1457,7 +1457,7 @@ class TellerService {
         'journal entry audit',
       );
 
-      print('Journal entry recorded: $description - ${money(amount)}');
+      print('Journal entry recorded: $description - ${_formatAmount(amount)}');
     } catch (e, st) {
       print('Error recording journal entry: $e');
       print(st);
@@ -1516,7 +1516,7 @@ class TellerService {
       await _safe(
         () => AuditService.log(
           action: 'EXPENSE_PAYMENT',
-          details: 'Expense payment: $description - ${money(amount)}',
+          details: 'Expense payment: $description - ${_formatAmount(amount)}',
           userId: tellerId,
           metadata: {
             'description': description,
@@ -1528,7 +1528,7 @@ class TellerService {
         'expense payment audit',
       );
 
-      print('Expense payment recorded: $description - ${money(amount)}');
+      print('Expense payment recorded: $description - ${_formatAmount(amount)}');
     } catch (e, st) {
       print('Error recording expense payment: $e');
       print(st);
@@ -1587,7 +1587,7 @@ class TellerService {
       await _safe(
         () => AuditService.log(
           action: 'REVENUE_ENTRY',
-          details: 'Revenue entry: $description - ${money(amount)}',
+          details: 'Revenue entry: $description - ${_formatAmount(amount)}',
           userId: tellerId,
           metadata: {
             'description': description,
@@ -1599,7 +1599,7 @@ class TellerService {
         'revenue entry audit',
       );
 
-      print('Revenue entry recorded: $description - ${money(amount)}');
+      print('Revenue entry recorded: $description - ${_formatAmount(amount)}');
     } catch (e, st) {
       print('Error recording revenue entry: $e');
       print(st);
