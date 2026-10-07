@@ -720,10 +720,9 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                   controller: floatCtrl,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: inputDeco(
-                    label: 'New opening float (UGX)',
+                  decoration: fieldDeco(
+                    'New opening float (UGX)',
                     hint: 'e.g. 100000',
-                    prefix: const Icon(Icons.flag_outlined, size: 18),
                     error: err,
                   ),
                   onChanged: (_) => setD(() => err = null),
@@ -755,7 +754,7 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: ts(14, c: TC.muted)),
+              child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -771,8 +770,8 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                 }
                 Navigator.pop(ctx, true);
               },
-              style: btnStyle(TC.blue),
-              child: Text('Update', style: ts(14, w: FontWeight.w600, c: Colors.white)),
+              style: primaryButton(TC.blue),
+              child: const Text('Update'),
             ),
           ],
         ),
@@ -844,8 +843,8 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                 TextField(
                   controller: reasonCtrl,
                   maxLines: 3,
-                  decoration: inputDeco(
-                    label: 'Reason for deletion (required)',
+                  decoration: fieldDeco(
+                    'Reason for deletion (required)',
                     hint: 'e.g. Duplicate entry, wrong amount',
                     error: err,
                   ),
@@ -878,7 +877,7 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: ts(14, c: TC.muted)),
+              child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -889,8 +888,8 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                 }
                 Navigator.pop(ctx, true);
               },
-              style: btnStyle(TC.red),
-              child: Text('Delete', style: ts(14, w: FontWeight.w600, c: Colors.white)),
+              style: primaryButton(TC.red),
+              child: const Text('Delete'),
             ),
           ],
         ),
@@ -981,8 +980,8 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                 TextField(
                   controller: reasonCtrl,
                   maxLines: 4,
-                  decoration: inputDeco(
-                    label: 'Reason for reset (required)',
+                  decoration: fieldDeco(
+                    'Reason for reset (required)',
                     hint: 'e.g. Major data entry errors, duplicate transactions, system test',
                     error: err,
                   ),
@@ -1015,7 +1014,7 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: ts(14, c: TC.muted)),
+              child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -1030,8 +1029,8 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                 }
                 Navigator.pop(ctx, true);
               },
-              style: btnStyle(Colors.deepOrange),
-              child: Text('Reset Till', style: ts(14, w: FontWeight.w600, c: Colors.white)),
+              style: primaryButton(Colors.deepOrange),
+              child: const Text('Reset Till'),
             ),
           ],
         ),
