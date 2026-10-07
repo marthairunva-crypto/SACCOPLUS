@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/teller_service.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
+import 'till_reports_screen.dart';
 
 /// Professional Teller Center - Organized like Wakanji SACCO
 class TellerCenterReorganized extends StatefulWidget {
@@ -785,9 +786,12 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                 'Generate and print till report.',
                 Icons.print_outlined,
                 Colors.purple,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Till Report - Coming soon', style: GoogleFonts.inter())),
-                ),
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const TillReportsScreen()),
+                  );
+                },
               ),
             ],
           ),
