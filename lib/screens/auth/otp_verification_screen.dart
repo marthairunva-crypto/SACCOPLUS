@@ -334,13 +334,24 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
               const SizedBox(height: 40),
               
               // OTP Input Fields
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(6, (index) {
-                  return Container(
-                    width: 55,
-                    height: 65,
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Calculate responsive dimensions
+                  final availableWidth = constraints.maxWidth;
+                  final fieldMargin = 4.0;
+                  final fieldCount = 6;
+                  final totalMargin = fieldMargin * 2 * fieldCount;
+                  final maxFieldWidth = (availableWidth - totalMargin) / fieldCount;
+                  final fieldWidth = maxFieldWidth.clamp(40.0, 55.0);
+                  final fieldHeight = fieldWidth * 1.18;
+                  
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(6, (index) {
+                      return Container(
+                        width: fieldWidth,
+                        height: fieldHeight,
+                        margin: EdgeInsets.symmetric(horizontal: fieldMargin),
                     child: TextField(
                       controller: _otpControllers[index],
                       focusNode: _otpFocusNodes[index],
@@ -348,7 +359,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                       keyboardType: TextInputType.number,
                       maxLength: 1,
                       style: GoogleFonts.poppins(
-                        fontSize: 24,
+                        fontSize: (fieldWidth * 0.43).clamp(18.0, 24.0),
                         fontWeight: FontWeight.w600,
                         color: ModernTheme.textPrimary,
                       ),
@@ -383,6 +394,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                     ),
                   );
                 }),
+                  );
+                },
               ),
               
               const SizedBox(height: 32),
