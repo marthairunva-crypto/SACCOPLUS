@@ -248,6 +248,7 @@ class _LoanEditFormState extends State<_LoanEditForm> {
   void initState() {
     super.initState();
     _initializeControllers();
+    _setupCalculationListeners();
   }
 
   void _initializeControllers() {
@@ -281,6 +282,37 @@ class _LoanEditFormState extends State<_LoanEditForm> {
     final disbDate = loan['disbursementDate'] ?? loan['disbursedAt'];
     if (disbDate != null && disbDate is Timestamp) {
       _disbursementDate = disbDate.toDate();
+    }
+  }
+
+  void _setupCalculationListeners() {
+    // Auto-calculate installment when amount, rate, or tenure changes
+    _loanAmountCtrl.addListener(_calculateInstallment);
+    _interestRateCtrl.addListener(_calculateInstallment);
+    _tenureCtrl.addListener(_calculateInstallment);
+  }
+
+  void _calculateInstallment() {
+    try {
+      final principal = double.tryParse(_loanAmountCtrl.text) ?? 0;
+      final ratePercent = double.tryParse(_interestRateCtrl.text) ?? 0;
+      final months = int.tryParse(_tenureCtrl.text) ?? 0;
+
+      if (principal > 0 && months > 0) {
+        // Calculate total interest (flat rate)
+        final totalInterest = (principal * (ratePercent / 100) * months) / 12;
+        
+        // Calculate monthly installment
+        final totalLoan = principal + totalInterest;
+        final installment = totalLoan / months;
+
+        // Update installment field
+        if (installment.isFinite && installment > 0) {
+          _installmentCtrl.text = installment.toStringAsFixed(0);
+        }
+      }
+    } catch (e) {
+      // Ignore calculation errors while typing
     }
   }
 
