@@ -252,6 +252,38 @@ class TellerService {
             'loanReference': loanData['referenceNumber'] ?? '',
           });
 
+          // Post till entry for loan repayment (if till session provided and payment is cash)
+          if (tillSession != null && (paymentMethod ?? 'Cash') == 'Cash') {
+            try {
+              final tillEntryInput = TillEntryInput(
+                entryType: 'loan_repayment',
+                amount: amount,
+                affectsCash: true,
+                paymentMethod: paymentMethod ?? 'Cash',
+                memberId: memberId,
+                memberName: memberName,
+                businessRecordId: transactionId,
+                businessRecordType: 'loan_repayment',
+                notes: 'Loan repayment - Loan: ${loanData['referenceNumber'] ?? loanId} '
+                    'Principal: ${_formatAmount(principalPayment.toInt())}, '
+                    'Interest: ${_formatAmount(interestPayment.toInt())} - '
+                    'Receipt: ${transaction['receiptNumber']}',
+              );
+
+              await TillService.postEntry(
+                tillSessionId: tillSession.id,
+                tellerId: tellerId,
+                tellerName: tellerName,
+                input: tillEntryInput,
+              );
+
+              print('✅ Till entry posted for loan repayment $transactionId');
+            } catch (tillError) {
+              // Till entry failure is non-critical - transaction already recorded
+              print('⚠️ Failed to post till entry for loan repayment: $tillError');
+            }
+          }
+
           // Send in-app notification for loan repayment (non-critical)
           await _safe(
             () => FirebaseService.sendNotification(

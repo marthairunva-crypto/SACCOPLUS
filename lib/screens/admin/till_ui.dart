@@ -109,6 +109,8 @@ EntryMeta entryMeta(String type, int amount) {
       return const EntryMeta('Member deposit', Icons.add_circle_outline, TC.green);
     case 'withdrawal':
       return const EntryMeta('Member withdrawal', Icons.remove_circle_outline, TC.red);
+    case 'loan_repayment':
+      return const EntryMeta('Loan repayment', Icons.payments_outlined, TC.green);
     case 'reversal':
       return const EntryMeta('Reversal', Icons.undo_rounded, TC.purple);
     default:
