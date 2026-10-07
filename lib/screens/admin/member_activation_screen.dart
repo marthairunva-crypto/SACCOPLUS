@@ -1097,16 +1097,32 @@ class _ManualActivationDialogState extends State<_ManualActivationDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel', style: GoogleFonts.inter()),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            ),
+            child: Text('Cancel', style: GoogleFonts.inter(fontSize: 15)),
           ),
-          ElevatedButton(
+          ElevatedButton.icon(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.primaryBlue,
+              backgroundColor: ModernTheme.success,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            child: Text(
-              hasTemp ? 'Re-activate' : 'Activate',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            icon: Icon(
+              hasTemp ? Icons.refresh_rounded : Icons.check_circle_rounded,
+              size: 20,
+            ),
+            label: Text(
+              hasTemp ? 'Re-activate Now' : 'Activate Now',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
             ),
           ),
         ],

@@ -268,6 +268,21 @@ class _SplashScreenState extends State<SplashScreen>
 
                 const Spacer(flex: 2),
 
+                // Starting text
+                Text(
+                  'Starting MBADIFA SACCO',
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.5,
+                  ),
+                )
+                    .animate()
+                    .fadeIn(delay: 750.ms, duration: 500.ms),
+
+                const SizedBox(height: 12),
+
                 // Animated dots
                 _DotsLoader(controller: _dotsCtrl)
                     .animate()
