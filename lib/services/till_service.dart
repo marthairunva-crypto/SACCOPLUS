@@ -443,6 +443,89 @@ class TillService {
     }
   }
 
+  // ─── Delete All Transactions (Sweep/Reset) ────────────────────────────────
+  /// Deletes all transactions from an open till session and resets totals to zero.
+  /// DANGEROUS: Only use in case of major errors. Opening float is preserved.
+  static Future<void> deleteAllTransactions({
+    required String tillSessionId,
+    required String deletedBy,
+    required String reason,
+  }) async {
+    try {
+      if (reason.trim().isEmpty) {
+        throw Exception('Reason is required for deleting all transactions');
+      }
+
+      final sessionRef = _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId);
+      final sessionSnap = await sessionRef.get();
+      
+      if (!sessionSnap.exists) {
+        throw Exception('Till session not found: $tillSessionId');
+      }
+
+      final session = TillSession.fromFirestore(sessionSnap);
+
+      if (session.status != 'open') {
+        throw Exception('Cannot delete transactions from a ${session.status} session. Only open sessions can be edited.');
+      }
+
+      // Get all entries except opening float
+      final entriesQuery = await _db
+          .collection(AppConstants.tillEntriesCol)
+          .where('tenantId', isEqualTo: _tenantId)
+          .where('tillSessionId', isEqualTo: tillSessionId)
+          .get();
+
+      final entriesToDelete = entriesQuery.docs
+          .map((d) => TillEntry.fromFirestore(d))
+          .where((e) => e.entryType != openingFloatType)
+          .toList();
+
+      if (entriesToDelete.isEmpty) {
+        throw Exception('No transactions to delete');
+      }
+
+      // Delete all entries and reset totals in a batch
+      final batch = _db.batch();
+
+      for (final entry in entriesToDelete) {
+        final entryRef = _db.collection(AppConstants.tillEntriesCol).doc(entry.id);
+        batch.delete(entryRef);
+      }
+
+      // Reset totals to zero
+      batch.update(sessionRef, {
+        'totalIn': 0,
+        'totalOut': 0,
+        'updatedAt': DateTime.now(),
+        'updatedBy': deletedBy,
+      });
+
+      // Create audit trail entry
+      final auditRef = _db.collection(AppConstants.tillEntriesCol).doc();
+      batch.set(auditRef, {
+        'tenantId': _tenantId,
+        'tillSessionId': tillSessionId,
+        'tellerId': deletedBy,
+        'tellerName': session.tellerName,
+        'entryType': 'all_transactions_deleted',
+        'amount': 0,
+        'affectsCash': false,
+        'paymentMethod': 'N/A',
+        'notes': 'Deleted all ${entriesToDelete.length} transactions - Reason: $reason',
+        'createdAt': DateTime.now(),
+        'createdBy': deletedBy,
+      });
+
+      await batch.commit();
+
+      print('✅ All transactions deleted: ${entriesToDelete.length} entries removed');
+    } catch (e) {
+      print('❌ Error deleting all transactions: $e');
+      rethrow;
+    }
+  }
+
   // ─── Close Session ────────────────────────────────────────────────────────
   static Future<CloseResult> closeSession({
     required String tillSessionId,

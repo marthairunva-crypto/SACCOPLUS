@@ -425,6 +425,8 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
             () => _cashMovement(s, topUp: true)),
         _Action('Cash sweep', 'Move excess cash to the vault', Icons.north_east_rounded, TC.amber,
             () => _cashMovement(s, topUp: false)),
+        _Action('Reset till', 'Delete all transactions', Icons.restart_alt, Colors.deepOrange,
+            () => _confirmResetTill(s)),
         _Action('Till reports', 'Sessions & variances', Icons.assessment_outlined, TC.blue, () {
           Navigator.push(context, MaterialPageRoute(builder: (_) => const TillReportsScreen()));
         }),
@@ -906,6 +908,146 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
         reason: reasonCtrl.text.trim(),
       ),
       success: 'Transaction deleted and amount rolled back',
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESET TILL (DELETE ALL TRANSACTIONS)
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _confirmResetTill(TillSession session) async {
+    final reasonCtrl = TextEditingController();
+    String? err;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dialogShape,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: _dlgInset,
+          title: dialogTitle(Icons.warning_amber_rounded, Colors.deepOrange, 'Reset Till - Delete All Transactions'),
+          content: SizedBox(
+            width: _dlgW(480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade300, width: 2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.dangerous_outlined, color: Colors.red.shade700, size: 24),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'DANGER: This action cannot be undone!',
+                              style: ts(14, w: FontWeight.w700, c: Colors.red.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'This will permanently delete ALL transactions from this till session and reset cash totals to zero.',
+                        style: ts(13, c: Colors.red.shade900),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Current till status:',
+                        style: ts(12, w: FontWeight.w600, c: Colors.red.shade900),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('• Cash In: ${ugx(session.totalIn)}', style: ts(12, c: Colors.red.shade800)),
+                      Text('• Cash Out: ${ugx(session.totalOut)}', style: ts(12, c: Colors.red.shade800)),
+                      Text('• Expected Cash: ${ugx(session.expectedCash)}', style: ts(12, c: Colors.red.shade800)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Opening float (${ugx(session.openingFloat)}) will be preserved.',
+                        style: ts(12, c: Colors.red.shade700, w: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 4,
+                  decoration: inputDeco(
+                    label: 'Reason for reset (required)',
+                    hint: 'e.g. Major data entry errors, duplicate transactions, system test',
+                    error: err,
+                  ),
+                  onChanged: (_) => setD(() => err = null),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amber.shade900, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'An audit trail will be created documenting this reset.',
+                          style: ts(12, c: Colors.amber.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: ts(14, c: TC.muted)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final reason = reasonCtrl.text.trim();
+                if (reason.isEmpty) {
+                  setD(() => err = 'You must provide a detailed reason');
+                  return;
+                }
+                if (reason.length < 10) {
+                  setD(() => err = 'Please provide a more detailed reason (at least 10 characters)');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              style: btnStyle(Colors.deepOrange),
+              child: Text('Reset Till', style: ts(14, w: FontWeight.w600, c: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    await _withLoading(
+      'Resetting till...',
+      () => TillService.deleteAllTransactions(
+        tillSessionId: session.id,
+        deletedBy: FirebaseService.sessionUid,
+        reason: reasonCtrl.text.trim(),
+      ),
+      success: 'Till reset successfully - all transactions deleted',
     );
   }
 
