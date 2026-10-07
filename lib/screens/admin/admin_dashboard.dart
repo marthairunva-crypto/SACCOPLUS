@@ -282,6 +282,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Expanded(
                 child: Text(
                   'MBADIFA SACCO',
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 18,
@@ -495,6 +496,9 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   final Map<String, double> _statusAmounts = {};
 
   int _periodMonths = 6;
+
+  /// True when the CONTENT area (sidebar excluded) is wide enough for
+  /// side-by-side panels with fixed heights. Set from build().
   bool _desktop = true;
 
   static final _num = NumberFormat('#,##0');
@@ -539,6 +543,15 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 
   static String _fmt(double v) => _num.format(v.round());
+
+  /// Compact axis labels (K / M / B) for narrow charts.
+  static String _fmtAxis(double v, bool compact) {
+    if (!compact) return _num.format(v.round());
+    if (v >= 1e9) return '${(v / 1e9).toStringAsFixed(v % 1e9 == 0 ? 0 : 1)}B';
+    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(v % 1e6 == 0 ? 0 : 1)}M';
+    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(0)}K';
+    return v.toStringAsFixed(0);
+  }
 
   Future<void> _checkForUpdates() async {
     try {
@@ -662,6 +675,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       );
 
   Widget _label(String s) => Text(s.toUpperCase(),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       style: _t(10.5, FontWeight.w600, _C.muted, ls: 0.6));
 
   // ── Layout shell ──────────────────────────────────────────────────────────
@@ -671,6 +686,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     Widget? trailing,
     required Widget child,
     EdgeInsets padding = const EdgeInsets.all(16),
+    // true for panels whose content could be taller than the fixed row height
+    bool scroll = false,
   }) {
     return Container(
       width: double.infinity,
@@ -684,33 +701,59 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(children: [
             Expanded(
-              child: Row(crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic, children: [
-                Text(title, style: _t(14, FontWeight.w600, _C.ink)),
-                if (subtitle != null) ...[
-                  const SizedBox(width: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
                   Flexible(
-                    child: Text(subtitle,
+                    child: Text(title,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _t(12, FontWeight.w400, _C.muted)),
+                        style: _t(14, FontWeight.w600, _C.ink)),
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(width: 10),
+                    Flexible(
+                      flex: 2,
+                      child: Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _t(12, FontWeight.w400, _C.muted)),
+                    ),
+                  ],
                 ],
-              ]),
+              ),
             ),
-            if (trailing != null) trailing,
+            if (trailing != null) ...[const SizedBox(width: 8), trailing],
           ]),
         ),
         const Divider(height: 1, color: _C.line),
         if (_desktop)
-          Expanded(child: Padding(padding: padding, child: child))
+          Expanded(
+            child: scroll
+                ? LayoutBuilder(
+                    builder: (_, c) => SingleChildScrollView(
+                      padding: padding,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: (c.maxHeight - padding.vertical)
+                              .clamp(0.0, double.infinity)
+                              .toDouble(),
+                        ),
+                        child: Center(child: child),
+                      ),
+                    ),
+                  )
+                : Padding(padding: padding, child: child),
+          )
         else
           Padding(padding: padding, child: child),
       ]),
     );
   }
 
-  /// Lays panels out side by side at a fixed height on desktop (so every panel
-/// in the row is the same height and fills it), stacked on mobile.
+  /// Lays panels out side by side at a fixed height on wide content areas (so
+  /// every panel in the row is the same height), stacked on narrower ones.
   Widget _row(bool desktop, double height, List<(int, Widget)> items) {
     if (!desktop) {
       return Column(children: [
@@ -734,61 +777,72 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final desktop = MediaQuery.of(context).size.width > 900;
-    _desktop = desktop;
-
     return ColoredBox(
       color: _C.bg,
-      child: Column(children: [
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
-        Expanded(child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.all(desktop ? 24 : 14),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _header(desktop),
-            if (_error != null) ...[const SizedBox(height: 12), _errorBanner()],
-            const SizedBox(height: 16),
-            _summaryGrid(),
-            const SizedBox(height: 16),
-            _row(desktop, 360, [
-              (5, _disbursementPanel()),
-              (3, _statusPanel()),
-            ]),
-            const SizedBox(height: 16),
-            _row(desktop, 270, [
-              (1, _fundsPanel()),
-              (1, _loanBookPanel()),
-              (1, _riskMixPanel()),
-            ]),
-            const SizedBox(height: 16),
-            _row(desktop, 240, [
-              (3, _parPanel()),
-              (2, _attentionPanel()),
-            ]),
-            const SizedBox(height: 16),
-            _row(desktop, 440, [
-              (3, _recentLoansPanel()),
-              (2, _linksPanel()),
-            ]),
-          ]),
-        )),
-      ]),
+      child: LayoutBuilder(builder: (context, box) {
+        // Real content width (sidebar already excluded).
+        final w = box.maxWidth;
+        final pad = w >= 900 ? 24.0 : w >= 600 ? 18.0 : 12.0;
+        final desktop = w >= 1200;
+        _desktop = desktop;
+
+        return Column(children: [
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.all(pad),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _header(w >= 700),
+                if (_error != null) ...[const SizedBox(height: 12), _errorBanner()],
+                const SizedBox(height: 16),
+                _summaryGrid(),
+                const SizedBox(height: 16),
+                _row(desktop, 400, [
+                  (5, _disbursementPanel()),
+                  (3, _statusPanel()),
+                ]),
+                const SizedBox(height: 16),
+                _row(desktop, 290, [
+                  (1, _fundsPanel()),
+                  (1, _loanBookPanel()),
+                  (1, _riskMixPanel()),
+                ]),
+                const SizedBox(height: 16),
+                _row(desktop, 260, [
+                  (3, _parPanel()),
+                  (2, _attentionPanel()),
+                ]),
+                const SizedBox(height: 16),
+                _row(desktop, 440, [
+                  (3, _recentLoansPanel()),
+                  (2, _linksPanel()),
+                ]),
+              ]),
+            ),
+          ),
+        ]);
+      }),
     );
   }
 
   // ── Header ────────────────────────────────────────────────────────────────
-  Widget _header(bool desktop) {
+  Widget _header(bool wide) {
     return Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
       Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Financial Overview',
-              style: _t(desktop ? 22 : 18, FontWeight.w700, _C.ink, ls: -0.3)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _t(wide ? 22 : 18, FontWeight.w700, _C.ink, ls: -0.3)),
           const SizedBox(height: 2),
           Text('MBADIFA SACCO  ·  ${DateFormat('EEEE, d MMMM yyyy').format(DateTime.now())}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: _t(12, FontWeight.w400, _C.muted)),
         ]),
       ),
-      if (desktop && _lastRefresh != null)
+      if (wide && _lastRefresh != null)
         Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Text('Last updated ${DateFormat('h:mm a').format(_lastRefresh!)}',
@@ -829,7 +883,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     ];
 
     return LayoutBuilder(builder: (context, c) {
-      final cols = c.maxWidth > 1000 ? 4 : 2;
+      final cols = c.maxWidth > 900 ? 4 : (c.maxWidth >= 300 ? 2 : 1);
       final rows = (cells.length / cols).ceil();
       return Container(
         decoration: BoxDecoration(
@@ -922,87 +976,97 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         child: maxVal <= 0
             ? Center(child: Text('No disbursements in this period',
                 style: _t(13, FontWeight.w400, _C.muted)))
-            : BarChart(BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: maxY,
-                extraLinesData: ExtraLinesData(horizontalLines: [
-                  if (total > 0)
-                    HorizontalLine(
-                      y: total / data.length,
-                      color: _C.warn,
-                      strokeWidth: 1,
-                      dashArray: [5, 4],
-                    ),
-                ]),
-                borderData: FlBorderData(
-                  show: true,
-                  border: const Border(bottom: BorderSide(color: _C.line)),
-                ),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: step,
-                  getDrawingHorizontalLine: (_) =>
-                      const FlLine(color: Color(0xFFEDEFF3), strokeWidth: 1),
-                ),
-                barTouchData: BarTouchData(
-                  touchTooltipData: BarTouchTooltipData(
-                    getTooltipItem: (group, _, rod, __) => BarTooltipItem(
-                      '${data[group.x].key}\nUGX ${_fmt(rod.toY)}',
-                      _t(11.5, FontWeight.w600, Colors.white, tab: true),
-                    ),
+            : LayoutBuilder(builder: (context, c) {
+                final narrow = c.maxWidth < 480;
+                final axisW = narrow ? 44.0 : 88.0;
+                final barW = ((c.maxWidth - axisW) / data.length * 0.55)
+                    .clamp(6.0, 30.0)
+                    .toDouble();
+                final skipEvery = (narrow && data.length > 6) ? 2 : 1;
+                return BarChart(BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: maxY,
+                  extraLinesData: ExtraLinesData(horizontalLines: [
+                    if (total > 0)
+                      HorizontalLine(
+                        y: total / data.length,
+                        color: _C.warn,
+                        strokeWidth: 1,
+                        dashArray: [5, 4],
+                      ),
+                  ]),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: const Border(bottom: BorderSide(color: _C.line)),
                   ),
-                ),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 88,
-                      interval: step,
-                      getTitlesWidget: (v, _) => Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Text(_fmt(v),
-                              style: _t(10.5, FontWeight.w400, _C.muted, tab: true)),
-                        ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: step,
+                    getDrawingHorizontalLine: (_) =>
+                        const FlLine(color: Color(0xFFEDEFF3), strokeWidth: 1),
+                  ),
+                  barTouchData: BarTouchData(
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, _, rod, __) => BarTooltipItem(
+                        '${data[group.x].key}\nUGX ${_fmt(rod.toY)}',
+                        _t(11.5, FontWeight.w600, Colors.white, tab: true),
                       ),
                     ),
                   ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 28,
-                      getTitlesWidget: (v, _) {
-                        final i = v.toInt();
-                        if (i < 0 || i >= data.length) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(data[i].key, style: _t(11, FontWeight.w400, _C.muted)),
-                        );
-                      },
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: axisW,
+                        interval: step,
+                        getTitlesWidget: (v, _) => Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text(_fmtAxis(v, narrow),
+                                style: _t(10.5, FontWeight.w400, _C.muted, tab: true)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 28,
+                        getTitlesWidget: (v, _) {
+                          final i = v.toInt();
+                          if (i < 0 || i >= data.length || i % skipEvery != 0) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(data[i].key, style: _t(10.5, FontWeight.w400, _C.muted)),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-                barGroups: [
-                  for (int i = 0; i < data.length; i++)
-                    BarChartGroupData(x: i, barRods: [
-                      BarChartRodData(
-                        toY: data[i].value,
-                        width: _periodMonths > 6 ? 16 : 30,
-                        color: _C.accent,
-                        backDrawRodData: BackgroundBarChartRodData(
-                          show: true,
-                          toY: maxY,
-                          color: const Color(0xFFF3F4F6),
+                  barGroups: [
+                    for (int i = 0; i < data.length; i++)
+                      BarChartGroupData(x: i, barRods: [
+                        BarChartRodData(
+                          toY: data[i].value,
+                          width: barW,
+                          color: _C.accent,
+                          backDrawRodData: BackgroundBarChartRodData(
+                            show: true,
+                            toY: maxY,
+                            color: const Color(0xFFF3F4F6),
+                          ),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
                         ),
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
-                      ),
-                    ]),
-                ],
-              )),
+                      ]),
+                  ],
+                ));
+              }),
       )),
     );
   }
@@ -1023,9 +1087,11 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
           ]),
         );
     return Column(children: [
-      Row(children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         stat('Total disbursed', 'UGX ${_fmt(total)}'),
+        const SizedBox(width: 8),
         stat('Monthly average', 'UGX ${_fmt(avg)}'),
+        const SizedBox(width: 8),
         stat('Peak month',
             peak != null && peak.value > 0 ? '${peak.key}  ·  UGX ${_fmt(peak.value)}' : '—'),
       ]),
@@ -1092,6 +1158,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(rows[i].$1,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _t(12.5, FontWeight.w500, _C.ink)),
             ),
@@ -1105,7 +1172,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
               ),
             ),
             SizedBox(
-              width: 52,
+              width: 46,
               child: Text('${(rows[i].$2 / total * 100).toStringAsFixed(1)}%',
                   textAlign: TextAlign.right,
                   style: _t(12, FontWeight.w400, _C.muted, tab: true)),
@@ -1116,22 +1183,40 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     ]);
   }
 
-  /// Donut + legend panel. Side by side on desktop, stacked on mobile.
+  /// Donut + legend panel. Side by side when the panel is wide enough,
+  /// stacked when it is narrow.
   Widget _mixPanel(String title, String subtitle, List<(String, double, Color)> parts,
       {int centerIndex = 0, bool money = true}) {
     final total = parts.fold<double>(0, (s, p) => s + p.$2);
-    final donut = _donut(parts,
-        centerTop: money ? _fmt(total) : '${total.toInt()}', centerBottom: 'Total');
     return _panel(
       title: title,
       subtitle: subtitle,
-      child: _desktop
-          ? Row(children: [
-              donut,
-              const SizedBox(width: 20),
-              Expanded(child: _legend(parts, money: money)),
-            ])
-          : Column(children: [donut, const SizedBox(height: 12), _legend(parts, money: money)]),
+      scroll: true,
+      child: LayoutBuilder(builder: (context, c) {
+        final sideBySide = c.maxWidth >= 300;
+        final size = sideBySide
+            ? (c.maxWidth * 0.4).clamp(110.0, 150.0).toDouble()
+            : 140.0;
+        final donut = _donut(
+          parts,
+          centerTop: money ? _fmt(total) : '${total.toInt()}',
+          centerBottom: 'Total',
+          size: size,
+          thickness: size >= 140 ? 12 : 10,
+        );
+        if (sideBySide) {
+          return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            donut,
+            const SizedBox(width: 16),
+            Expanded(child: _legend(parts, money: money)),
+          ]);
+        }
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          donut,
+          const SizedBox(height: 12),
+          _legend(parts, money: money),
+        ]);
+      }),
     );
   }
 
@@ -1172,54 +1257,72 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     final keys = _statusOrder.where((k) => (_statusCounts[k] ?? 0) > 0).toList();
     final parts = [for (final k in keys) (k, _statusCounts[k]!.toDouble(), _statusColors[k]!)];
 
-    final donut = _donut(parts, centerTop: '$total', centerBottom: 'Loans', size: 180, thickness: 14);
-
-    final table = Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Row(children: [
-        Expanded(flex: 3, child: _label('Status')),
-        Expanded(flex: 1, child: Align(alignment: Alignment.centerRight, child: _label('Loans'))),
-        Expanded(flex: 1, child: Align(alignment: Alignment.centerRight, child: _label('Share'))),
-        Expanded(flex: 3, child: Align(alignment: Alignment.centerRight, child: _label('Amount (UGX)'))),
-      ]),
-      const SizedBox(height: 6),
-      for (final k in keys) ...[
-        const Divider(height: 1, color: _C.line),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          child: Row(children: [
-            Expanded(
-              flex: 3,
+    Widget table() => Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            Expanded(flex: 3, child: _label('Status')),
+            Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: _label('Loans'))),
+            Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: _label('Share'))),
+            Expanded(flex: 4, child: Align(alignment: Alignment.centerRight, child: _label('Amount'))),
+          ]),
+          const SizedBox(height: 6),
+          for (final k in keys) ...[
+            const Divider(height: 1, color: _C.line),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 9),
               child: Row(children: [
-                Container(width: 8, height: 8, color: _statusColors[k]),
-                const SizedBox(width: 8),
-                Text(k, style: _t(12.5, FontWeight.w500, _C.ink)),
+                Expanded(
+                  flex: 3,
+                  child: Row(children: [
+                    Container(width: 8, height: 8, color: _statusColors[k]),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(k,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _t(12.5, FontWeight.w500, _C.ink)),
+                    ),
+                  ]),
+                ),
+                Expanded(flex: 2, child: Align(alignment: Alignment.centerRight,
+                    child: Text('${_statusCounts[k]}',
+                        style: _t(12.5, FontWeight.w500, _C.ink, tab: true)))),
+                Expanded(flex: 2, child: Align(alignment: Alignment.centerRight,
+                    child: Text('${(_statusCounts[k]! / total * 100).toStringAsFixed(0)}%',
+                        style: _t(12.5, FontWeight.w400, _C.muted, tab: true)))),
+                Expanded(flex: 4, child: Align(alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(_fmt(_statusAmounts[k] ?? 0),
+                          style: _t(12.5, FontWeight.w500, _C.ink, tab: true)),
+                    ))),
               ]),
             ),
-            Expanded(flex: 1, child: Align(alignment: Alignment.centerRight,
-                child: Text('${_statusCounts[k]}', style: _t(12.5, FontWeight.w500, _C.ink, tab: true)))),
-            Expanded(flex: 1, child: Align(alignment: Alignment.centerRight,
-                child: Text('${(_statusCounts[k]! / total * 100).toStringAsFixed(0)}%',
-                    style: _t(12.5, FontWeight.w400, _C.muted, tab: true)))),
-            Expanded(flex: 3, child: Align(alignment: Alignment.centerRight,
-                child: Text(_fmt(_statusAmounts[k] ?? 0),
-                    style: _t(12.5, FontWeight.w500, _C.ink, tab: true)))),
-          ]),
-        ),
-      ],
-    ]);
+          ],
+        ]);
 
     return _panel(
       title: 'Loans by status',
       subtitle: '$total loans',
+      scroll: true,
       child: total == 0
           ? Center(child: Text('No loans recorded', style: _t(13, FontWeight.w400, _C.muted)))
-          : _desktop
-              ? Row(children: [
-                  donut,
-                  const SizedBox(width: 24),
-                  Expanded(child: table),
-                ])
-              : Column(children: [donut, const SizedBox(height: 14), table]),
+          : LayoutBuilder(builder: (context, c) {
+              final sideBySide = c.maxWidth >= 460;
+              final donut = _donut(parts,
+                  centerTop: '$total',
+                  centerBottom: 'Loans',
+                  size: sideBySide ? 170 : 140,
+                  thickness: 14);
+              return sideBySide
+                  ? Row(children: [
+                      donut,
+                      const SizedBox(width: 24),
+                      Expanded(child: table()),
+                    ])
+                  : Column(mainAxisSize: MainAxisSize.min,
+                      children: [donut, const SizedBox(height: 14), table()]);
+            }),
     );
   }
 
@@ -1239,39 +1342,48 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     return _panel(
       title: 'Portfolio at risk',
       subtitle: 'Overdue principal as a share of loans outstanding',
-      child: Column(children: [
-        Row(children: [
-          cell(3, _label('Overdue by'), right: false),
-          cell(3, _label('Amount (UGX)')),
-          cell(2, _label('% of portfolio')),
-          cell(2, _label('Target')),
-          cell(2, _label('Status')),
-        ]),
-        const SizedBox(height: 6),
-        for (final r in rows) ...[
-          const Divider(height: 1, color: _C.line),
-          Builder(builder: (_) {
-            final pct = _outstanding > 0 ? r.$2 / _outstanding * 100 : 0.0;
-            final ok = pct <= r.$3 * 0.6;
-            final watch = !ok && pct <= r.$3;
-            final color = ok ? _C.pos : watch ? _C.warn : _C.neg;
-            final label = ok ? 'Within target' : watch ? 'Watch' : 'Above target';
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              child: Row(children: [
-                cell(3, Text(r.$1, style: _t(12.5, FontWeight.w500, _C.ink)), right: false),
-                cell(3, Text(_fmt(r.$2), style: _t(12.5, FontWeight.w500, _C.ink, tab: true))),
-                cell(2, Text('${pct.toStringAsFixed(1)}%',
-                    style: _t(12.5, FontWeight.w600, color, tab: true))),
-                cell(2, Text('≤ ${r.$3.toStringAsFixed(0)}%',
-                    style: _t(12.5, FontWeight.w400, _C.muted, tab: true))),
-                cell(2, Text(label, textAlign: TextAlign.right,
-                    style: _t(11.5, FontWeight.w600, color))),
-              ]),
-            );
-          }),
-        ],
-      ]),
+      scroll: true,
+      child: LayoutBuilder(builder: (context, c) {
+        final showTarget = c.maxWidth >= 520;
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            cell(3, _label('Overdue by'), right: false),
+            cell(3, _label('Amount')),
+            cell(2, _label('% of book')),
+            if (showTarget) cell(2, _label('Target')),
+            cell(2, _label('Status')),
+          ]),
+          const SizedBox(height: 6),
+          for (final r in rows) ...[
+            const Divider(height: 1, color: _C.line),
+            Builder(builder: (_) {
+              final pct = _outstanding > 0 ? r.$2 / _outstanding * 100 : 0.0;
+              final ok = pct <= r.$3 * 0.6;
+              final watch = !ok && pct <= r.$3;
+              final color = ok ? _C.pos : watch ? _C.warn : _C.neg;
+              final label = ok ? 'Within target' : watch ? 'Watch' : 'Above target';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                child: Row(children: [
+                  cell(3, Text(r.$1, style: _t(12.5, FontWeight.w500, _C.ink)), right: false),
+                  cell(3, FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(_fmt(r.$2), style: _t(12.5, FontWeight.w500, _C.ink, tab: true)),
+                  )),
+                  cell(2, Text('${pct.toStringAsFixed(1)}%',
+                      style: _t(12.5, FontWeight.w600, color, tab: true))),
+                  if (showTarget)
+                    cell(2, Text('≤ ${r.$3.toStringAsFixed(0)}%',
+                        style: _t(12.5, FontWeight.w400, _C.muted, tab: true))),
+                  cell(2, Text(label, textAlign: TextAlign.right,
+                      style: _t(11.5, FontWeight.w600, color))),
+                ]),
+              );
+            }),
+          ],
+        ]);
+      }),
     );
   }
 
@@ -1285,6 +1397,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     return _panel(
       title: 'Needs attention',
       padding: EdgeInsets.zero,
+      scroll: true,
       child: items.isEmpty
           ? Padding(
               padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
@@ -1297,7 +1410,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                 ]),
               ),
             )
-          : Column(children: [
+          : Column(mainAxisSize: MainAxisSize.min, children: [
               for (int i = 0; i < items.length; i++) ...[
                 if (i > 0) const Divider(height: 1, color: _C.line),
                 InkWell(
@@ -1308,7 +1421,10 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                       Container(width: 3, height: 18, color: items[i].$3),
                       const SizedBox(width: 12),
                       Expanded(child: Text(items[i].$1,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: _t(13, FontWeight.w500, _C.ink))),
+                      const SizedBox(width: 8),
                       Text('${items[i].$2}',
                           style: _t(15, FontWeight.w700, items[i].$3, tab: true)),
                       const SizedBox(width: 8),
@@ -1344,31 +1460,37 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
                   style: _t(13, FontWeight.w400, _C.muted))),
             )
           : LayoutBuilder(builder: (context, c) {
+              final showDate = c.maxWidth >= 460;
               final n = _desktop ? ((c.maxHeight - 34) / 46).floor().clamp(3, 12) : 6;
               final recent = sorted.take(n).toList();
-              return ClipRect(child: Column(children: [
-              Row(children: [
-                Expanded(flex: 4, child: _label('Member')),
-                Expanded(flex: 2, child: _label('Date')),
-                Expanded(flex: 3, child: Align(alignment: Alignment.centerRight, child: _label('Amount (UGX)'))),
-                Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: _label('Status'))),
-              ]),
-              const SizedBox(height: 6),
-              for (final loan in recent) ...[
-                const Divider(height: 1, color: _C.line),
-                _loanRow(loan),
-              ],
-            ]));
+              return ClipRect(
+                child: Column(children: [
+                  Row(children: [
+                    Expanded(flex: 4, child: _label('Member')),
+                    if (showDate) Expanded(flex: 2, child: _label('Date')),
+                    Expanded(flex: 3, child: Align(alignment: Alignment.centerRight, child: _label('Amount'))),
+                    Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: _label('Status'))),
+                  ]),
+                  const SizedBox(height: 6),
+                  for (final loan in recent) ...[
+                    const Divider(height: 1, color: _C.line),
+                    _loanRow(loan, showDate),
+                  ],
+                ]),
+              );
             }),
     );
   }
 
-  Widget _loanRow(Map<String, dynamic> loan) {
+  Widget _loanRow(Map<String, dynamic> loan, bool showDate) {
     final name = (loan['farmerName'] ?? loan['memberName'] ?? 'Unknown').toString();
     final amount = _n(loan['amount'] ?? loan['loanAmount']);
     final status = (loan['status'] ?? 'pending').toString();
     final created = _date(loan['createdAt']);
     final color = _statusTextColor(status);
+    final statusText = status.isEmpty
+        ? '—'
+        : status[0].toUpperCase() + status.substring(1).toLowerCase();
 
     return InkWell(
       onTap: () => widget.onNavigate('loans'),
@@ -1380,21 +1502,34 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: _t(12.5, FontWeight.w500, _C.ink)),
           ),
-          Expanded(
-            flex: 2,
-            child: Text(created != null ? DateFormat('dd MMM yyyy').format(created) : '—',
-                style: _t(12, FontWeight.w400, _C.muted, tab: true)),
-          ),
+          if (showDate)
+            Expanded(
+              flex: 2,
+              child: Text(created != null ? DateFormat('dd MMM yyyy').format(created) : '—',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _t(12, FontWeight.w400, _C.muted, tab: true)),
+            ),
           Expanded(
             flex: 3,
-            child: Align(alignment: Alignment.centerRight,
-                child: Text(_fmt(amount), style: _t(12.5, FontWeight.w500, _C.ink, tab: true))),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(_fmt(amount), style: _t(12.5, FontWeight.w500, _C.ink, tab: true)),
+              ),
+            ),
           ),
           Expanded(
             flex: 2,
-            child: Align(alignment: Alignment.centerRight,
-                child: Text(status[0].toUpperCase() + status.substring(1).toLowerCase(),
-                    style: _t(12, FontWeight.w600, color))),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(statusText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _t(12, FontWeight.w600, color)),
+            ),
           ),
         ]),
       ),
@@ -1431,7 +1566,10 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Row(children: [
-              Expanded(child: Text(links[i].$1, style: _t(13, FontWeight.w500, _C.ink))),
+              Expanded(child: Text(links[i].$1,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _t(13, FontWeight.w500, _C.ink))),
               const Icon(Icons.chevron_right, size: 18, color: _C.muted),
             ]),
           ),
