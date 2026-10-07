@@ -105,8 +105,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   String? _txnError;
   bool _isLoading = true;
 
-  // Loan-card column flex: disbursements(5) | repayments(5) | balance(3 + action)
-  static const _lf = [3, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2];
+  // Loan-card column flex: disbursements(5) | repayments(5) | balance(3) + action(1)
+  // The last column (actions) is wider so both icon buttons always fit.
+  static const _lf = [3, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3];
 
   @override
   void initState() {
@@ -132,10 +133,21 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       final ref = FirebaseFirestore.instance
           .collection(AppConstants.loansCol)
           .doc(widget.loanId);
+      
+      print('🔍 Loading loan data for ID: ${widget.loanId}');
+      print('🔍 Initial loan data passed: ${widget.initialLoanData}');
+      
       final doc = await ref.get();
 
       if (doc.exists) {
         final data = <String, dynamic>{'id': doc.id, ...doc.data()!};
+        
+        print('📊 Loaded from Firestore:');
+        print('   - Amount: ${data['loanAmount'] ?? data['amount']}');
+        print('   - Interest Rate: ${data['interestRate']}');
+        print('   - Outstanding: ${data['principalOutstanding']}');
+        print('   - Status: ${data['status']}');
+        print('   - Disbursement: ${data['disbursementDate'] ?? data['disbursedAt']}');
 
         // Auto-correct: has disbursement date but status still "approved"
         final st = (data['status'] ?? '').toString().toLowerCase();
@@ -336,7 +348,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     print('💰 Calculated principalOutstanding: $calculated');
     return calculated;
   }
-  
+
   double get _interestOut {
     // Check if interestOutstanding field exists in the loan data
     if (_loanData!.containsKey('interestOutstanding')) {
@@ -348,7 +360,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     print('💰 Calculated interestOutstanding: $calculated');
     return calculated;
   }
-  
+
   double get _chargesOut => math.max(0.0, _n('charges') - _paid('charges'));
 
   double get _arrears {
@@ -822,7 +834,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('More actions', style: _t(13.5, w: FontWeight.w600, c: _C.ink)),
+            Text('More actions',
+                style: _t(13.5, w: FontWeight.w600, c: _C.ink)),
             const SizedBox(width: 4),
             const Icon(Icons.keyboard_arrow_down_rounded,
                 size: 20, color: _C.muted),
@@ -845,6 +858,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           surfaceTintColor: Colors.transparent,
           foregroundColor: _C.ink,
           elevation: 0,
+          titleSpacing: 24,
           title: Text('Loan details',
               style: _t(16, w: FontWeight.w600, c: _C.ink)),
         ),
@@ -868,7 +882,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         surfaceTintColor: Colors.transparent,
         foregroundColor: _C.ink,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
-        titleSpacing: 0,
+        // Breathing room so the title never sits flush against the sidebar.
+        titleSpacing: compact ? 16 : 24,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -908,6 +923,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               controller: _tabController,
               isScrollable: true,
               tabAlignment: TabAlignment.start,
+              // Align the first tab label with the title above it.
+              padding: EdgeInsets.only(left: compact ? 0 : 8),
               dividerColor: Colors.transparent,
               indicatorColor: _C.brand,
               indicatorWeight: 2.5,
@@ -1007,8 +1024,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final total = principal + interest - _waived + charges;
     final arrears = _arrears;
 
-    final hasDisb =
-        _loanData!['disbursedAt'] != null || _loanData!['disbursementDate'] != null;
+    final hasDisb = _loanData!['disbursedAt'] != null ||
+        _loanData!['disbursementDate'] != null;
     final hasExtra =
         _loanData!['purpose'] != null || _loanData!['description'] != null;
 
@@ -1093,8 +1110,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           TextSpan(children: [
             TextSpan(text: '$label  ', style: _t(12, c: _C.muted)),
             TextSpan(
-                text: value,
-                style: _num(12, w: FontWeight.w500, c: _C.text)),
+                text: value, style: _num(12, w: FontWeight.w500, c: _C.text)),
           ]),
         );
 
@@ -1383,7 +1399,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               alignment: left ? Alignment.centerLeft : Alignment.centerRight,
               child: Text(text,
                   style: left
-                      ? _t(13, w: bold ? FontWeight.w700 : FontWeight.w500, c: c)
+                      ? _t(13,
+                          w: bold ? FontWeight.w700 : FontWeight.w500, c: c)
                       : _num(13,
                           w: bold ? FontWeight.w700 : FontWeight.w500, c: c)),
             ),
@@ -1481,7 +1498,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
   _Ledger _buildLedger(List<Map<String, dynamic>> txns) {
     final l = _Ledger();
-    
+
     // Process all transactions to build the ledger rows
     for (final t in txns) {
       final isPay = (t['type'] ?? '').toString() == 'Payment';
@@ -1505,14 +1522,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       }
       l.rows.add(_LedgerRow(t, isPay, p, i, c, l.bp, l.bi, l.bc));
     }
-    
+
     // If we have stored outstanding values (from data correction), override the calculated balances
-    if (_loanData!.containsKey('principalOutstanding') && _loanData!.containsKey('interestOutstanding')) {
-      print('💳 Overriding ledger balances with stored outstanding: P=${_n('principalOutstanding')}, I=${_n('interestOutstanding')}');
+    if (_loanData!.containsKey('principalOutstanding') &&
+        _loanData!.containsKey('interestOutstanding')) {
+      print(
+          '💳 Overriding ledger balances with stored outstanding: P=${_n('principalOutstanding')}, I=${_n('interestOutstanding')}');
       l.bp = _n('principalOutstanding');
       l.bi = _n('interestOutstanding');
       l.bc = _n('chargesOutstanding', 0);
-      
+
       // Update the last row's balances to match the corrected values
       if (l.rows.isNotEmpty) {
         final lastRow = l.rows.last;
@@ -1522,13 +1541,13 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           lastRow.p,
           lastRow.i,
           lastRow.c,
-          l.bp,  // Use corrected balance
-          l.bi,  // Use corrected balance
-          l.bc,  // Use corrected balance
+          l.bp, // Use corrected balance
+          l.bi, // Use corrected balance
+          l.bc, // Use corrected balance
         );
       }
     }
-    
+
     return l;
   }
 
@@ -1579,7 +1598,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
     Widget part(String l, double v) => Text.rich(TextSpan(children: [
           TextSpan(text: '$l ', style: _t(11.5, c: _C.muted)),
-          TextSpan(text: _money(v), style: _num(11.5, w: FontWeight.w500, c: _C.text)),
+          TextSpan(
+              text: _money(v),
+              style: _num(11.5, w: FontWeight.w500, c: _C.text)),
         ]));
 
     return Container(
@@ -1611,8 +1632,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                     Text(
                       '${r.isPay ? '−' : '+'} ${_money(total)}',
                       style: _num(15,
-                          w: FontWeight.w700,
-                          c: r.isPay ? _C.green : _C.ink),
+                          w: FontWeight.w700, c: r.isPay ? _C.green : _C.ink),
                     ),
                     const SizedBox(height: 2),
                     Text('Bal ${_money(bal)}',
@@ -1661,13 +1681,14 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       Color? color,
       Widget? child,
       double height = 46,
+      double hPad = 10,
       TextStyle? style}) {
     final sectionStart = idx == 0 || idx == 5 || idx == 10;
     return Expanded(
       flex: _lf[idx],
       child: Container(
         height: height,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        padding: EdgeInsets.symmetric(horizontal: hPad),
         alignment: isNum ? Alignment.centerRight : Alignment.centerLeft,
         decoration: BoxDecoration(
           border: sectionStart
@@ -1697,9 +1718,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     Widget balCell(int idx, double v) {
       final owing = v > 0.5;
       return _lc(idx, owing ? _money(v) : '0',
-          isNum: true,
-          bold: owing,
-          color: owing ? _C.red : _C.muted);
+          isNum: true, bold: owing, color: owing ? _C.red : _C.muted);
     }
 
     Widget groupHeader(String label, int flex) => Expanded(
@@ -1725,7 +1744,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       Row(children: [
         groupHeader('Disbursements', 11),
         groupHeader('Repayments', 11),
-        groupHeader('Balance', 8),
+        // Balance (3 cols = 6) + action column (3) = 9
+        groupHeader('Balance', 9),
       ]),
       const Divider(height: 1, color: _C.line),
       Row(
@@ -1766,35 +1786,35 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           balCell(10, r.balP),
           balCell(11, r.balI),
           balCell(12, r.balC),
+          // Action column: zero side padding + wider flex so both icons fit.
           _lc(
             13,
             '',
+            hPad: 0,
             child: r.isPay
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints(minWidth: 28, minHeight: 28),
-                          icon: const Icon(Icons.receipt_long_outlined,
-                              size: 16, color: _C.muted),
-                          tooltip: 'View receipt',
-                          onPressed: () => _showPaymentDetails(r.txn),
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints(minWidth: 28, minHeight: 28),
-                          icon: const Icon(Icons.undo_rounded,
-                              size: 16, color: _C.red),
-                          tooltip: 'Reverse payment',
-                          onPressed: () => _confirmReverse(r.txn),
-                        ),
-                      ],
-                    ),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 28, minHeight: 28),
+                        icon: const Icon(Icons.receipt_long_outlined,
+                            size: 16, color: _C.muted),
+                        tooltip: 'View receipt',
+                        onPressed: () => _showPaymentDetails(r.txn),
+                      ),
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 28, minHeight: 28),
+                        icon: const Icon(Icons.undo_rounded,
+                            size: 16, color: _C.red),
+                        tooltip: 'Reverse payment',
+                        onPressed: () => _confirmReverse(r.txn),
+                      ),
+                    ],
                   )
                 : const SizedBox(),
           ),
@@ -1819,7 +1839,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           balCell(10, l.bp),
           balCell(11, l.bi),
           balCell(12, l.bc),
-          _lc(13, ''),
+          _lc(13, '', hPad: 0),
         ]),
       ));
     }
@@ -1865,8 +1885,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                 _receiptLine('Total paid', 'UGX ${_money(p + i + c)}',
                     bold: true),
                 const Divider(height: 20, color: _C.line),
-                _receiptLine('Method',
-                    (payment['paymentMethod'] ?? 'N/A').toString()),
+                _receiptLine(
+                    'Method', (payment['paymentMethod'] ?? 'N/A').toString()),
                 if (payment['transactionId'] != null &&
                     payment['transactionId'].toString().isNotEmpty)
                   _receiptLine(
@@ -1880,7 +1900,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Close', style: _t(13.5, w: FontWeight.w600, c: _C.brand)),
+            child:
+                Text('Close', style: _t(13.5, w: FontWeight.w600, c: _C.brand)),
           ),
         ],
       ),
@@ -1930,8 +1951,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                    'The payment is deleted and the loan balance is restored.',
+                Text('The payment is deleted and the loan balance is restored.',
                     style: _t(13.5)),
                 const SizedBox(height: 14),
                 Container(
@@ -1967,7 +1987,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: _t(13.5, w: FontWeight.w600, c: _C.muted))),
+              child: Text('Cancel',
+                  style: _t(13.5, w: FontWeight.w600, c: _C.muted))),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: _filledStyle(_C.red),
@@ -2033,7 +2054,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
     Widget part(String l, double v) => Text.rich(TextSpan(children: [
           TextSpan(text: '$l ', style: _t(12, c: _C.muted)),
-          TextSpan(text: _money(v), style: _num(12, w: FontWeight.w500, c: _C.text)),
+          TextSpan(
+              text: _money(v),
+              style: _num(12, w: FontWeight.w500, c: _C.text)),
         ]));
 
     return _page(
@@ -2085,8 +2108,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                           ),
                           Padding(
                             padding: const EdgeInsets.only(right: 8),
-                            child: _amount(p + i + c,
-                                size: 15, c: _C.green),
+                            child: _amount(p + i + c, size: 15, c: _C.green),
                           ),
                         ],
                       ),
@@ -2198,7 +2220,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                       label = 'Paid';
                       color = _C.green;
                     } else if (dueDate.isBefore(now)) {
-                      label = totalPaid > previous + 0.5 ? 'Partial' : 'Overdue';
+                      label =
+                          totalPaid > previous + 0.5 ? 'Partial' : 'Overdue';
                       color = _C.red;
                     } else if (totalPaid > previous + 0.5) {
                       label = 'Partial';
@@ -2271,7 +2294,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final paid = _paid('charges');
     final out = _chargesOut;
 
-    Widget chargeRow(String title, double amount, String desc, {bool last = false}) {
+    Widget chargeRow(String title, double amount, String desc,
+        {bool last = false}) {
       if (amount <= 0) return const SizedBox.shrink();
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -2387,7 +2411,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                                 style: _t(14, w: FontWeight.w600, c: _C.ink)),
                             const SizedBox(height: 2),
                             Text('A/C ${g['account'] ?? 'N/A'}',
-                                style: _num(12, w: FontWeight.w400, c: _C.muted)),
+                                style:
+                                    _num(12, w: FontWeight.w400, c: _C.muted)),
                           ],
                         ),
                       ),
@@ -2568,7 +2593,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: _C.muted, size: 20),
+                        icon:
+                            const Icon(Icons.close, color: _C.muted, size: 20),
                         onPressed: () => Navigator.pop(dialogContext),
                       ),
                     ],
@@ -2666,11 +2692,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   // LOAN ACTION DIALOGS (logic unchanged)
   // ═══════════════════════════════════════════════════════════════════════════
   Future<void> _showDisburseLoanDialog() async {
-    final amountCtrl = TextEditingController(text: _principal.round().toString());
+    final amountCtrl =
+        TextEditingController(text: _principal.round().toString());
     final referenceCtrl = TextEditingController();
     final chequeCtrl = TextEditingController();
-    final narrationCtrl =
-        TextEditingController(text: 'Loan disbursement for ${_s('memberName')}');
+    final narrationCtrl = TextEditingController(
+        text: 'Loan disbursement for ${_s('memberName')}');
     String destinationType = 'cash';
 
     await _showFormDialog(
@@ -2692,7 +2719,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             items: const [
               DropdownMenuItem(value: 'cash', child: Text('Cash')),
               DropdownMenuItem(value: 'bank', child: Text('Bank transfer')),
-              DropdownMenuItem(value: 'mobile_money', child: Text('Mobile money')),
+              DropdownMenuItem(
+                  value: 'mobile_money', child: Text('Mobile money')),
             ],
             onChanged: (v) {
               if (v != null) setS(() => destinationType = v);
@@ -2707,8 +2735,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           _field('Narration', narrationCtrl, maxLines: 3),
         ],
       ),
-      validate: () =>
-          (double.tryParse(amountCtrl.text) ?? 0) <= 0 ? 'Enter a valid amount' : null,
+      validate: () => (double.tryParse(amountCtrl.text) ?? 0) <= 0
+          ? 'Enter a valid amount'
+          : null,
       onSubmit: () async {
         final amount = double.tryParse(amountCtrl.text) ?? 0;
         final dest = destinationType;
@@ -2724,7 +2753,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             referenceNumber: ref,
             chequeNumber: cheque,
             narration: narration,
-            tillSession: null, // TODO: Pass actual till session in Phase 3 for cash
+            tillSession:
+                null, // TODO: Pass actual till session in Phase 3 for cash
           ),
           successMessage: 'Loan disbursed',
         );
@@ -2754,8 +2784,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               maxLines: 3, hint: 'Why is this loan being rescheduled?'),
         ],
       ),
-      validate: () =>
-          (int.tryParse(durationCtrl.text) ?? 0) <= 0 ? 'Enter a valid duration' : null,
+      validate: () => (int.tryParse(durationCtrl.text) ?? 0) <= 0
+          ? 'Enter a valid duration'
+          : null,
       onSubmit: () async {
         final newDuration = int.tryParse(durationCtrl.text) ?? 0;
         final reason = reasonCtrl.text.trim();
@@ -2791,8 +2822,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           _field('Reason', reasonCtrl, maxLines: 3, hint: 'Reason for top-up'),
         ],
       ),
-      validate: () =>
-          (double.tryParse(amountCtrl.text) ?? 0) <= 0 ? 'Enter a valid amount' : null,
+      validate: () => (double.tryParse(amountCtrl.text) ?? 0) <= 0
+          ? 'Enter a valid amount'
+          : null,
       onSubmit: () async {
         final amount = double.tryParse(amountCtrl.text) ?? 0;
         final reason = reasonCtrl.text.trim();
@@ -2938,7 +2970,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     }
 
     final memberName =
-        (_member?['name'] ?? _member?['fullName'] ?? _s('memberName')).toString();
+        (_member?['name'] ?? _member?['fullName'] ?? _s('memberName'))
+            .toString();
     final principalOut = _principalOut;
     final amountCtrl = TextEditingController();
 
@@ -3040,7 +3073,10 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               'notes': 'Transferred from member savings account',
             });
 
-            await db.collection(AppConstants.loansCol).doc(widget.loanId).update({
+            await db
+                .collection(AppConstants.loansCol)
+                .doc(widget.loanId)
+                .update({
               'principalPaid': FieldValue.increment(amount),
               'principalOutstanding': FieldValue.increment(-amount),
               'updatedAt': FieldValue.serverTimestamp(),
@@ -3072,8 +3108,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final interestOutstanding = _interestOut;
     final chargesOutstanding = _chargesOut;
 
-    Widget methodTile(
-        IconData icon, String title, String sub, String value) {
+    Widget methodTile(IconData icon, String title, String sub, String value) {
       return InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () => Navigator.pop(context, value),
@@ -3128,8 +3163,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             children: [
               methodTile(Icons.payments_outlined, 'Cash',
                   'Record a cash payment received', 'cash'),
-              methodTile(Icons.smartphone_outlined, 'Mobile money',
-                  'Send a payment request to the member\'s phone', 'mobile_money'),
+              methodTile(
+                  Icons.smartphone_outlined,
+                  'Mobile money',
+                  'Send a payment request to the member\'s phone',
+                  'mobile_money'),
             ],
           ),
         ),
@@ -3203,7 +3241,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
       final paymentData = <String, dynamic>{
         'loanId': widget.loanId,
-        'memberId': _loanData!['memberId'] ?? _loanData!['farmerId'] ?? _memberDocId,
+        'memberId':
+            _loanData!['memberId'] ?? _loanData!['farmerId'] ?? _memberDocId,
         'memberName': _loanData!['memberName'],
         'tenantId': FirebaseService.sessionTenantId,
         'principalAmount': principalPaid,
@@ -3227,7 +3266,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       }
 
       // Save repayment record
-      final repaymentRef = await db.collection(AppConstants.repaymentsCol).add(paymentData);
+      final repaymentRef =
+          await db.collection(AppConstants.repaymentsCol).add(paymentData);
       final repaymentId = repaymentRef.id;
 
       // Post till entry if till session provided and payment is cash
@@ -3235,11 +3275,15 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         try {
           final tillEntryInput = TillEntryInput.loanRepayment(
             amount: total.toInt(),
-            memberId: _loanData!['memberId'] ?? _loanData!['farmerId'] ?? _memberDocId ?? '',
+            memberId: _loanData!['memberId'] ??
+                _loanData!['farmerId'] ??
+                _memberDocId ??
+                '',
             memberName: _loanData!['memberName'] ?? 'Unknown',
             repaymentId: repaymentId,
             paymentMethod: 'Cash',
-            notes: 'Loan repayment - Principal: UGX ${_money(principalPaid)}, Interest: UGX ${_money(interestPaid)}',
+            notes:
+                'Loan repayment - Principal: UGX ${_money(principalPaid)}, Interest: UGX ${_money(interestPaid)}',
           );
 
           await TillService.postEntry(
@@ -3252,7 +3296,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           debugPrint('✅ Till entry posted for loan repayment $repaymentId');
         } catch (tillError) {
           // Till entry failure is non-critical - repayment already recorded
-          debugPrint('⚠️ Failed to post till entry for loan repayment: $tillError');
+          debugPrint(
+              '⚠️ Failed to post till entry for loan repayment: $tillError');
         }
       }
 
