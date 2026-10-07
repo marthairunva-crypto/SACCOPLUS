@@ -867,7 +867,7 @@ class _LoanEditFormState extends State<_LoanEditForm> {
 
       // 1. Update member's loan balance (reduce outstanding)
       if (memberId != null && totalOut > 0) {
-        final memberRef = _db.collection(AppConstants.membersCol).doc(memberId);
+        final memberRef = _db.collection(AppConstants.usersCol).doc(memberId);
         await memberRef.update({
           'loanBalance': FieldValue.increment(-totalOut),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -936,7 +936,7 @@ class _LoanEditFormState extends State<_LoanEditForm> {
 
       // 3. Delete all loan repayment records
       final repayments = await _db
-          .collection(AppConstants.loanRepaymentsCol)
+          .collection(AppConstants.repaymentsCol)
           .where('loanId', isEqualTo: loanId)
           .get();
 

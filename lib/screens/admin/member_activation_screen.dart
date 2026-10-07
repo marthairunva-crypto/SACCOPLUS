@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/modern_theme.dart';
 import '../../services/member_activation_service.dart';
 
@@ -315,6 +316,30 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
     );
   }
 
+  Future<void> _openManualActivation() async {
+    // Load all members
+    final allMembers = await FirebaseFirestore.instance
+        .collection('members')
+        .orderBy('name')
+        .get();
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (context) => _ManualActivationDialog(
+        members: allMembers.docs
+            .map((doc) => {'id': doc.id, ...doc.data()})
+            .toList(),
+        sendSMS: _sendSMS,
+        onActivated: () {
+          _loadMembersNeedingActivation();
+          _showSnack('Member activated successfully', ModernTheme.success);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.of(context).canPop();
@@ -476,6 +501,23 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
                 fontSize: 14,
                 color: ModernTheme.textSecondary,
                 height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openManualActivation,
+                icon: const Icon(Icons.person_search_rounded, size: 20),
+                label: const Text('Manual Activation'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ModernTheme.primaryBlue,
+                  side: BorderSide(color: ModernTheme.primaryBlue),
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
             ),
           ],
@@ -718,5 +760,360 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
         ],
       ],
     );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manual Activation Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ManualActivationDialog extends StatefulWidget {
+  final List<Map<String, dynamic>> members;
+  final bool sendSMS;
+  final VoidCallback onActivated;
+
+  const _ManualActivationDialog({
+    required this.members,
+    required this.sendSMS,
+    required this.onActivated,
+  });
+
+  @override
+  State<_ManualActivationDialog> createState() => _ManualActivationDialogState();
+}
+
+class _ManualActivationDialogState extends State<_ManualActivationDialog> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+  bool _activating = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_query.isEmpty) return widget.members;
+    final q = _query.toLowerCase();
+    return widget.members.where((m) {
+      final name = (m['name'] as String? ?? '').toLowerCase();
+      final account = (m['accountNumber'] as String? ?? '').toLowerCase();
+      final phone = (m['phone'] as String? ?? '').toLowerCase();
+      return name.contains(q) || account.contains(q) || phone.contains(q);
+    }).toList();
+  }
+
+  Future<void> _activateMember(Map<String, dynamic> member) async {
+    setState(() => _activating = true);
+    try {
+      await MemberActivationService.activateSelectedMembers(
+        [member['id'] as String],
+        widget.sendSMS,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onActivated();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to activate: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _activating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filtered;
+    
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: ModernTheme.primaryBlue,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.person_search_rounded, color: Colors.white, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Manual Activation',
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _searchCtrl,
+                    style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+                    cursorColor: Colors.white,
+                    onChanged: (v) => setState(() => _query = v.trim()),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name, account, or phone',
+                      hintStyle: GoogleFonts.poppins(color: Colors.white60, fontSize: 14),
+                      prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.16),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Members list
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No members found',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final member = filtered[index];
+                        final name = member['name'] as String? ?? 'N/A';
+                        final account = member['accountNumber'] as String? ?? 'N/A';
+                        final phone = member['phone'] as String? ?? 'N/A';
+                        final hasTemp = member['tempPassword'] != null;
+                        
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: ModernTheme.primaryBlue.withOpacity(0.1),
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: GoogleFonts.poppins(
+                                color: ModernTheme.primaryBlue,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            name,
+                            style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(
+                                'Account: $account',
+                                style: GoogleFonts.inter(fontSize: 12),
+                              ),
+                              Text(
+                                'Phone: $phone',
+                                style: GoogleFonts.inter(fontSize: 12),
+                              ),
+                              if (hasTemp) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ModernTheme.success.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Already Activated',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      color: ModernTheme.success,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          trailing: _activating
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : IconButton(
+                                  onPressed: () => _confirmAndActivate(member),
+                                  icon: Icon(
+                                    hasTemp ? Icons.refresh_rounded : Icons.check_circle_outline,
+                                    color: ModernTheme.primaryBlue,
+                                  ),
+                                  tooltip: hasTemp ? 'Re-activate' : 'Activate',
+                                ),
+                        );
+                      },
+                    ),
+            ),
+
+            // Footer info
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                border: Border(top: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.grey.shade600),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.sendSMS 
+                          ? 'SMS will be sent with login credentials'
+                          : 'No SMS will be sent',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmAndActivate(Map<String, dynamic> member) async {
+    final name = member['name'] as String? ?? 'N/A';
+    final account = member['accountNumber'] as String? ?? 'N/A';
+    final hasTemp = member['tempPassword'] != null;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              hasTemp ? Icons.refresh_rounded : Icons.check_circle_outline,
+              color: ModernTheme.primaryBlue,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                hasTemp ? 'Re-activate Member?' : 'Activate Member?',
+                style: GoogleFonts.poppins(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              hasTemp
+                  ? 'This member is already activated. Re-activating will generate a new temporary password.'
+                  : 'This will create login credentials for this member.',
+              style: GoogleFonts.inter(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Account: $account',
+                    style: GoogleFonts.inter(fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Temporary password: ${account.length >= 4 ? account.substring(account.length - 4) : 'Auto'}',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: ModernTheme.primaryBlue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancel', style: GoogleFonts.inter()),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ModernTheme.primaryBlue,
+            ),
+            child: Text(
+              hasTemp ? 'Re-activate' : 'Activate',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _activateMember(member);
+    }
   }
 }
