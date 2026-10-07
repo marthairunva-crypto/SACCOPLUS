@@ -26,6 +26,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   String? _selectedMemberId;
   String? _selectedMemberName;
   String? _selectedMemberPhone;
+  String? _selectedMemberAccount;
   String _loanType = 'personal';
   String _paymentFrequency = 'monthly';
   String _interestMethod = 'flat';
@@ -334,6 +335,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
                     _selectedMemberId = value;
                     _selectedMemberName = data['name'] ?? data['fullName'] ?? 'Unknown';
                     _selectedMemberPhone = data['phone'] ?? data['phoneNumber'] ?? '';
+                    _selectedMemberAccount = data['accountNumber'] ?? 'N/A';
                   });
                 },
               );
@@ -686,6 +688,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       _selectedMemberId = null;
       _selectedMemberName = null;
       _selectedMemberPhone = null;
+      _selectedMemberAccount = null;
       _loanType = 'personal';
       _paymentFrequency = 'monthly';
       _interestMethod = 'flat';
@@ -714,8 +717,11 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       final loanData = <String, dynamic>{
         'tenantId': FirebaseService.sessionTenantId,
         'farmerId': _selectedMemberId,
+        'memberId': _selectedMemberId, // Also save as memberId for consistency
         'farmerName': _selectedMemberName,
+        'memberName': _selectedMemberName, // Also save as memberName
         'farmerPhone': _selectedMemberPhone,
+        'accountNumber': _selectedMemberAccount ?? 'N/A', // Save account number
         'amount': principal,
         'loanAmount': principal,
         'interestRate': rate,
