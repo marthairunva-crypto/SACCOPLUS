@@ -51,15 +51,43 @@ class AccountNumberService {
       String accountNumber) async {
     final tid = SaccoService.tenantId;
     try {
+      print('🔍 Looking for account: $accountNumber in tenant: $tid');
+      
       final q = await _db
           .collection('saccoplus-members')
           .where('tenantId', isEqualTo: tid)
           .where('accountNumber', isEqualTo: accountNumber)
           .limit(1)
           .get();
-      if (q.docs.isEmpty) return null;
-      return {...q.docs.first.data(), 'uid': q.docs.first.id};
-    } catch (_) {
+      
+      print('🔍 Query returned ${q.docs.length} results');
+      
+      if (q.docs.isEmpty) {
+        // Try without tenantId filter to debug
+        print('🔍 Trying without tenantId filter...');
+        final q2 = await _db
+            .collection('saccoplus-members')
+            .where('accountNumber', isEqualTo: accountNumber)
+            .limit(1)
+            .get();
+        
+        if (q2.docs.isNotEmpty) {
+          final doc = q2.docs.first.data();
+          print('⚠️ Found account but with different tenantId: ${doc['tenantId']}');
+          print('   Expected tenantId: $tid');
+          print('   Account data: ${doc['name']}, ${doc['phone']}');
+        } else {
+          print('❌ Account $accountNumber not found in any tenant');
+        }
+        
+        return null;
+      }
+      
+      final result = {...q.docs.first.data(), 'uid': q.docs.first.id};
+      print('✅ Found member: ${result['name']} (${result['phone']})');
+      return result;
+    } catch (e) {
+      print('❌ Error looking up account: $e');
       return null;
     }
   }
