@@ -1407,3 +1407,204 @@ class TellerService {
     }
   }
 }
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GENERAL LEDGER ENTRIES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Record a journal entry (no till impact, accounting only)
+  static Future<void> recordJournalEntry({
+    required String description,
+    required int amount,
+    String? notes,
+    required String tellerName,
+    required String tellerId,
+  }) async {
+    try {
+      final transactionRef = _db.collection(AppConstants.tellerTxnCol).doc();
+      final transactionId = transactionRef.id;
+      final timestamp = DateTime.now();
+
+      final transaction = {
+        'id': transactionId,
+        'tenantId': _tenantId,
+        'type': 'journal_entry',
+        'description': description,
+        'amount': amount,
+        'notes': notes ?? '',
+        'tellerName': tellerName,
+        'tellerId': tellerId,
+        'status': 'completed',
+        'timestamp': timestamp,
+        'receiptNumber': _generateReceiptNumber(timestamp),
+        'source': 'teller',
+      };
+
+      await transactionRef.set(transaction);
+
+      // Audit log
+      await _safe(
+        () => AuditService.log(
+          action: 'JOURNAL_ENTRY',
+          details: 'Journal entry: $description - ${money(amount)}',
+          userId: tellerId,
+          metadata: {
+            'description': description,
+            'amount': amount,
+            'notes': notes ?? '',
+          },
+        ),
+        'journal entry audit',
+      );
+
+      print('✅ Journal entry recorded: $description - ${money(amount)}');
+    } catch (e, st) {
+      print('❌ Error recording journal entry: $e');
+      print(st);
+      rethrow;
+    }
+  }
+
+  /// Record an expense payment (reduces till cash)
+  static Future<void> recordExpensePayment({
+    required String description,
+    String? category,
+    required int amount,
+    String? notes,
+    required String tellerName,
+    required String tellerId,
+    required TillSession tillSession,
+  }) async {
+    try {
+      final transactionRef = _db.collection(AppConstants.tellerTxnCol).doc();
+      final transactionId = transactionRef.id;
+      final timestamp = DateTime.now();
+
+      final transaction = {
+        'id': transactionId,
+        'tenantId': _tenantId,
+        'type': 'expense',
+        'description': description,
+        'category': category ?? 'General',
+        'amount': amount,
+        'notes': notes ?? '',
+        'tellerName': tellerName,
+        'tellerId': tellerId,
+        'status': 'completed',
+        'timestamp': timestamp,
+        'receiptNumber': _generateReceiptNumber(timestamp),
+        'source': 'teller',
+      };
+
+      await transactionRef.set(transaction);
+
+      // Post to till (cash out)
+      await TillService.postEntry(
+        tillSessionId: tillSession.id,
+        tellerId: tellerId,
+        tellerName: tellerName,
+        input: TillEntryInput(
+          entryType: 'expense',
+          amount: -amount, // Negative = cash out
+          affectsCash: true,
+          paymentMethod: 'Cash',
+          notes: 'Expense: $description${category != null ? ' ($category)' : ''}',
+        ),
+      );
+
+      // Audit log
+      await _safe(
+        () => AuditService.log(
+          action: 'EXPENSE_PAYMENT',
+          details: 'Expense payment: $description - ${money(amount)}',
+          userId: tellerId,
+          metadata: {
+            'description': description,
+            'category': category ?? 'General',
+            'amount': amount,
+            'notes': notes ?? '',
+          },
+        ),
+        'expense payment audit',
+      );
+
+      print('✅ Expense payment recorded: $description - ${money(amount)}');
+    } catch (e, st) {
+      print('❌ Error recording expense payment: $e');
+      print(st);
+      rethrow;
+    }
+  }
+
+  /// Record a revenue entry (increases till cash)
+  static Future<void> recordRevenueEntry({
+    required String description,
+    String? source,
+    required int amount,
+    String? notes,
+    required String tellerName,
+    required String tellerId,
+    required TillSession tillSession,
+  }) async {
+    try {
+      final transactionRef = _db.collection(AppConstants.tellerTxnCol).doc();
+      final transactionId = transactionRef.id;
+      final timestamp = DateTime.now();
+
+      final transaction = {
+        'id': transactionId,
+        'tenantId': _tenantId,
+        'type': 'revenue',
+        'description': description,
+        'source': source ?? 'Other Income',
+        'amount': amount,
+        'notes': notes ?? '',
+        'tellerName': tellerName,
+        'tellerId': tellerId,
+        'status': 'completed',
+        'timestamp': timestamp,
+        'receiptNumber': _generateReceiptNumber(timestamp),
+        'source': 'teller',
+      };
+
+      await transactionRef.set(transaction);
+
+      // Post to till (cash in)
+      await TillService.postEntry(
+        tillSessionId: tillSession.id,
+        tellerId: tellerId,
+        tellerName: tellerName,
+        input: TillEntryInput(
+          entryType: 'revenue',
+          amount: amount, // Positive = cash in
+          affectsCash: true,
+          paymentMethod: 'Cash',
+          notes: 'Revenue: $description${source != null ? ' ($source)' : ''}',
+        ),
+      );
+
+      // Audit log
+      await _safe(
+        () => AuditService.log(
+          action: 'REVENUE_ENTRY',
+          details: 'Revenue entry: $description - ${money(amount)}',
+          userId: tellerId,
+          metadata: {
+            'description': description,
+            'source': source ?? 'Other Income',
+            'amount': amount,
+            'notes': notes ?? '',
+          },
+        ),
+        'revenue entry audit',
+      );
+
+      print('✅ Revenue entry recorded: $description - ${money(amount)}');
+    } catch (e, st) {
+      print('❌ Error recording revenue entry: $e');
+      print(st);
+      rethrow;
+    }
+  }
+}

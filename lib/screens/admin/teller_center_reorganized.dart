@@ -831,24 +831,21 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           description: 'Record general journal entries for accounting.',
           icon: Icons.book_outlined,
           color: TC.purple,
-          soon: true,
-          onTap: () => _comingSoon('Journal entry'),
+          onTap: _journalEntry,
         ),
         _tile(
           title: 'Expense payment',
           description: 'Record organisational expenses and bills.',
           icon: Icons.receipt_long_outlined,
           color: TC.red,
-          soon: true,
-          onTap: () => _comingSoon('Expense payment'),
+          onTap: _expensePayment,
         ),
         _tile(
           title: 'Revenue entry',
           description: 'Record non-member income and revenues.',
           icon: Icons.trending_up_outlined,
           color: TC.green,
-          soon: true,
-          onTap: () => _comingSoon('Revenue entry'),
+          onTap: _revenueEntry,
         ),
       ];
 
@@ -1184,6 +1181,355 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
         ),
       ),
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GENERAL LEDGER ENTRIES
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _journalEntry() async {
+    if (!_requireTill()) return;
+
+    final descCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    String? err;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dlgShape,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: _dlgInset,
+          title: dialogTitle(Icons.book_outlined, TC.purple, 'Journal entry'),
+          content: SizedBox(
+            width: _dialogWidth(ctx, 450),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Record a general journal entry for accounting purposes.', style: ts(13, c: TC.muted)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descCtrl,
+                    decoration: fieldDeco('Description', error: err),
+                    onChanged: (_) => setD(() => err = null),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: fieldDeco('Amount (UGX)', prefix: 'UGX '),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesCtrl,
+                    maxLines: 2,
+                    decoration: fieldDeco('Notes (optional)'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: primaryButton(TC.purple),
+              onPressed: () {
+                if (descCtrl.text.trim().isEmpty) {
+                  setD(() => err = 'Enter a description');
+                  return;
+                }
+                if (int.tryParse(amountCtrl.text.trim()) == null) {
+                  setD(() => err = 'Enter amount');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Record entry'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    final description = descCtrl.text.trim();
+    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    final notes = notesCtrl.text.trim();
+
+    await _withLoading('Recording journal entry...', () async {
+      await TellerService.recordJournalEntry(
+        description: description,
+        amount: amount,
+        notes: notes.isEmpty ? null : notes,
+        tellerName: currentTellerName(),
+        tellerId: FirebaseService.sessionUid,
+      );
+    });
+
+    if (mounted) {
+      _refreshHistory();
+      tillToast(context, 'Journal entry recorded successfully');
+    }
+  }
+
+  Future<void> _expensePayment() async {
+    if (!_requireTill()) return;
+
+    final till = _till;
+    if (till == null) {
+      tillToast(context, 'Your till was closed. Open it and try again.', error: true);
+      return;
+    }
+
+    final descCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    final categoryCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    String? err;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dlgShape,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: _dlgInset,
+          title: dialogTitle(Icons.receipt_long_outlined, TC.red, 'Expense payment'),
+          content: SizedBox(
+            width: _dialogWidth(ctx, 450),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Record an organizational expense or bill payment.', style: ts(13, c: TC.muted)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descCtrl,
+                    decoration: fieldDeco('Expense description', error: err),
+                    onChanged: (_) => setD(() => err = null),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: categoryCtrl,
+                    decoration: fieldDeco('Category (e.g., Rent, Utilities, Salaries)'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: fieldDeco('Amount paid (UGX)', prefix: 'UGX '),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesCtrl,
+                    maxLines: 2,
+                    decoration: fieldDeco('Additional notes (optional)'),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: TC.red),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text('Cash will be deducted from your till balance.',
+                              style: ts(11, c: TC.red)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: primaryButton(TC.red),
+              onPressed: () {
+                if (descCtrl.text.trim().isEmpty) {
+                  setD(() => err = 'Enter expense description');
+                  return;
+                }
+                final amt = int.tryParse(amountCtrl.text.trim());
+                if (amt == null || amt <= 0) {
+                  setD(() => err = 'Enter valid amount');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Record expense'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    final description = descCtrl.text.trim();
+    final category = categoryCtrl.text.trim();
+    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    final notes = notesCtrl.text.trim();
+
+    await _withLoading('Recording expense payment...', () async {
+      await TellerService.recordExpensePayment(
+        description: description,
+        category: category.isEmpty ? null : category,
+        amount: amount,
+        notes: notes.isEmpty ? null : notes,
+        tellerName: currentTellerName(),
+        tellerId: FirebaseService.sessionUid,
+        tillSession: till,
+      );
+    });
+
+    if (mounted) {
+      _refreshHistory();
+      tillToast(context, 'Expense payment recorded successfully');
+    }
+  }
+
+  Future<void> _revenueEntry() async {
+    if (!_requireTill()) return;
+
+    final till = _till;
+    if (till == null) {
+      tillToast(context, 'Your till was closed. Open it and try again.', error: true);
+      return;
+    }
+
+    final descCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    final sourceCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    String? err;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dlgShape,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: _dlgInset,
+          title: dialogTitle(Icons.trending_up_outlined, TC.green, 'Revenue entry'),
+          content: SizedBox(
+            width: _dialogWidth(ctx, 450),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Record non-member income and organizational revenues.', style: ts(13, c: TC.muted)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descCtrl,
+                    decoration: fieldDeco('Revenue description', error: err),
+                    onChanged: (_) => setD(() => err = null),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: sourceCtrl,
+                    decoration: fieldDeco('Source (e.g., Fees, Interest, Other Income)'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: fieldDeco('Amount received (UGX)', prefix: 'UGX '),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesCtrl,
+                    maxLines: 2,
+                    decoration: fieldDeco('Additional notes (optional)'),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: TC.green),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text('Cash will be added to your till balance.',
+                              style: ts(11, c: TC.green)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: primaryButton(TC.green),
+              onPressed: () {
+                if (descCtrl.text.trim().isEmpty) {
+                  setD(() => err = 'Enter revenue description');
+                  return;
+                }
+                final amt = int.tryParse(amountCtrl.text.trim());
+                if (amt == null || amt <= 0) {
+                  setD(() => err = 'Enter valid amount');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Record revenue'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    final description = descCtrl.text.trim();
+    final source = sourceCtrl.text.trim();
+    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    final notes = notesCtrl.text.trim();
+
+    await _withLoading('Recording revenue entry...', () async {
+      await TellerService.recordRevenueEntry(
+        description: description,
+        source: source.isEmpty ? null : source,
+        amount: amount,
+        notes: notes.isEmpty ? null : notes,
+        tellerName: currentTellerName(),
+        tellerId: FirebaseService.sessionUid,
+        tillSession: till,
+      );
+    });
+
+    if (mounted) {
+      _refreshHistory();
+      tillToast(context, 'Revenue entry recorded successfully');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
