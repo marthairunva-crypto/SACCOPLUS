@@ -7,9 +7,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
+import '../../models/till_session.dart';
+import '../../models/till_entry.dart';
 import '../../services/loan_disbursement_service.dart';
 import '../../services/loan_actions_service.dart';
 import '../../services/arrears_service.dart';
+import '../../services/till_service.dart';
 import '../../widgets/loan_payment_mobile_money_dialog.dart';
 import '../../widgets/loan_payment_cash_dialog.dart';
 
@@ -2721,6 +2724,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             referenceNumber: ref,
             chequeNumber: cheque,
             narration: narration,
+            tillSession: null, // TODO: Pass actual till session in Phase 3 for cash
           ),
           successMessage: 'Loan disbursed',
         );
@@ -3153,6 +3157,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               transactionId: paymentData['transactionId']?.toString(),
               provider: paymentData['provider']?.toString(),
               phoneNumber: paymentData['phoneNumber']?.toString(),
+              tillSession: null, // Mobile money doesn't affect till
             );
           },
         ),
@@ -3173,6 +3178,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               paymentMethod: 'Cash',
               paymentDate:
                   _toDate(paymentData['paymentDate']) ?? DateTime.now(),
+              tillSession: null, // TODO: Pass actual till session in Phase 3
             );
           },
         ),
@@ -3189,6 +3195,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     String? transactionId,
     String? provider,
     String? phoneNumber,
+    TillSession? tillSession, // Optional till session for cash payments
   }) async {
     try {
       final total = principalPaid + interestPaid + chargesPaid;
@@ -3219,7 +3226,35 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         paymentData['mobileMoneyTransactionId'] = transactionId ?? '';
       }
 
-      await db.collection(AppConstants.repaymentsCol).add(paymentData);
+      // Save repayment record
+      final repaymentRef = await db.collection(AppConstants.repaymentsCol).add(paymentData);
+      final repaymentId = repaymentRef.id;
+
+      // Post till entry if till session provided and payment is cash
+      if (tillSession != null && paymentMethod == 'Cash') {
+        try {
+          final tillEntryInput = TillEntryInput.loanRepayment(
+            amount: total.toInt(),
+            memberId: _loanData!['memberId'] ?? _loanData!['farmerId'] ?? _memberDocId ?? '',
+            memberName: _loanData!['memberName'] ?? 'Unknown',
+            repaymentId: repaymentId,
+            paymentMethod: 'Cash',
+            notes: 'Loan repayment - Principal: UGX ${_money(principalPaid)}, Interest: UGX ${_money(interestPaid)}',
+          );
+
+          await TillService.postEntry(
+            tillSessionId: tillSession.id,
+            tellerId: FirebaseService.sessionUid,
+            tellerName: FirebaseService.sessionProfile?['name'] ?? 'Teller',
+            input: tillEntryInput,
+          );
+
+          debugPrint('✅ Till entry posted for loan repayment $repaymentId');
+        } catch (tillError) {
+          // Till entry failure is non-critical - repayment already recorded
+          debugPrint('⚠️ Failed to post till entry for loan repayment: $tillError');
+        }
+      }
 
       await db.collection(AppConstants.loansCol).doc(widget.loanId).update({
         'principalPaid': FieldValue.increment(principalPaid),

@@ -1501,6 +1501,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                           accountType: 'shares',
                           tellerName: 'Admin',
                           tellerId: FirebaseService.sessionUid,
+                          tillSession: null, // TODO: Pass actual till session in Phase 3
                         );
 
                         if (!mounted) return;
@@ -1794,6 +1795,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                           accountType: accountType,
                           tellerName: 'Admin',
                           tellerId: FirebaseService.sessionUid,
+                          tillSession: null, // TODO: Pass actual till session in Phase 3
                         );
 
                         if (!mounted) return;
@@ -2090,6 +2092,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                           accountType: accountType,
                           tellerName: 'Admin',
                           tellerId: FirebaseService.sessionUid,
+                          tillSession: null, // TODO: Pass actual till session in Phase 3
                         );
 
                         if (!mounted) return;

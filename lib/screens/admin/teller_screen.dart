@@ -1737,6 +1737,7 @@ class _MemberLookupTabState extends State<_MemberLookupTab> with AutomaticKeepAl
               accountType: accountType,
               tellerName: FirebaseService.sessionProfile?['name'] ?? 'Admin',
               tellerId: FirebaseService.sessionUid,
+              tillSession: null, // TODO: Pass actual till session in Phase 3
               notes: notes,
               paymentMethod: paymentMethod,
               telecomProvider: telecomProvider,
@@ -1750,6 +1751,7 @@ class _MemberLookupTabState extends State<_MemberLookupTab> with AutomaticKeepAl
               accountType: accountType,
               tellerName: FirebaseService.sessionProfile?['name'] ?? 'Admin',
               tellerId: FirebaseService.sessionUid,
+              tillSession: null, // TODO: Pass actual till session in Phase 3
               notes: notes,
             );
 

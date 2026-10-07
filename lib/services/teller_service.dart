@@ -5,8 +5,11 @@ import 'package:http/http.dart' as http;
 import '../core/firebase_service.dart';
 import '../core/sacco_service.dart';
 import '../core/constants.dart';
+import '../models/till_session.dart';
+import '../models/till_entry.dart';
 import 'audit_service.dart';
 import 'arrears_service.dart';
+import 'till_service.dart';
 
 /// Teller service for handling deposits and withdrawals
 class TellerService {
@@ -37,6 +40,7 @@ class TellerService {
     required String accountType, // 'wallet', 'savings', 'shares'
     required String tellerName,
     required String tellerId,
+    TillSession? tillSession, // Optional for now (will be required in Phase 3)
     String? notes,
     String? paymentMethod,
     String? telecomProvider,
@@ -291,6 +295,32 @@ class TellerService {
       // Save transaction
       await transactionRef.set(transaction);
 
+      // Post till entry if till session provided and payment is cash
+      if (tillSession != null && (paymentMethod ?? 'Cash') == 'Cash') {
+        try {
+          final tillEntryInput = TillEntryInput.deposit(
+            amount: amount,
+            memberId: memberId,
+            memberName: memberName,
+            businessRecordId: transactionId,
+            paymentMethod: paymentMethod ?? 'Cash',
+            notes: 'Deposit to $accountType account - Receipt: ${transaction['receiptNumber']}',
+          );
+
+          await TillService.postEntry(
+            tillSessionId: tillSession.id,
+            tellerId: tellerId,
+            tellerName: tellerName,
+            input: tillEntryInput,
+          );
+
+          print('✅ Till entry posted for deposit $transactionId');
+        } catch (tillError) {
+          // Till entry failure is non-critical - transaction already recorded
+          print('⚠️ Failed to post till entry for deposit: $tillError');
+        }
+      }
+
       // ── Everything below is NON-CRITICAL ─────────────────────────────────
       // The money has already been recorded, so a failure here must never
       // report the deposit as failed.
@@ -368,6 +398,7 @@ class TellerService {
     required String accountType, // 'wallet', 'savings'
     required String tellerName,
     required String tellerId,
+    TillSession? tillSession, // Optional for now (will be required in Phase 3)
     String? notes,
   }) async {
     try {
@@ -464,6 +495,32 @@ class TellerService {
 
       // Save transaction
       await transactionRef.set(transaction);
+
+      // Post till entry if till session provided (cash withdrawal)
+      if (tillSession != null) {
+        try {
+          final tillEntryInput = TillEntryInput.withdrawal(
+            amount: amount,
+            memberId: memberId,
+            memberName: memberName,
+            businessRecordId: transactionId,
+            paymentMethod: 'Cash',
+            notes: 'Withdrawal from $accountType account - Receipt: ${transaction['receiptNumber']}',
+          );
+
+          await TillService.postEntry(
+            tillSessionId: tillSession.id,
+            tellerId: tellerId,
+            tellerName: tellerName,
+            input: tillEntryInput,
+          );
+
+          print('✅ Till entry posted for withdrawal $transactionId');
+        } catch (tillError) {
+          // Till entry failure is non-critical - transaction already recorded
+          print('⚠️ Failed to post till entry for withdrawal: $tillError');
+        }
+      }
 
       // ── Everything below is NON-CRITICAL ─────────────────────────────────
       final newBalance = currentBalance - amount;

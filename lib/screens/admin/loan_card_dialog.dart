@@ -1616,6 +1616,7 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                   referenceNumber: referenceCtrl.text.trim(),
                   chequeNumber: chequeCtrl.text.trim(),
                   narration: narrationCtrl.text.trim(),
+                  tillSession: null, // TODO: Pass actual till session in Phase 3 for cash
                 );
                 
                 // Close loading

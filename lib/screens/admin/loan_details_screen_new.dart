@@ -1914,6 +1914,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             referenceNumber: ref,
             chequeNumber: cheque,
             narration: narration,
+            tillSession: null, // TODO: Pass actual till session in Phase 3 for cash
           ),
           successMessage: 'Loan disbursed successfully',
         );

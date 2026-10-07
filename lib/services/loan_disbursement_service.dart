@@ -1,7 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../core/constants.dart';
+import '../models/till_session.dart';
+import '../models/till_entry.dart';
 import 'audit_service.dart';
+import 'till_service.dart';
 
 /// Handles loan disbursement operations
 class LoanDisbursementService {
@@ -16,6 +19,7 @@ class LoanDisbursementService {
   /// [narration] - Description of the transaction
   /// [disbursedBy] - User ID of the person disbursing
   /// [amount] - Amount being disbursed (should match loan amount)
+  /// [tillSession] - Optional till session for cash disbursements
   static Future<Map<String, dynamic>> disburseLoan({
     required String loanId,
     required String destinationType,
@@ -24,6 +28,7 @@ class LoanDisbursementService {
     String? referenceNumber,
     String? chequeNumber,
     String? narration,
+    TillSession? tillSession, // Optional for now (will be required in Phase 3 for cash)
   }) async {
     try {
       // 1. Get loan details
@@ -96,6 +101,37 @@ class LoanDisbursementService {
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'completed',
       });
+
+      // Post till entry if till session provided and disbursement is cash
+      if (tillSession != null && destinationType == 'cash') {
+        try {
+          // Get member details for till entry
+          final memberDoc = await _db.collection(AppConstants.usersCol).doc(memberId).get();
+          final memberName = memberDoc.data()?['name'] ?? 'Unknown';
+          final tellerName = memberDoc.data()?['name'] ?? 'Teller'; // TODO: Get actual teller name
+
+          final tillEntryInput = TillEntryInput.loanDisbursement(
+            amount: amount.toInt(),
+            memberId: memberId,
+            memberName: memberName,
+            loanId: loanId,
+            paymentMethod: 'Cash',
+            notes: 'Loan disbursement - ${narration ?? 'Ref: ${referenceNumber ?? disbursementId}'}',
+          );
+
+          await TillService.postEntry(
+            tillSessionId: tillSession.id,
+            tellerId: disbursedBy,
+            tellerName: tellerName,
+            input: tillEntryInput,
+          );
+
+          print('✅ Till entry posted for loan disbursement $loanId');
+        } catch (tillError) {
+          // Till entry failure is non-critical - disbursement already recorded
+          print('⚠️ Failed to post till entry for loan disbursement: $tillError');
+        }
+      }
 
       // 6. Update member's loan balance (if they track it)
       if (memberId != null) {
