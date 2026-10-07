@@ -76,6 +76,10 @@ class AccountNumberService {
           print('⚠️ Found account but with different tenantId: ${doc['tenantId']}');
           print('   Expected tenantId: $tid');
           print('   Account data: ${doc['name']}, ${doc['phone']}');
+          print('✅ Using found account anyway (tenantId mismatch ignored)');
+          
+          // Return the found account even with tenantId mismatch
+          return {...doc, 'uid': q2.docs.first.id};
         } else {
           print('❌ Account $accountNumber not found in any tenant');
         }
