@@ -125,6 +125,88 @@ class MemberActivationService {
     }
   }
 
+  /// Activate only selected members (hybrid manual/auto approach)
+  static Future<Map<String, dynamic>> activateSelectedMembers({
+    required List<Map<String, dynamic>> members,
+    bool sendSMS = false,
+  }) async {
+    int successCount = 0;
+    int failCount = 0;
+    List<String> errors = [];
+
+    try {
+      print('📊 Activating ${members.length} selected members');
+
+      for (final memberData in members) {
+        try {
+          final memberId = memberData['id'] as String?;
+          if (memberId == null) {
+            failCount++;
+            errors.add('Missing member ID');
+            continue;
+          }
+
+          final accountNumber = memberData['accountNumber'] as String?;
+          final phone = memberData['phone'] as String?;
+          final name = memberData['name'] as String?;
+
+          // Generate temp password (last 4 digits of account number or random)
+          String tempPassword;
+          if (accountNumber != null && accountNumber.length >= 4) {
+            tempPassword = accountNumber.substring(accountNumber.length - 4);
+          } else {
+            tempPassword = _generateTempPassword();
+          }
+
+          // Update member with temp password
+          await _db.collection(AppConstants.usersCol).doc(memberId).update({
+            'tempPassword': tempPassword,
+            'firstLoginComplete': false,
+            'accountActivated': true,
+            'activatedAt': DateTime.now(),
+          });
+
+          // Send SMS if enabled and phone exists
+          if (sendSMS && phone != null && phone.isNotEmpty) {
+            try {
+              await sendActivationSMS(
+                phone: phone,
+                name: name ?? 'Member',
+                accountNumber: accountNumber ?? 'N/A',
+                tempPassword: tempPassword,
+              );
+            } catch (smsError) {
+              print('SMS failed for $phone: $smsError');
+              // Don't fail the whole operation if SMS fails
+            }
+          }
+
+          successCount++;
+          print('✅ Activated: ${name ?? memberId} ($accountNumber)');
+        } catch (e) {
+          failCount++;
+          final name = memberData['name'] ?? memberData['id'];
+          errors.add('$name: ${e.toString()}');
+          print('❌ Failed: ${memberData['id']} - $e');
+        }
+      }
+
+      return {
+        'success': true,
+        'activated': successCount,
+        'failed': failCount,
+        'total': members.length,
+        'errors': errors,
+        'message': 'Activated $successCount members successfully. $failCount failed.',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Selected activation failed: ${e.toString()}',
+      };
+    }
+  }
+
   /// Get members who need activation
   static Future<List<Map<String, dynamic>>> getMembersNeedingActivation({
     String? tenantId,

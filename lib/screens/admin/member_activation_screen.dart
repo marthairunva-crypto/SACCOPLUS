@@ -15,6 +15,7 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
   bool _loading = false;
   bool _sendSMS = true;
   List<Map<String, dynamic>> _membersNeedingActivation = [];
+  Set<String> _selectedMemberIds = {}; // Track selected members
   Map<String, dynamic>? _lastResult;
 
   /// Keeps the content readable on tablets / web / desktop
@@ -42,6 +43,12 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
   }
 
   Future<void> _activateAllMembers() async {
+    // Check if any members are selected
+    if (_selectedMemberIds.isEmpty) {
+      _showSnack('Please select at least one member to activate', Colors.orange);
+      return;
+    }
+
     // Show confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -68,7 +75,7 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'You are about to activate ${_membersNeedingActivation.length} member accounts.',
+                'You are about to activate ${_selectedMemberIds.length} selected member account${_selectedMemberIds.length != 1 ? 's' : ''}.',
                 style: GoogleFonts.inter(fontSize: 15),
               ),
               const SizedBox(height: 16),
@@ -114,7 +121,7 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'SMS will be sent to ${_membersNeedingActivation.length} members',
+                          'SMS will be sent to ${_selectedMemberIds.length} selected member${_selectedMemberIds.length != 1 ? 's' : ''}',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             color: Colors.orange.shade900,
@@ -149,7 +156,13 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
     setState(() => _loading = true);
 
     try {
-      final result = await MemberActivationService.activateAllMembers(
+      // Get only selected members
+      final selectedMembers = _membersNeedingActivation
+          .where((m) => _selectedMemberIds.contains(m['id']))
+          .toList();
+
+      final result = await MemberActivationService.activateSelectedMembers(
+        members: selectedMembers,
         sendSMS: _sendSMS,
       );
 
@@ -507,7 +520,8 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
 
   Widget _buildActivateButton() {
     final hasMembers = _membersNeedingActivation.isNotEmpty;
-    final isDisabled = !hasMembers || _loading;
+    final hasSelection = _selectedMemberIds.isNotEmpty;
+    final isDisabled = !hasSelection || _loading;
     
     return SizedBox(
       width: double.infinity,
@@ -515,12 +529,12 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
       child: ElevatedButton(
         onPressed: isDisabled ? null : _activateAllMembers,
         style: ElevatedButton.styleFrom(
-          backgroundColor: hasMembers ? ModernTheme.success : Colors.grey.shade400,
+          backgroundColor: hasSelection ? ModernTheme.success : Colors.grey.shade400,
           foregroundColor: Colors.white,
           disabledBackgroundColor: Colors.grey.shade300,
           disabledForegroundColor: Colors.grey.shade600,
-          elevation: hasMembers ? 4 : 0,
-          shadowColor: hasMembers ? ModernTheme.success.withOpacity(0.4) : null,
+          elevation: hasSelection ? 4 : 0,
+          shadowColor: hasSelection ? ModernTheme.success.withOpacity(0.4) : null,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
@@ -530,14 +544,16 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                hasMembers ? Icons.check_circle : Icons.block,
+                hasSelection ? Icons.check_circle : Icons.block,
                 size: 24,
               ),
               const SizedBox(width: 12),
               Text(
-                hasMembers 
-                    ? 'ACTIVATE ALL MEMBERS' 
-                    : 'NO MEMBERS TO ACTIVATE',
+                hasSelection 
+                    ? 'ACTIVATE ${_selectedMemberIds.length} SELECTED MEMBER${_selectedMemberIds.length != 1 ? 'S' : ''}' 
+                    : hasMembers
+                        ? 'SELECT MEMBERS TO ACTIVATE'
+                        : 'NO MEMBERS TO ACTIVATE',
                 maxLines: 1,
                 style: GoogleFonts.poppins(
                   fontSize: 16,
@@ -556,17 +572,48 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
     if (_membersNeedingActivation.isEmpty) return const SizedBox.shrink();
 
     final shown = _membersNeedingActivation.take(10).toList();
+    final allSelected = shown.every((m) => _selectedMemberIds.contains(m['id']));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Members Pending Activation',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: ModernTheme.textPrimary,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Members Pending Activation',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: ModernTheme.textPrimary,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  if (allSelected) {
+                    // Deselect all shown
+                    for (final m in shown) {
+                      _selectedMemberIds.remove(m['id']);
+                    }
+                  } else {
+                    // Select all
+                    for (final m in _membersNeedingActivation) {
+                      _selectedMemberIds.add(m['id'] as String);
+                    }
+                  }
+                });
+              },
+              icon: Icon(
+                allSelected ? Icons.check_box : Icons.check_box_outline_blank,
+                size: 20,
+              ),
+              label: Text(allSelected ? 'Deselect All' : 'Select All'),
+              style: TextButton.styleFrom(
+                foregroundColor: ModernTheme.primaryBlue,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         Card(
@@ -580,19 +627,35 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final member = shown[index];
+              final memberId = member['id'] as String;
+              final isSelected = _selectedMemberIds.contains(memberId);
               final accountNumber = (member['accountNumber'] ?? 'N/A').toString();
               final tempPassword = accountNumber.length >= 4
                   ? accountNumber.substring(accountNumber.length - 4)
                   : 'Auto';
 
               return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: ModernTheme.primaryBlue.withOpacity(0.1),
-                  child: Icon(
-                    Icons.person,
-                    color: ModernTheme.primaryBlue,
-                    size: 20,
-                  ),
+                onTap: () {
+                  setState(() {
+                    if (isSelected) {
+                      _selectedMemberIds.remove(memberId);
+                    } else {
+                      _selectedMemberIds.add(memberId);
+                    }
+                  });
+                },
+                leading: Checkbox(
+                  value: isSelected,
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _selectedMemberIds.add(memberId);
+                      } else {
+                        _selectedMemberIds.remove(memberId);
+                      }
+                    });
+                  },
+                  activeColor: ModernTheme.success,
                 ),
                 title: Text(
                   (member['name'] ?? 'Unknown').toString(),
