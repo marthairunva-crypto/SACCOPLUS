@@ -809,8 +809,8 @@ class _ManualActivationDialogState extends State<_ManualActivationDialog> {
     setState(() => _activating = true);
     try {
       await MemberActivationService.activateSelectedMembers(
-        [member['id'] as String],
-        widget.sendSMS,
+        members: [member],
+        sendSMS: widget.sendSMS,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
