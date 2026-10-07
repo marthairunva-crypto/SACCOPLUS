@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/modern_theme.dart';
 import '../../services/member_activation_service.dart';
+import '../../core/constants.dart';
 
 /// Admin screen to activate member accounts with temporary passwords
 class MemberActivationScreen extends StatefulWidget {
@@ -319,7 +320,7 @@ class _MemberActivationScreenState extends State<MemberActivationScreen> {
   Future<void> _openManualActivation() async {
     // Load all members
     final allMembers = await FirebaseFirestore.instance
-        .collection('members')
+        .collection(AppConstants.usersCol)
         .orderBy('name')
         .get();
 
