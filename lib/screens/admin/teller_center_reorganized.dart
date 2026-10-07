@@ -2271,10 +2271,10 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                   .where('farmerId', isEqualTo: member['id'])
                                   .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
                                   .where('status', whereIn: [
-                                    'Ongoing',                     // Active loan
                                     AppConstants.statusActive,     // 'Active'
                                     AppConstants.statusDisbursed,  // 'Disbursed'
                                     AppConstants.statusOverdue,    // 'Overdue'
+                                    AppConstants.statusApproved,   // 'Approved' (not yet disbursed)
                                   ])
                                   .get();
 
@@ -2291,11 +2291,10 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                     .collection(AppConstants.loansCol)
                                     .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
                                     .where('status', whereIn: [
-                                      'Ongoing',
-                                      'Disbursed',
-                                      AppConstants.statusActive,
-                                      AppConstants.statusDisbursed,
-                                      AppConstants.statusOverdue,
+                                      AppConstants.statusActive,     // 'Active'
+                                      AppConstants.statusDisbursed,  // 'Disbursed'
+                                      AppConstants.statusOverdue,    // 'Overdue'
+                                      AppConstants.statusApproved,   // 'Approved'
                                     ])
                                     .get();
                                 
@@ -2389,10 +2388,10 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                     .where('accountNumber', isEqualTo: member['accountNumber'])
                                     .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
                                     .where('status', whereIn: [
-                                      'Ongoing',
                                       AppConstants.statusActive,
                                       AppConstants.statusDisbursed,
                                       AppConstants.statusOverdue,
+                                      AppConstants.statusApproved,
                                     ])
                                     .get();
                                 
