@@ -299,8 +299,9 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       final months = int.tryParse(_tenureCtrl.text) ?? 0;
 
       if (principal > 0 && months > 0) {
-        // Calculate total interest (flat rate)
-        final totalInterest = (principal * (ratePercent / 100) * months) / 12;
+        // Calculate total interest (flat rate per period)
+        // Rate is already per month/period, not annual
+        final totalInterest = principal * (ratePercent / 100) * months;
         
         // Calculate monthly installment
         final totalLoan = principal + totalInterest;
@@ -343,8 +344,8 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       final interestOut = double.parse(_interestOutCtrl.text);
       final arrears = double.parse(_arrearsCtrl.text);
       
-      // Calculate total interest
-      final totalInterest = (loanAmount * (interestRate / 100) * tenure) / 12;
+      // Calculate total interest (rate is per period, not annual)
+      final totalInterest = loanAmount * (interestRate / 100) * tenure;
       
       // Calculate paid amounts
       final principalPaid = loanAmount - principalOut;
