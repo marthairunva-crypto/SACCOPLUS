@@ -22,8 +22,6 @@ import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
 import 'teller_screen.dart';
 import 'teller_center_reorganized.dart';
-import 'till_management_screen.dart';
-import 'till_reports_screen.dart';
 import 'member_activation_screen.dart';
 import 'enhanced_audit_screen.dart';
 import 'loan_portfolio_screen.dart';
@@ -146,10 +144,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       // TELLER CENTER
       case 'teller':
         return TellerCenterReorganized(onLoanTap: _openLoan);
-      case 'till_management':
-        return const TillManagementScreen();
-      case 'till_reports':
-        return const TillReportsScreen();
       case 'payment_hub':
         return const PaymentHubScreen();
       case 'mobile_money':
@@ -477,7 +471,7 @@ class _AdminHomeTab extends StatefulWidget {
 }
 
 class _AdminHomeTabState extends State<_AdminHomeTab> {
-  bool _loading = true;
+  bool _loading = false;
   String? _error;
   DateTime? _lastRefresh;
 
@@ -499,8 +493,32 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     _checkForUpdates();
+  }
+
+  // ── Status snackbar (banking-app style) ───────────────────────────────────
+  void _snack(String message,
+      {bool busy = false, Duration duration = const Duration(seconds: 2), VoidCallback? onRetry}) {
+    if (!mounted) return;
+    final m = ScaffoldMessenger.of(context);
+    m.hideCurrentSnackBar();
+    m.showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      width: 340,
+      backgroundColor: _C.ink,
+      elevation: 2,
+      duration: duration,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      content: Row(children: [
+        Icon(busy ? Icons.sync : Icons.check_circle_outline, size: 18, color: Colors.white),
+        const SizedBox(width: 10),
+        Expanded(child: Text(message, style: _t(13, FontWeight.w500, Colors.white))),
+      ]),
+      action: onRetry == null
+          ? null
+          : SnackBarAction(label: 'Retry', textColor: Colors.white, onPressed: onRetry),
+    ));
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -535,7 +553,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 
   Future<void> _load() async {
-    if (mounted) setState(() { _loading = _loans.isEmpty; _error = null; });
+    if (mounted) setState(() => _error = null);
+    _snack('Refreshing…', busy: true, duration: const Duration(minutes: 1));
     try {
       final loans = await FirebaseService.getAllLoansOnce();
       final members = await FirebaseService.getAllFarmersOnce();
@@ -600,9 +619,11 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         _lastRefresh = DateTime.now();
         _loading = false;
       });
+      _snack('Dashboard updated');
     } catch (e) {
       debugPrint('Dashboard load error: $e');
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
+      _snack('Refresh failed', duration: const Duration(seconds: 6), onRetry: _load);
     }
   }
 
@@ -708,17 +729,12 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const ColoredBox(color: _C.bg, child: Center(child: CircularProgressIndicator()));
-    }
     final desktop = MediaQuery.of(context).size.width > 900;
     _desktop = desktop;
 
     return ColoredBox(
       color: _C.bg,
-      child: RefreshIndicator(
-        onRefresh: _load,
-        child: SingleChildScrollView(
+      child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.all(desktop ? 24 : 14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -748,7 +764,6 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
               (2, _linksPanel()),
             ]),
           ]),
-        ),
       ),
     );
   }
