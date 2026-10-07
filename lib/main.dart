@@ -23,13 +23,19 @@ void main() async {
 
   // Print Firebase console links to CMD
   debugPrint('');
-  debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  debugPrint('🔥 FIREBASE CONSOLE:');
-  debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore');
-  debugPrint('');
-  debugPrint('📊 FIRESTORE INDEXES:');
-  debugPrint('   https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
-  debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
+  debugPrint('║                     🔥 FIREBASE CONSOLE LINKS                         ║');
+  debugPrint('╠═══════════════════════════════════════════════════════════════════════╣');
+  debugPrint('║                                                                       ║');
+  debugPrint('║  📊 Firestore Database:                                               ║');
+  debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore ║');
+  debugPrint('║                                                                       ║');
+  debugPrint('║  � Firestore Indexes:                                                ║');
+  debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore/indexes ║');
+  debugPrint('║                                                                       ║');
+  debugPrint('║  💡 TIP: Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open       ║');
+  debugPrint('║  💡 Or select the link and copy with Ctrl+C / Cmd+C                  ║');
+  debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
   debugPrint('');
 
   // Catch Flutter framework errors
@@ -41,26 +47,30 @@ void main() async {
     if (errorString.contains('index') && errorString.contains('firebase')) {
       debugPrint('');
       debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
-      debugPrint('║  ⚠️  FIRESTORE COMPOSITE INDEX REQUIRED                                ║');
-      debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
-      debugPrint('');
+      debugPrint('║                  ⚠️  FIRESTORE INDEX REQUIRED ⚠️                       ║');
+      debugPrint('╠═══════════════════════════════════════════════════════════════════════╣');
+      debugPrint('║                                                                       ║');
 
       // Extract and print the index URL if present
       final urlMatch = RegExp(r'https://console\.firebase\.google\.com[^\s\)]+')
           .firstMatch(errorString);
       if (urlMatch != null) {
         final url = urlMatch.group(0)!;
-        debugPrint('🔗 CLICK THIS LINK TO AUTO-CREATE THE INDEX:');
-        debugPrint('');
-        debugPrint(url);
-        debugPrint('');
-        debugPrint('💡 TIP: Ctrl+Click (or Cmd+Click on Mac) to open in your browser');
+        debugPrint('║  🔗 CLICK THIS LINK TO AUTO-CREATE THE INDEX:                        ║');
+        debugPrint('║                                                                       ║');
+        debugPrint('║  $url');
+        debugPrint('║                                                                       ║');
+        debugPrint('║  💡 Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open            ║');
+        debugPrint('║  💡 Or copy the link above with Ctrl+C / Cmd+C                       ║');
+        debugPrint('║  💡 The link will automatically create the required index            ║');
       } else {
-        debugPrint('🔗 Manually create indexes at:');
-        debugPrint('https://console.firebase.google.com/project/mwiza-projects/firestore/indexes');
+        debugPrint('║  🔗 Manually create indexes at:                                      ║');
+        debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore/indexes ║');
+        debugPrint('║                                                                       ║');
+        debugPrint('║  💡 Copy the link above and paste in your browser                    ║');
       }
-      debugPrint('');
-      debugPrint('═══════════════════════════════════════════════════════════════════════');
+      debugPrint('║                                                                       ║');
+      debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
       debugPrint('');
     }
   };
