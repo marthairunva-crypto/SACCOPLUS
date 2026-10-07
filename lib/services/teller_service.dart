@@ -230,6 +230,7 @@ class TellerService {
             'principalOutstanding': newPrincipalOutstanding,
             'interestOriginalBalance': newInterestOutstanding,
             'totalOutstanding': newTotalOutstanding,
+            'outstanding': newTotalOutstanding, // Also update 'outstanding' field for compatibility
             'status': newTotalOutstanding <= 0 ? 'paid' : loanData['status'],
             'lastPaymentDate': timestamp,
             'lastPaymentAmount': amount,
