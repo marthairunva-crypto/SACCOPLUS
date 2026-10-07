@@ -6,6 +6,7 @@ import '../../services/teller_service.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import 'till_reports_screen.dart';
+import 'till_management_screen.dart';
 
 /// Professional Teller Center - Organized like Wakanji SACCO
 class TellerCenterReorganized extends StatefulWidget {
@@ -768,10 +769,22 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           _buildResponsiveGrid(
             children: [
               _buildTransactionTypeCard(
+                'Open/Close Till',
+                'Open till for the day or close at end of shift.',
+                Icons.vpn_key_outlined,
+                Colors.blue,
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const TillManagementScreen()),
+                  );
+                },
+              ),
+              _buildTransactionTypeCard(
                 'View Summary',
                 'View detailed till summary and transactions.',
                 Icons.summarize_outlined,
-                Colors.blue,
+                Colors.cyan,
                 () => _showTillSummaryDialog(),
               ),
               _buildTransactionTypeCard(
