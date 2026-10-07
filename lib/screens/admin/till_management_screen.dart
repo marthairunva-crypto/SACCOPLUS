@@ -1,934 +1,1009 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../core/firebase_service.dart';
 import '../../models/till_session.dart';
 import '../../models/till_entry.dart';
 import '../../services/till_service.dart';
+import 'till_reports_screen.dart';
+import 'till_ui.dart';
 
-/// Till Management Screen - Open, Close, and Manage Till Sessions
+/// Till Management - open, run and close a till session.
 class TillManagementScreen extends StatefulWidget {
   final bool embedded;
-  
+
   const TillManagementScreen({Key? key, this.embedded = false}) : super(key: key);
 
   @override
   State<TillManagementScreen> createState() => _TillManagementScreenState();
 }
 
+class _Action {
+  final String title, subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  _Action(this.title, this.subtitle, this.icon, this.color, this.onTap);
+}
+
 class _TillManagementScreenState extends State<TillManagementScreen> {
-  final _currencyFormat = NumberFormat('#,###', 'en_US');
-  final _dateFormat = DateFormat('MMM dd, yyyy');
-  final _timeFormat = DateFormat('hh:mm a');
-  
+  final _timeFmt = DateFormat('hh:mm a');
+  final _dateFmt = DateFormat('EEE, d MMM yyyy');
+
+  late Stream<TillSession?> _sessionStream;
+  Stream<List<TillEntry>>? _entriesStream;
+  String? _entriesSessionId;
+  final Set<String> _repaired = {};
+  Timer? _ticker;
+  String _filter = 'all'; // all | in | out
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionStream = TillService.watchOpenSession(FirebaseService.sessionUid);
+    // keeps "running for 2h 15m" fresh
+    _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  void _reload() {
+    setState(() {
+      _sessionStream = TillService.watchOpenSession(FirebaseService.sessionUid);
+      _entriesSessionId = null;
+    });
+  }
+
+  Stream<List<TillEntry>> _entriesFor(String sessionId) {
+    if (_entriesSessionId != sessionId || _entriesStream == null) {
+      _entriesSessionId = sessionId;
+      _entriesStream = TillService.watchSessionEntries(sessionId);
+    }
+    return _entriesStream!;
+  }
+
+  /// Heals sessions whose totals were corrupted by the old double-count bug.
+  void _maybeRepair(TillSession s) {
+    if (_repaired.add(s.id)) {
+      TillService.repairSessionTotals(s.id).catchError((e) {
+        print('⚠️ Could not repair till totals: $e');
+        return null;
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final body = StreamBuilder<TillSession?>(
-      stream: TillService.watchOpenSession(FirebaseService.sessionUid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      stream: _sessionStream,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return TillStateMessage(
+            icon: Icons.error_outline,
+            color: TC.red,
+            title: 'Could not load your till',
+            message: cleanError(snap.error!),
+            actionLabel: 'Retry',
+            onAction: _reload,
+          );
+        }
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-
-        final session = snapshot.data;
-
-        if (session == null) {
-          return _buildNoSessionView();
-        }
-
-        return _buildActiveSessionView(session);
+        final session = snap.data;
+        if (session == null) return _buildNoSession();
+        _maybeRepair(session);
+        return _buildActive(session);
       },
     );
 
     if (widget.embedded) {
-      return Container(
-        color: const Color(0xFFF6F8FB),
-        child: body,
-      );
+      return Container(color: TC.bg, child: body);
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8FB),
+      backgroundColor: TC.bg,
       appBar: AppBar(
-        title: Text(
-          'Till Management',
-          style: GoogleFonts.inter(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: const Color(0xFF1E3A8A),
+        title: Text('Till Management', style: ts(18, w: FontWeight.w600, c: Colors.white)),
+        backgroundColor: TC.navy,
+        foregroundColor: Colors.white,
         elevation: 0,
       ),
       body: body,
     );
   }
 
-  Widget _buildNoSessionView() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                shape: BoxShape.circle,
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NO SESSION
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildNoSession() {
+    Widget step(int n, String text) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(color: Color(0xFFE8EEF7), shape: BoxShape.circle),
+                child: Text('$n', style: ts(11, w: FontWeight.w700, c: TC.navy)),
               ),
-              child: Icon(
-                Icons.account_balance_wallet,
-                size: 60,
-                color: Colors.orange[700],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'No Active Till Session',
-              style: GoogleFonts.inter(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'You need to open your till before processing transactions',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: _showOpenTillDialog,
-              icon: const Icon(Icons.add_circle_outline),
-              label: const Text('Open Till'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E3A8A),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                textStyle: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 10),
+              Expanded(child: Text(text, style: ts(12.5, c: TC.muted))),
+            ],
+          ),
+        );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final isMobile = screenWidth < 600;
+        final isTablet = screenWidth >= 600 && screenWidth < 1024;
+        
+        double maxWidth;
+        double horizontalPadding;
+        double verticalPadding;
+        
+        if (isMobile) {
+          maxWidth = screenWidth;
+          horizontalPadding = 16;
+          verticalPadding = 16;
+        } else if (isTablet) {
+          maxWidth = screenWidth * 0.9;
+          horizontalPadding = 20;
+          verticalPadding = 20;
+        } else {
+          maxWidth = 520;
+          horizontalPadding = 24;
+          verticalPadding = 24;
+        }
+        
+        return Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: verticalPadding),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              child: Container(
+                padding: EdgeInsets.all(isMobile ? 24 : 32),
+                decoration: cardDeco(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: isMobile ? 72 : 88,
+                      height: isMobile ? 72 : 88,
+                      decoration: BoxDecoration(color: TC.amber.withOpacity(0.1), shape: BoxShape.circle),
+                      child: Icon(Icons.lock_outline_rounded, size: isMobile ? 36 : 42, color: TC.amber),
+                    ),
+                    SizedBox(height: isMobile ? 16 : 20),
+                    Text('Your till is closed', style: ts(isMobile ? 20 : 22, w: FontWeight.w700, c: TC.navy)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Open your till before processing cash deposits or withdrawals.',
+                      textAlign: TextAlign.center,
+                      style: ts(13.5, c: TC.muted),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _openTill,
+                        icon: const Icon(Icons.lock_open_rounded, size: 18),
+                        label: const Text('Open till'),
+                        style: primaryButton(TC.navy),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    const Divider(height: 1, color: TC.border),
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          step(1, 'Open with your starting cash (opening float).'),
+                          step(2, 'Every cash deposit / withdrawal posts to your till automatically.'),
+                          step(3, 'Count your cash at the end of the shift and close the till.'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActiveSessionView(TillSession session) {
-    return StreamBuilder<List<TillEntry>>(
-      stream: TillService.watchSessionEntries(session.id),
-      builder: (context, entriesSnapshot) {
-        final entries = entriesSnapshot.data ?? [];
-        
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSessionHeader(session),
-              const SizedBox(height: 16),
-              _buildCashSummaryCard(session),
-              const SizedBox(height: 16),
-              _buildActionsCard(session),
-              const SizedBox(height: 16),
-              _buildTransactionsList(entries),
-            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildSessionHeader(TillSession session) {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ACTIVE SESSION
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildActive(TillSession s) {
+    return StreamBuilder<List<TillEntry>>(
+      stream: _entriesFor(s.id),
+      builder: (context, es) {
+        final entries = es.data ?? const <TillEntry>[];
+        final expected = TillService.expectedCashOf(s);
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = constraints.maxWidth;
+            final isMobile = screenWidth < 600;
+            final isTablet = screenWidth >= 600 && screenWidth < 1024;
+            
+            double maxWidth;
+            double horizontalPadding;
+            
+            if (isMobile) {
+              maxWidth = screenWidth;
+              horizontalPadding = 12;
+            } else if (isTablet) {
+              maxWidth = screenWidth * 0.95;
+              horizontalPadding = 16;
+            } else {
+              maxWidth = 1100;
+              horizontalPadding = 20;
+            }
+            
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 16),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _header(s, expected),
+                      const SizedBox(height: 16),
+                      TillKpiGrid(children: [
+                        TillKpi(
+                          label: 'Opening float',
+                          value: ugx(s.openingFloat),
+                          sub: 'Cash you started with',
+                          icon: Icons.flag_outlined,
+                          color: TC.blue,
+                        ),
+                        TillKpi(
+                          label: 'Cash in',
+                          value: ugx(s.totalIn),
+                          sub: 'Deposits & top-ups',
+                          icon: Icons.south_west_rounded,
+                          color: TC.green,
+                        ),
+                        TillKpi(
+                          label: 'Cash out',
+                          value: ugx(s.totalOut),
+                          sub: 'Withdrawals & sweeps',
+                          icon: Icons.north_east_rounded,
+                          color: TC.red,
+                        ),
+                        TillKpi(
+                          label: 'Expected cash',
+                          value: ugx(expected),
+                          sub: 'Float + in - out',
+                          icon: Icons.account_balance_wallet_outlined,
+                          color: TC.navy,
+                          highlight: true,
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      _actions(s),
+                      const SizedBox(height: 16),
+                      _activity(entries, es.hasError ? cleanError(es.error!) : null),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _header(TillSession s, int expected) {
+    final dur = DateTime.now().difference(s.openedAt);
+    final running = dur.inHours > 0 ? '${dur.inHours}h ${dur.inMinutes % 60}m' : '${dur.inMinutes}m';
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+          colors: [TC.navy, Color(0xFF16407A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Wrap(
+        spacing: 24,
+        runSpacing: 16,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Row(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'OPEN',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const StatusPill('OPEN', TC.green, solid: true),
+                  const SizedBox(width: 10),
+                  Text(_dateFmt.format(s.openedAt), style: ts(12, c: Colors.white70)),
+                ],
               ),
-              const Spacer(),
-              Text(
-                session.businessDate,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: Colors.white70,
-                ),
-              ),
+              const SizedBox(height: 12),
+              Text(s.tellerName, style: ts(22, w: FontWeight.w700, c: Colors.white)),
+              const SizedBox(height: 2),
+              Text('Opened at ${_timeFmt.format(s.openedAt)}  •  running for $running',
+                  style: ts(12.5, c: Colors.white70)),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            session.tellerName,
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          Text(
-            'Opened at ${_timeFormat.format(session.openedAt)}',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: Colors.white70,
-            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('CASH THAT SHOULD BE IN THE TILL', style: ts(10.5, w: FontWeight.w600, c: Colors.white70, ls: 1)),
+              const SizedBox(height: 4),
+              Text(ugx(expected), style: ts(30, w: FontWeight.w800, c: Colors.white)),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCashSummaryCard(TillSession session) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Cash Summary',
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSummaryRow('Opening Float', session.openingFloat, Colors.grey),
-            const Divider(height: 24),
-            _buildSummaryRow('Cash In', session.totalIn, Colors.green),
-            _buildSummaryRow('Cash Out', session.totalOut, Colors.red),
-            const Divider(height: 24),
-            _buildSummaryRow(
-              'Expected Cash',
-              session.expectedCash,
-              const Color(0xFF1E3A8A),
-              isTotal: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _actions(TillSession s) {
+    final items = <_Action>[
+      _Action('Cash top-up', 'Add cash from the vault', Icons.south_west_rounded, TC.green,
+          () => _cashMovement(s, topUp: true)),
+      _Action('Cash sweep', 'Move excess cash to the vault', Icons.north_east_rounded, TC.amber,
+          () => _cashMovement(s, topUp: false)),
+      _Action('Till reports', 'Sessions & variances', Icons.assessment_outlined, TC.blue, () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const TillReportsScreen()));
+      }),
+      _Action('Close till', 'Count cash & end shift', Icons.lock_outline_rounded, TC.red, () => _closeTill(s)),
+    ];
 
-  Widget _buildSummaryRow(String label, int amount, Color color, {bool isTotal = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return LayoutBuilder(builder: (context, c) {
+      final cols = c.maxWidth >= 900 ? 4 : 2;
+      const gap = 12.0;
+      final w = (c.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              color: isTotal ? Colors.black87 : Colors.grey[700],
+          for (final a in items)
+            SizedBox(
+              width: w,
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  onTap: a.onTap,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: TC.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: a.color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(a.icon, color: a.color, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(a.title, style: ts(13.5, w: FontWeight.w700, c: TC.navy)),
+                              Text(a.subtitle,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(11, c: TC.muted)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    });
+  }
+
+  Widget _activity(List<TillEntry> all, String? error) {
+    final sorted = [...all]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final list = sorted.where((e) {
+      if (_filter == 'in') return e.amount > 0;
+      if (_filter == 'out') return e.amount < 0;
+      return true;
+    }).toList();
+    final txnCount = all.where((e) => e.entryType != TillService.openingFloatType).length;
+
+    Widget chip(String key, String label) {
+      final sel = _filter == key;
+      return Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: ChoiceChip(
+          label: Text(label, style: ts(12, w: FontWeight.w600, c: sel ? Colors.white : TC.navy)),
+          selected: sel,
+          selectedColor: TC.navy,
+          backgroundColor: const Color(0xFFF1F5F9),
+          showCheckmark: false,
+          side: BorderSide.none,
+          onSelected: (_) => setState(() => _filter = key),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: cardDeco(),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 6,
+              children: [
+                Text('Till activity ($txnCount transaction${txnCount == 1 ? '' : 's'})',
+                    style: ts(15, w: FontWeight.w700, c: TC.navy)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [chip('all', 'All'), chip('in', 'Cash in'), chip('out', 'Cash out')],
+                ),
+              ],
             ),
           ),
-          Text(
-            'UGX ${_currencyFormat.format(amount)}',
-            style: GoogleFonts.inter(
-              fontSize: isTotal ? 18 : 14,
-              fontWeight: FontWeight.bold,
-              color: color,
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Could not load transactions: $error',
+                  textAlign: TextAlign.center, style: ts(12.5, c: TC.red)),
+            )
+          else if (list.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(36),
+              child: Column(
+                children: [
+                  Icon(Icons.receipt_long_outlined, size: 38, color: TC.muted.withOpacity(0.6)),
+                  const SizedBox(height: 8),
+                  Text('No transactions yet', style: ts(13.5, w: FontWeight.w600, c: TC.muted)),
+                  Text('Cash deposits and withdrawals will appear here as they happen.',
+                      textAlign: TextAlign.center, style: ts(12, c: TC.muted)),
+                ],
+              ),
+            )
+          else
+            for (final e in list) _entryTile(e),
+        ],
+      ),
+    );
+  }
+
+  Widget _entryTile(TillEntry e) {
+    final m = entryMeta(e.entryType, e.amount);
+    final isOpening = e.entryType == TillService.openingFloatType;
+    final positive = e.amount >= 0;
+    final amtColor = isOpening ? TC.blue : (positive ? TC.green : TC.red);
+    final who = (e.memberName ?? '').trim();
+    final sub = [if (who.isNotEmpty) who, _timeFmt.format(e.createdAt)].join('  •  ');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: const BoxDecoration(border: Border(top: BorderSide(color: TC.border))),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 19,
+            backgroundColor: m.color.withOpacity(0.1),
+            child: Icon(m.icon, color: m.color, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(m.label, style: ts(13, w: FontWeight.w600)),
+                Text(sub, style: ts(11.5, c: TC.muted)),
+              ],
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            isOpening ? ugx(e.amount) : '${positive ? '+' : '-'} ${ugx(e.amount.abs())}',
+            style: ts(13.5, w: FontWeight.w700, c: amtColor),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActionsCard(TillSession session) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Till Actions',
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DIALOG HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<T?> _withLoading<T>(String message, Future<T> Function() job, {String? success}) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          content: Row(
+            children: [
+              const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3)),
+              const SizedBox(width: 16),
+              Expanded(child: Text(message, style: ts(14))),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      final r = await job();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (success != null && mounted) tillToast(context, success);
+      return r;
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) tillToast(context, cleanError(e), error: true);
+      return null;
+    }
+  }
+
+  ShapeBorder get _dialogShape => RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // OPEN TILL
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _openTill() async {
+    final floatCtrl = TextEditingController(text: '100000');
+    final notesCtrl = TextEditingController();
+    String? err;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dialogShape,
+          title: dialogTitle(Icons.lock_open_rounded, TC.green, 'Open till'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Enter the cash you are starting your shift with.', style: ts(13, c: TC.muted)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: floatCtrl,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: fieldDeco('Opening float', prefix: 'UGX ', error: err),
+                    onChanged: (_) => setD(() => err = null),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      for (final v in [50000, 100000, 200000, 500000])
+                        ActionChip(
+                          label: Text(money(v), style: ts(12, w: FontWeight.w600, c: TC.navy)),
+                          backgroundColor: const Color(0xFFF1F5F9),
+                          side: BorderSide.none,
+                          onPressed: () => setD(() {
+                            floatCtrl.text = '$v';
+                            err = null;
+                          }),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesCtrl,
+                    maxLines: 2,
+                    decoration: fieldDeco('Notes (optional)'),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildActionButton(
-                    'Close Till',
-                    Icons.lock,
-                    Colors.red,
-                    () => _showCloseTillDialog(session),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildActionButton(
-                    'Top Up',
-                    Icons.arrow_downward,
-                    Colors.green,
-                    () => _showVaultTopUpDialog(session),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildActionButton(
-                    'Sweep',
-                    Icons.arrow_upward,
-                    Colors.orange,
-                    () => _showVaultSweepDialog(session),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildActionButton(
-                    'View Report',
-                    Icons.description,
-                    Colors.blue,
-                    () {
-                      // Navigate to reports
-                    },
-                  ),
-                ),
-              ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: primaryButton(TC.green),
+              onPressed: () {
+                if (int.tryParse(floatCtrl.text.trim()) == null) {
+                  setD(() => err = 'Enter the opening float');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Open till'),
             ),
           ],
         ),
       ),
     );
-  }
 
-  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    if (ok != true || !mounted) return;
+    final amount = int.tryParse(floatCtrl.text.trim()) ?? 0;
+    final notes = notesCtrl.text.trim();
 
-  Widget _buildTransactionsList(List<TillEntry> entries) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Today\'s Transactions (${entries.length})',
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (entries.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Text(
-                    'No transactions yet',
-                    style: GoogleFonts.inter(color: Colors.grey),
-                  ),
-                ),
-              )
-            else
-              ...entries.map((entry) => _buildEntryTile(entry)),
-          ],
-        ),
+    await _withLoading(
+      'Opening till...',
+      () => TillService.openSession(
+        tellerId: FirebaseService.sessionUid,
+        tellerName: currentTellerName(),
+        openingFloat: amount,
+        notes: notes.isEmpty ? null : notes,
       ),
-    );
-  }
-
-  Widget _buildEntryTile(TillEntry entry) {
-    final isPositive = entry.amount > 0;
-    final color = isPositive ? Colors.green : Colors.red;
-
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        backgroundColor: color.withOpacity(0.1),
-        child: Icon(
-          isPositive ? Icons.add : Icons.remove,
-          color: color,
-          size: 20,
-        ),
-      ),
-      title: Text(
-        entry.entryType.replaceAll('_', ' ').toUpperCase(),
-        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        '${entry.memberName ?? 'System'} • ${_timeFormat.format(entry.createdAt)}',
-        style: GoogleFonts.inter(fontSize: 11),
-      ),
-      trailing: Text(
-        'UGX ${_currencyFormat.format(entry.amount.abs())}',
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: color,
-        ),
-      ),
+      success: 'Till opened with ${ugx(amount)}',
     );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DIALOGS
+  // TOP-UP / SWEEP
   // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _cashMovement(TillSession s, {required bool topUp}) async {
+    final available = TillService.expectedCashOf(s);
+    final amountCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    final color = topUp ? TC.green : TC.amber;
+    String? err;
 
-  Future<void> _showOpenTillDialog() async {
-    final openingFloatController = TextEditingController(text: '100000');
-    final notesController = TextEditingController();
-
-    final result = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Open Till',
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: openingFloatController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Opening Float (UGX)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixText: 'UGX ',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dialogShape,
+          title: dialogTitle(
+            topUp ? Icons.south_west_rounded : Icons.north_east_rounded,
+            color,
+            topUp ? 'Cash top-up' : 'Cash sweep',
+          ),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      topUp
+                          ? 'Cash received from the vault is added to your till.'
+                          : 'Available in till: ${ugx(available)}. Cash swept out is moved to the vault.',
+                      style: ts(12.5, c: TC.text),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amountCtrl,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: fieldDeco('Amount', prefix: 'UGX ', error: err),
+                    onChanged: (_) => setD(() => err = null),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(controller: notesCtrl, decoration: fieldDeco('Notes (optional)')),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              decoration: InputDecoration(
-                labelText: 'Notes (Optional)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              maxLines: 2,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: primaryButton(color),
+              onPressed: () {
+                final v = int.tryParse(amountCtrl.text.trim()) ?? 0;
+                if (v <= 0) {
+                  setD(() => err = 'Enter an amount greater than zero');
+                  return;
+                }
+                if (!topUp && v > available) {
+                  setD(() => err = 'Cannot sweep more than ${ugx(available)}');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: Text(topUp ? 'Top up' : 'Sweep'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1E3A8A),
-            ),
-            child: const Text('Open Till'),
-          ),
-        ],
       ),
     );
 
-    if (result == true && mounted) {
-      _showLoading('Opening till...');
-      
-      try {
-        final openingFloat = int.tryParse(openingFloatController.text) ?? 0;
-        
-        await TillService.openSession(
-          tellerId: FirebaseService.sessionUid,
-          tellerName: FirebaseService.sessionProfile?['name'] ?? 'Teller',
-          openingFloat: openingFloat,
-          notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
-        );
+    if (ok != true || !mounted) return;
+    final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
+    final notes = notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim();
 
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-          _showSuccess('Till opened successfully!');
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-          _showError(e.toString());
-        }
-      }
-    }
+    await _withLoading(
+      topUp ? 'Processing top-up...' : 'Processing sweep...',
+      () => topUp
+          ? TillService.vaultTopUp(
+              tillSessionId: s.id,
+              amount: amount,
+              tellerId: FirebaseService.sessionUid,
+              tellerName: currentTellerName(),
+              notes: notes,
+            )
+          : TillService.vaultSweep(
+              tillSessionId: s.id,
+              amount: amount,
+              tellerId: FirebaseService.sessionUid,
+              tellerName: currentTellerName(),
+              notes: notes,
+            ),
+      success: topUp ? 'Top-up of ${ugx(amount)} recorded' : 'Sweep of ${ugx(amount)} recorded',
+    );
   }
 
-  Future<void> _showCloseTillDialog(TillSession session) async {
-    final denominations = <String, int>{
-      '50000': 0,
-      '20000': 0,
-      '10000': 0,
-      '5000': 0,
-      '2000': 0,
-      '1000': 0,
-    };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CLOSE TILL
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _closeTill(TillSession s) async {
+    // Make sure the expected figure is right before the teller counts.
+    TillSession fresh = s;
+    try {
+      fresh = await TillService.repairSessionTotals(s.id) ?? s;
+    } catch (_) {}
+    if (!mounted) return;
 
-    final controllers = <String, TextEditingController>{};
-    for (final denom in denominations.keys) {
-      controllers[denom] = TextEditingController(text: '0');
-    }
+    final expected = TillService.expectedCashOf(fresh);
+    const denoms = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50];
+    final ctrls = {for (final d in denoms) d: TextEditingController()};
+    final reasonCtrl = TextEditingController();
+    String? err;
 
-    final varianceReasonController = TextEditingController();
-
-    await showDialog(
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          // Calculate total from denominations
-          int totalCounted = 0;
-          denominations.forEach((denom, count) {
-            totalCounted += int.parse(denom) * count;
-          });
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          int counted = 0;
+          ctrls.forEach((d, c) => counted += d * (int.tryParse(c.text) ?? 0));
+          final variance = counted - expected;
+          final needsReason = variance.abs() > TillService.varianceTolerance;
+          final vColor = variance == 0 ? TC.green : (needsReason ? TC.red : TC.amber);
+          final vLabel = variance == 0
+              ? 'Balanced'
+              : (variance > 0 ? 'Over by ${ugx(variance)}' : 'Short by ${ugx(-variance)}');
+
+          Widget summaryCell(String label, String value, Color c) => Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: ts(10.5, w: FontWeight.w600, c: TC.muted, ls: 0.5)),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(value, style: ts(15, w: FontWeight.w700, c: c)),
+                    ),
+                  ],
+                ),
+              );
 
           return AlertDialog(
-            title: Text(
-              'Close Till - Count Cash',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-            ),
+            shape: _dialogShape,
+            title: dialogTitle(Icons.lock_outline_rounded, TC.red, 'Close till - count cash'),
             content: SizedBox(
-              width: double.maxFinite,
+              width: 460,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: TC.border),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
                         children: [
-                          Text(
-                            'Total Counted:',
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                          ),
-                          Text(
-                            'UGX ${_currencyFormat.format(totalCounted)}',
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[900],
+                          Row(children: [
+                            summaryCell('EXPECTED', ugx(expected), TC.navy),
+                            summaryCell('COUNTED', ugx(counted), TC.blue),
+                          ]),
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: vColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
                             ),
+                            child: Text(vLabel, style: ts(13, w: FontWeight.w700, c: vColor)),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'Count each denomination:',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    Text('Count each denomination', style: ts(13, w: FontWeight.w600)),
                     const SizedBox(height: 8),
-                    ...denominations.keys.map((denom) {
-                      return Padding(
+                    for (final d in denoms)
+                      Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Row(
                           children: [
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                'UGX ${_currencyFormat.format(int.parse(denom))}',
-                                style: GoogleFonts.inter(fontSize: 13),
-                              ),
-                            ),
-                            Expanded(
+                            Expanded(child: Text('UGX ${money(d)}', style: ts(13))),
+                            SizedBox(
+                              width: 76,
                               child: TextField(
-                                controller: controllers[denom],
+                                controller: ctrls[d],
+                                textAlign: TextAlign.center,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                decoration: InputDecoration(
-                                  hintText: '0',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                onChanged: (value) {
-                                  setDialogState(() {
-                                    denominations[denom] = int.tryParse(value) ?? 0;
-                                  });
-                                },
+                                decoration: fieldDeco('').copyWith(hintText: '0', labelText: null),
+                                onChanged: (_) => setD(() => err = null),
                               ),
                             ),
-                            const SizedBox(width: 8),
                             SizedBox(
-                              width: 80,
+                              width: 104,
                               child: Text(
-                                '= ${_currencyFormat.format(int.parse(denom) * denominations[denom]!)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                '= ${money(d * (int.tryParse(ctrls[d]!.text) ?? 0))}',
+                                textAlign: TextAlign.right,
+                                style: ts(12.5, w: FontWeight.w600, c: TC.muted),
                               ),
                             ),
                           ],
                         ),
-                      );
-                    }).toList(),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: varianceReasonController,
-                      decoration: InputDecoration(
-                        labelText: 'Variance Reason (if any)',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        hintText: 'Explain any variance...',
                       ),
-                      maxLines: 2,
+                    if (variance != 0) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: reasonCtrl,
+                        maxLines: 2,
+                        decoration: fieldDeco(
+                          needsReason ? 'Variance reason (required)' : 'Variance reason (optional)',
+                          error: err,
+                        ),
+                        onChanged: (_) => setD(() => err = null),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Text(
+                      'A variance above ${ugx(TillService.varianceTolerance)} needs a reason and supervisor approval.',
+                      style: ts(11.5, c: TC.muted),
                     ),
                   ],
                 ),
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
               ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  _showLoading('Closing till...');
-
-                  try {
-                    final result = await TillService.closeSession(
-                      tillSessionId: session.id,
-                      tellerId: FirebaseService.sessionUid,
-                      denominations: denominations,
-                      varianceReason: varianceReasonController.text.trim().isEmpty
-                          ? null
-                          : varianceReasonController.text.trim(),
-                    );
-
-                    if (mounted) {
-                      Navigator.pop(context); // Close loading
-                      
-                      if (result.needsApproval) {
-                        _showWarning(
-                          'Till closed - Variance of UGX ${_currencyFormat.format(result.variance.abs())} requires supervisor approval',
-                        );
-                      } else {
-                        _showSuccess('Till closed successfully!');
-                      }
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      Navigator.pop(context); // Close loading
-                      _showError(e.toString());
-                    }
+                style: primaryButton(TC.red),
+                onPressed: () {
+                  if (needsReason && reasonCtrl.text.trim().isEmpty) {
+                    setD(() => err = 'Explain the variance to close the till');
+                    return;
                   }
+                  Navigator.pop(ctx, true);
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                ),
-                child: const Text('Close Till'),
+                child: const Text('Close till'),
               ),
             ],
           );
         },
       ),
     );
-  }
 
-  Future<void> _showVaultTopUpDialog(TillSession session) async {
-    final amountController = TextEditingController();
-    final notesController = TextEditingController();
+    if (ok != true || !mounted) return;
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Vault Top-Up',
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Amount (UGX)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixText: 'UGX ',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              decoration: InputDecoration(
-                labelText: 'Notes (Optional)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Top Up'),
-          ),
-        ],
+    final denominations = <String, int>{
+      for (final d in denoms) '$d': int.tryParse(ctrls[d]!.text) ?? 0,
+    };
+    final reason = reasonCtrl.text.trim();
+
+    final result = await _withLoading<CloseResult>(
+      'Closing till...',
+      () => TillService.closeSession(
+        tillSessionId: s.id,
+        tellerId: FirebaseService.sessionUid,
+        denominations: denominations,
+        varianceReason: reason.isEmpty ? null : reason,
       ),
     );
 
-    if (result == true && mounted) {
-      _showLoading('Processing top-up...');
-      
-      try {
-        final amount = int.tryParse(amountController.text) ?? 0;
-        
-        await TillService.vaultTopUp(
-          tillSessionId: session.id,
-          amount: amount,
-          tellerId: FirebaseService.sessionUid,
-          tellerName: FirebaseService.sessionProfile?['name'] ?? 'Teller',
-          notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
-        );
-
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-          _showSuccess('Top-up successful!');
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-          _showError(e.toString());
-        }
-      }
-    }
+    if (result != null && mounted) _showCloseResult(result);
   }
 
-  Future<void> _showVaultSweepDialog(TillSession session) async {
-    final amountController = TextEditingController();
-    final notesController = TextEditingController();
+  void _showCloseResult(CloseResult r) {
+    final pending = r.needsApproval;
+    final color = pending ? TC.amber : TC.green;
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Vault Sweep',
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.orange[800], size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Available: UGX ${_currencyFormat.format(session.expectedCash)}',
-                      style: GoogleFonts.inter(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Amount (UGX)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixText: 'UGX ',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesController,
-              decoration: InputDecoration(
-                labelText: 'Notes (Optional)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+    Widget row(String label, String value, {Color c = TC.text, bool bold = false}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: ts(13, c: TC.muted)),
+              Text(value, style: ts(13.5, w: bold ? FontWeight.w700 : FontWeight.w600, c: c)),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-            child: const Text('Sweep'),
-          ),
-        ],
-      ),
-    );
-
-    if (result == true && mounted) {
-      _showLoading('Processing sweep...');
-      
-      try {
-        final amount = int.tryParse(amountController.text) ?? 0;
-        
-        await TillService.vaultSweep(
-          tillSessionId: session.id,
-          amount: amount,
-          tellerId: FirebaseService.sessionUid,
-          tellerName: FirebaseService.sessionProfile?['name'] ?? 'Teller',
-          notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
         );
 
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-          _showSuccess('Sweep successful!');
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-          _showError(e.toString());
-        }
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // HELPERS
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  void _showLoading(String message) {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 16),
-            Expanded(child: Text(message)),
-          ],
+      builder: (ctx) => AlertDialog(
+        shape: _dialogShape,
+        title: dialogTitle(
+          pending ? Icons.hourglass_top_rounded : Icons.check_circle_outline,
+          color,
+          pending ? 'Closed - awaiting approval' : 'Till closed',
         ),
-      ),
-    );
-  }
-
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              row('Expected cash', ugx(r.expectedCash)),
+              row('Counted cash', ugx(r.actualCash)),
+              const Divider(),
+              row(
+                r.variance == 0 ? 'Variance' : (r.variance > 0 ? 'Over by' : 'Short by'),
+                r.variance == 0 ? 'None' : ugx(r.variance.abs()),
+                c: r.variance == 0 ? TC.green : (pending ? TC.red : TC.amber),
+                bold: true,
+              ),
+              if (pending) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'The variance is above the tolerance, so a supervisor must approve this session in Till Reports.',
+                  style: ts(12, c: TC.muted),
+                ),
+              ],
+            ],
+          ),
         ),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showWarning(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.warning, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 5),
+        actions: [
+          ElevatedButton(
+            style: primaryButton(TC.navy),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Done'),
+          ),
+        ],
       ),
     );
   }
