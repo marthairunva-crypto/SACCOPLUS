@@ -214,6 +214,9 @@ class _TillReportsScreenState extends State<TillReportsScreen> {
             .map((doc) => TillSession.fromFirestore(doc))
             .toList();
 
+        // Sort by openedAt descending (newest first) in memory
+        sessions.sort((a, b) => b.openedAt.compareTo(a.openedAt));
+
         if (sessions.isEmpty) {
           return Center(
             child: Column(
@@ -264,7 +267,8 @@ class _TillReportsScreenState extends State<TillReportsScreen> {
       query = query.where('tellerId', isEqualTo: _tellerFilter);
     }
 
-    return query.orderBy('openedAt', descending: true).snapshots();
+    // Removed .orderBy('openedAt') - sorting is done in memory in _buildSessionsList
+    return query.snapshots();
   }
 
   Widget _buildSummaryCards(List<TillSession> sessions) {
