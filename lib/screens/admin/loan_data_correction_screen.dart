@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
+import '../../core/firebase_service.dart';
 import '../../services/audit_service.dart';
 
 /// Comprehensive Loan Data Correction Screen

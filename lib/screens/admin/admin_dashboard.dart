@@ -131,7 +131,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 'create_loan':
         return const CreateLoanScreen();
       case 'loan_correction':
-        return LoanDataCorrectionScreen();
+        return const LoanDataCorrectionScreenEnhanced();
       case 'loan_products':
         return const LoanProductsScreen();
       case 'loan_calc':
