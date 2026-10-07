@@ -910,7 +910,7 @@ class _TillReportsScreenState extends State<TillReportsScreen> {
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Text('Printed by: ${FirebaseService.sessionUsername}', style: const pw.TextStyle(fontSize: 8)),
+              pw.Text('Printed by: ${FirebaseService.sessionProfile?['name'] ?? 'Admin'}', style: const pw.TextStyle(fontSize: 8)),
               pw.Text('Page ', style: const pw.TextStyle(fontSize: 8)),
             ],
           ),
