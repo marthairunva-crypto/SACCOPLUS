@@ -22,6 +22,8 @@ import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
 import 'teller_screen.dart';
 import 'teller_center_reorganized.dart';
+import 'till_management_screen.dart';
+import 'till_reports_screen.dart';
 import 'member_activation_screen.dart';
 import 'enhanced_audit_screen.dart';
 import 'loan_portfolio_screen.dart';
@@ -144,6 +146,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       // TELLER CENTER
       case 'teller':
         return TellerCenterReorganized(onLoanTap: _openLoan);
+      case 'till_management':
+        return const TillManagementScreen(embedded: true);
+      case 'till_reports':
+        return const TillReportsScreen(embedded: true);
       case 'payment_hub':
         return const PaymentHubScreen();
       case 'mobile_money':

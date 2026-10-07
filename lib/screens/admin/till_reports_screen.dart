@@ -10,7 +10,9 @@ import '../../services/till_service.dart';
 
 /// Till Reports Screen - View and export till session reports
 class TillReportsScreen extends StatefulWidget {
-  const TillReportsScreen({Key? key}) : super(key: key);
+  final bool embedded;
+  
+  const TillReportsScreen({Key? key, this.embedded = false}) : super(key: key);
 
   @override
   State<TillReportsScreen> createState() => _TillReportsScreenState();
@@ -58,6 +60,20 @@ class _TillReportsScreenState extends State<TillReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = Column(
+      children: [
+        _buildFilters(),
+        Expanded(child: _buildReportContent()),
+      ],
+    );
+
+    if (widget.embedded) {
+      return Container(
+        color: const Color(0xFFF6F8FB),
+        child: body,
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FB),
       appBar: AppBar(
@@ -72,12 +88,7 @@ class _TillReportsScreenState extends State<TillReportsScreen> {
         backgroundColor: const Color(0xFF1E3A8A),
         elevation: 0,
       ),
-      body: Column(
-        children: [
-          _buildFilters(),
-          Expanded(child: _buildReportContent()),
-        ],
-      ),
+      body: body,
     );
   }
 
