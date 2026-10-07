@@ -1381,7 +1381,7 @@ class TellerService {
         currencyCode: 'UGX',
       );
 
-      print('📥 Payment response: ${result['success']}');
+      print('Payment response: ${result['success']}');
 
       if (result['success'] == true || result['uuid'] != null) {
         return {
@@ -1399,15 +1399,13 @@ class TellerService {
         };
       }
     } catch (e) {
-      print('❌ Error requesting mobile money payment: $e');
+      print('Error requesting mobile money payment: $e');
       return {
         'success': false,
         'message': 'Error: ${e.toString()}',
       };
     }
   }
-}
-
 
   // ═══════════════════════════════════════════════════════════════════════════
   // GENERAL LEDGER ENTRIES
@@ -1458,9 +1456,9 @@ class TellerService {
         'journal entry audit',
       );
 
-      print('✅ Journal entry recorded: $description - ${money(amount)}');
+      print('Journal entry recorded: $description - ${money(amount)}');
     } catch (e, st) {
-      print('❌ Error recording journal entry: $e');
+      print('Error recording journal entry: $e');
       print(st);
       rethrow;
     }
@@ -1529,9 +1527,9 @@ class TellerService {
         'expense payment audit',
       );
 
-      print('✅ Expense payment recorded: $description - ${money(amount)}');
+      print('Expense payment recorded: $description - ${money(amount)}');
     } catch (e, st) {
-      print('❌ Error recording expense payment: $e');
+      print('Error recording expense payment: $e');
       print(st);
       rethrow;
     }
@@ -1600,9 +1598,9 @@ class TellerService {
         'revenue entry audit',
       );
 
-      print('✅ Revenue entry recorded: $description - ${money(amount)}');
+      print('Revenue entry recorded: $description - ${money(amount)}');
     } catch (e, st) {
-      print('❌ Error recording revenue entry: $e');
+      print('Error recording revenue entry: $e');
       print(st);
       rethrow;
     }
