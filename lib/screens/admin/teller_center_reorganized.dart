@@ -2121,7 +2121,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                         if (result['success']) {
                           _showTransactionAlertDialog(
                             context: parentContext,
-                            type: 'Deposit',
+                            type: 'Withdrawal',
                             amount: amount!,
                             memberName: selectedMember!['name'],
                             accountNumber: selectedMember!['accountNumber'] ?? selectedMember!['phone'] ?? '',

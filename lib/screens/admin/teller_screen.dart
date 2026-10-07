@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/teller_service.dart';
+import '../../services/till_service.dart';
+import '../../models/till_session.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
 import '../../widgets/app_widgets.dart';
@@ -117,23 +120,61 @@ class _TellerScreenState extends State<TellerScreen> with SingleTickerProviderSt
   final _fmt = NumberFormat('#,###', 'en_US');
 
   // Till state
-  double _tillOpeningBalance = 0;
-  double _tillCurrentBalance = 0;
-  int _tillTransactionCount = 0;
   bool _tillOpen = false;
   String? _tillSessionId;
+  int _tillExpectedCash = 0;
+  int _tillOpeningFloat = 0;
+  int _tillTotalIn = 0;
+  int _tillTotalOut = 0;
+  StreamSubscription? _tillSubscription;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    // Removed _loadTillStatus() - till management not needed
+    _watchTillSession();
   }
 
   @override
   void dispose() {
+    _tillSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _watchTillSession() {
+    final userId = FirebaseService.sessionUid;
+    _tillSubscription = FirebaseFirestore.instance
+        .collection('saccoplus-till-sessions')
+        .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+        .where('tellerId', isEqualTo: userId)
+        .where('status', isEqualTo: 'open')
+        .limit(1)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      
+      if (snapshot.docs.isEmpty) {
+        setState(() {
+          _tillOpen = false;
+          _tillSessionId = null;
+          _tillExpectedCash = 0;
+          _tillOpeningFloat = 0;
+          _tillTotalIn = 0;
+          _tillTotalOut = 0;
+        });
+      } else {
+        final data = snapshot.docs.first.data();
+        setState(() {
+          _tillOpen = true;
+          _tillSessionId = snapshot.docs.first.id;
+          _tillOpeningFloat = (data['openingFloat'] ?? 0) as int;
+          _tillTotalIn = (data['totalIn'] ?? 0) as int;
+          _tillTotalOut = (data['totalOut'] ?? 0) as int;
+          _tillExpectedCash = _tillOpeningFloat + _tillTotalIn - _tillTotalOut;
+        });
+      }
+    });
   }
 
   Future<void> _loadTillStatus() async {
@@ -563,37 +604,48 @@ class _TellerScreenState extends State<TellerScreen> with SingleTickerProviderSt
           children: [
             Expanded(
               child: _buildTillCard(
-                'Opening Balance',
-                'UGX ${_fmt.format(_tillOpeningBalance)}',
-                Icons.account_balance_wallet,
+                'Opening Float',
+                'UGX ${_fmt.format(_tillOpeningFloat)}',
+                Icons.flag_outlined,
                 Colors.white70,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _buildTillCard(
-                'Current Balance',
-                'UGX ${_fmt.format(_tillCurrentBalance)}',
-                Icons.account_balance,
+                'Expected Cash',
+                'UGX ${_fmt.format(_tillExpectedCash)}',
+                Icons.account_balance_wallet,
                 Colors.greenAccent.shade100,
               ),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
               child: _buildTillCard(
-                'Transactions',
-                _tillTransactionCount.toString(),
-                Icons.receipt_long,
-                Colors.white70,
+                'Cash In',
+                'UGX ${_fmt.format(_tillTotalIn)}',
+                Icons.south_west_rounded,
+                Colors.green.shade200,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: ElevatedButton.icon(
+              child: _buildTillCard(
+                'Cash Out',
+                'UGX ${_fmt.format(_tillTotalOut)}',
+                Icons.north_east_rounded,
+                Colors.red.shade200,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
                 onPressed: _showCloseTillDialog,
                 icon: const Icon(Icons.lock, size: 18),
                 label: const Text('Close Till'),
