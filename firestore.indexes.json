@@ -129,6 +129,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "openedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "saccoplus-till-sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "businessDate",
           "order": "DESCENDING"
         },
