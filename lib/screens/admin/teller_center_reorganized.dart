@@ -1,187 +1,219 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/teller_service.dart';
+import '../../services/till_service.dart';
+import '../../models/till_session.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import 'till_reports_screen.dart';
 import 'till_management_screen.dart';
+import 'till_ui.dart';
 
-/// Professional Teller Center - Organized like Wakanji SACCO
+// Extra accent colours that match the Till design system (till_ui.dart).
+const _cyan = Color(0xFF0E7490);
+const _lime = Color(0xFF4D7C0F);
+const _brown = Color(0xFF92400E);
+const _indigo = Color(0xFF4338CA);
+const _pink = Color(0xFFBE185D);
+const _orange = Color(0xFFC2410C);
+
+String _pretty(String s) {
+  final t = s.replaceAll('_', ' ').trim();
+  return t.isEmpty ? '' : '${t[0].toUpperCase()}${t.substring(1)}';
+}
+
+double _dialogWidth(BuildContext c, double max) =>
+    math.min(max, MediaQuery.of(c).size.width - 32 - 48);
+
+const _dlgInset = EdgeInsets.symmetric(horizontal: 16, vertical: 24);
+
+ShapeBorder get _dlgShape => RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+
+Widget _kv(String label, String value, {Color c = TC.text, bool bold = false}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: ts(13, c: TC.muted)),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(value,
+                textAlign: TextAlign.right,
+                style: ts(13.5, w: bold ? FontWeight.w700 : FontWeight.w600, c: c)),
+          ),
+        ],
+      ),
+    );
+
+/// Professional Teller Center
 class TellerCenterReorganized extends StatefulWidget {
   final Function(String loanId, Map<String, dynamic>? loanData)? onLoanTap;
-  
-  const TellerCenterReorganized({super.key, this.onLoanTap});
+  final Function(String screen)? onNavigate;
+
+  const TellerCenterReorganized({super.key, this.onLoanTap, this.onNavigate});
 
   @override
   State<TellerCenterReorganized> createState() => _TellerCenterReorganizedState();
 }
 
 class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
-  final _currencyFormat = NumberFormat('#,###', 'en_US');
+  final _timeFmt = DateFormat('hh:mm a');
+
   int _selectedTab = 0;
   String? _selectedCategory;
 
-  // ---------------------------------------------------------------------------
-  // Responsive helpers
-  // ---------------------------------------------------------------------------
+  // Live till state
+  TillSession? _till;
+  bool _tillLoaded = false;
+  Object? _tillError;
+  StreamSubscription<TillSession?>? _tillSub;
 
-  /// Small coloured info chip (used for Branch Status / Balance)
-  Widget _statusChip(String label, String value, MaterialColor color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.shade200),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade700),
-          ),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: color.shade700,
-            ),
+  late Future<List<Map<String, dynamic>>> _historyFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _historyFuture = TellerService.getTransactionHistory(limit: 100);
+    _listenTill();
+  }
+
+  @override
+  void dispose() {
+    _tillSub?.cancel();
+    super.dispose();
+  }
+
+  void _listenTill() {
+    _tillSub?.cancel();
+    setState(() {
+      _tillLoaded = false;
+      _tillError = null;
+    });
+    _tillSub = TillService.watchOpenSession(FirebaseService.sessionUid).listen(
+      (s) {
+        if (!mounted) return;
+        setState(() {
+          _till = s;
+          _tillLoaded = true;
+          _tillError = null;
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          _tillLoaded = true;
+          _tillError = e;
+        });
+      },
+    );
+  }
+
+  void _refreshHistory() {
+    setState(() {
+      _historyFuture = TellerService.getTransactionHistory(limit: 100);
+    });
+  }
+
+  void _openTillManagement() {
+    // If we have a navigation callback (embedded in dashboard), use it
+    if (widget.onNavigate != null) {
+      widget.onNavigate!('till_management');
+    } else {
+      // Otherwise open as a separate screen (standalone mode)
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const TillManagementScreen()));
+    }
+  }
+
+  void _comingSoon(String name) {
+    tillToast(context, '$name - available in the next update', warn: true);
+  }
+
+  /// Cash transactions need an open till so the balance can update.
+  bool _requireTill() {
+    if (_till != null) return true;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: _dlgInset,
+        title: dialogTitle(Icons.lock_outline_rounded, TC.amber, 'Your till is closed'),
+        content: Text(
+          'Open your till before processing cash transactions, so every deposit and withdrawal is reflected in your till balance.',
+          style: ts(13, c: TC.muted),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Not now')),
+          ElevatedButton(
+            style: primaryButton(TC.navy),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openTillManagement();
+            },
+            child: const Text('Open till'),
           ),
         ],
       ),
     );
+    return false;
   }
 
-  /// Status chips shown under the app bar on phones
-  Widget _buildStatusStrip() {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: TellerService.getDailySummary(tellerId: FirebaseService.sessionUid),
-      builder: (context, snapshot) {
-        final summary = snapshot.data ?? {};
-        
-        // Fix: Access nested deposits/withdrawals structure
-        final deposits = summary['deposits'] as Map<String, dynamic>? ?? {};
-        final withdrawals = summary['withdrawals'] as Map<String, dynamic>? ?? {};
-        
-        final totalDeposits = (deposits['amount'] as num?)?.toInt() ?? 0;
-        final totalWithdrawals = (withdrawals['amount'] as num?)?.toInt() ?? 0;
-        final balance = totalDeposits - totalWithdrawals;
-        
-        return Container(
-          width: double.infinity,
-          color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
+  Future<T?> _withLoading<T>(String message, Future<T> Function() job) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          content: Row(
             children: [
-              Expanded(
-                child: _statusChip(
-                  'Deposits',
-                  'UGX ${_currencyFormat.format(totalDeposits)}',
-                  Colors.green,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _statusChip(
-                  'Withdrawals',
-                  'UGX ${_currencyFormat.format(totalWithdrawals)}',
-                  Colors.orange,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// Grid that adapts its column count to the available width and uses a
-  /// fixed tile height, so tile content never overflows.
-  Widget _buildResponsiveGrid({
-    required List<Widget> children,
-    double minTileWidth = 150,
-    double tileHeight = 130,
-    int maxColumns = 4,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cols =
-            (constraints.maxWidth / minTileWidth).floor().clamp(1, maxColumns);
-        return GridView(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            mainAxisExtent: tileHeight,
-          ),
-          children: children,
-        );
-      },
-    );
-  }
-
-  /// "Back to Categories / Current" row (wraps instead of overflowing)
-  Widget _buildBreadcrumb(String current) {
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        TextButton.icon(
-          onPressed: () => setState(() => _selectedCategory = null),
-          icon: const Icon(Icons.arrow_back, size: 16),
-          label: Text('Back to Categories', style: GoogleFonts.inter(fontSize: 13)),
-        ),
-        Text(' / ', style: GoogleFonts.inter(color: Colors.grey)),
-        Text(current, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
-  /// Centered "Processing..." / "Loading..." card for blocking dialogs
-  Widget _loadingCard(String message) {
-    return Center(
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(message, style: GoogleFonts.inter()),
+              const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3)),
+              const SizedBox(width: 16),
+              Expanded(child: Text(message, style: ts(14))),
             ],
           ),
         ),
       ),
     );
+    try {
+      final r = await job();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      return r;
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) tillToast(context, cleanError(e), error: true);
+      return null;
+    }
   }
 
-  // ---------------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------------
-
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final isNarrow = MediaQuery.of(context).size.width < 600;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: TC.bg,
       appBar: AppBar(
+        backgroundColor: TC.navy,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        titleSpacing: 16,
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.blue.shade700,
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.point_of_sale, color: Colors.white, size: 20),
             ),
@@ -189,3187 +221,1867 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Teller Transaction',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    'Open • ${DateFormat('yMMMMd').format(DateTime.now())}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-                  ),
+                  Text('Teller Center',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts(17, w: FontWeight.w700, c: Colors.white)),
+                  Text(DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts(11.5, c: Colors.white70)),
                 ],
               ),
             ),
           ],
         ),
-        // On phones the chips move below the app bar
-        actions: isNarrow
-            ? null
-            : [
-                FutureBuilder<Map<String, dynamic>>(
-                  future: TellerService.getDailySummary(tellerId: FirebaseService.sessionUid),
-                  builder: (context, snapshot) {
-                    final summary = snapshot.data ?? {};
-                    final totalDeposits = (summary['totalDeposits'] as num?)?.toInt() ?? 0;
-                    final totalWithdrawals = (summary['totalWithdrawals'] as num?)?.toInt() ?? 0;
-                    final balance = totalDeposits - totalWithdrawals;
-                    
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: _statusChip('BALANCE', 'UGX ${_currencyFormat.format(balance)}', Colors.green),
-                    );
-                  },
-                ),
-              ],
+        actions: [
+          IconButton(
+            tooltip: 'Till management',
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            onPressed: _openTillManagement,
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
-      body: Column(
-        children: [
-          if (isNarrow) _buildStatusStrip(),
+      body: LayoutBuilder(
+        builder: (context, c) {
+          final w = c.maxWidth;
+          return Column(
+            children: [
+              _tabBar(w),
+              Expanded(child: _content(w)),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
-          // Horizontal navigation tabs
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: isNarrow ? 16 : 24, vertical: 12),
+  Widget _tabBar(double w) {
+    final compact = w < 600;
+    Widget tab(int i, String label, IconData icon) {
+      final sel = _selectedTab == i;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => setState(() {
+            _selectedTab = i;
+            _selectedCategory = null;
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+              color: sel ? TC.navy : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: sel ? TC.navy : TC.border),
             ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildHorizontalTab(0, 'New Transaction', Icons.add_circle_outline),
-                  const SizedBox(width: 16),
-                  _buildHorizontalTab(1, 'History', Icons.history),
-                  const SizedBox(width: 16),
-                  _buildHorizontalTab(2, 'Requests', Icons.inbox),
-                ],
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 17, color: sel ? Colors.white : TC.muted),
+                const SizedBox(width: 7),
+                Text(label, style: ts(13, w: FontWeight.w600, c: sel ? Colors.white : TC.muted)),
+              ],
             ),
           ),
+        ),
+      );
+    }
 
-          // Main content area
-          Expanded(
-            child: _selectedTab == 0
-                ? _buildNewTransactionView()
-                : _selectedTab == 1
-                    ? _buildHistoryView()
-                    : _buildRequestsView(),
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: TC.border)),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 24, vertical: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              tab(0, 'New transaction', Icons.add_circle_outline),
+              tab(1, 'History', Icons.history),
+              tab(2, 'Requests', Icons.inbox_outlined),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _content(double w) {
+    switch (_selectedTab) {
+      case 1:
+        return _historyView(w);
+      case 2:
+        return _requestsView(w);
+      default:
+        return _newTransactionView(w);
+    }
+  }
+
+  /// Shared page shell: scroll view, centred max width, live till bar on top.
+  Widget _page(double w, List<Widget> children) {
+    final compact = w < 600;
+    final pad = compact ? 12.0 : 24.0;
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(pad),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _tillBar(),
+          SizedBox(height: compact ? 16 : 24),
+          ...children,
         ],
       ),
     );
   }
 
-  Widget _buildHorizontalTab(int index, String label, IconData icon) {
-    final isSelected = _selectedTab == index;
-    return InkWell(
-      onTap: () => setState(() {
-        _selectedTab = index;
-        _selectedCategory = null;
-      }),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.blue.shade700 : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? Colors.blue.shade700 : Colors.grey.shade300,
-          ),
-        ),
-        child: Row(
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LIVE TILL BAR
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _tillBar() {
+    if (!_tillLoaded) {
+      return Container(
+        height: 104,
+        decoration: cardDeco(),
+        alignment: Alignment.center,
+        child: const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+      );
+    }
+    if (_tillError != null) {
+      return _tillNotice(
+        icon: Icons.error_outline,
+        color: TC.red,
+        title: 'Could not load your till',
+        message: cleanError(_tillError!),
+        action: 'Retry',
+        onTap: _listenTill,
+      );
+    }
+    final s = _till;
+    if (s == null) {
+      return _tillNotice(
+        icon: Icons.lock_outline_rounded,
+        color: TC.amber,
+        title: 'Your till is closed',
+        message: 'Open your till to process cash deposits and withdrawals. Your balance updates live once it is open.',
+        action: 'Open till',
+        onTap: _openTillManagement,
+      );
+    }
+
+    final expected = TillService.expectedCashOf(s);
+
+    Widget stat(String label, String value, IconData icon, Color iconColor) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : Colors.grey.shade700,
-              size: 16,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: isSelected ? Colors.white : Colors.grey.shade700,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNewTransactionView() {
-    if (_selectedCategory == null) {
-      return _buildCategorySelection();
-    }
-
-    switch (_selectedCategory) {
-      case 'client':
-        return _buildClientTransactionTypes();
-      case 'general':
-        return _buildGeneralLedgerTypes();
-      case 'till':
-        return _buildTillAdminTypes();
-      case 'bulk':
-        return _buildBulkTransactionTypes();
-      default:
-        return _buildCategorySelection();
-    }
-  }
-
-  Widget _buildCategorySelection() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade100,
-                  shape: BoxShape.circle,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: iconColor),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts(11, w: FontWeight.w500, c: Colors.white70)),
                 ),
-                child: Icon(Icons.category, color: Colors.blue.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Choose Category',
-                style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-
-          // 1 column on phones, 2 on wider screens
-          _buildResponsiveGrid(
-            minTileWidth: 320,
-            tileHeight: 110,
-            maxColumns: 2,
-            children: [
-              _buildCategoryCard(
-                'client',
-                'Client Transaction',
-                'Record transactions related to an individual client.',
-                Icons.person_outline,
-                Colors.blue,
-              ),
-              _buildCategoryCard(
-                'general',
-                'General Ledger',
-                'Record internal entries such as expenses or journal postings.',
-                Icons.account_balance_wallet_outlined,
-                Colors.purple,
-              ),
-              _buildCategoryCard(
-                'till',
-                'Till Administration',
-                'Manage teller till operations like open, close and transfers.',
-                Icons.point_of_sale_outlined,
-                Colors.orange,
-              ),
-              _buildCategoryCard(
-                'bulk',
-                'Bulk Transaction',
-                'Process multiple client transactions in a single operation.',
-                Icons.cloud_upload_outlined,
-                Colors.green,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryCard(
-    String id,
-    String title,
-    String description,
-    IconData icon,
-    MaterialColor color,
-  ) {
-    return InkWell(
-      onTap: () => setState(() => _selectedCategory = id),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.shade100,
-              blurRadius: 4,
-              offset: const Offset(0, 2),
+              ],
+            ),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value, style: ts(14.5, w: FontWeight.w700, c: Colors.white)),
             ),
           ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color.shade700, size: 32),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+        );
 
-  Widget _buildClientTransactionTypes() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return LayoutBuilder(builder: (context, box) {
+      final wide = box.maxWidth >= 760;
+      final compact = box.maxWidth < 480;
+
+      final head = Row(
         children: [
-          _buildBreadcrumb('Client Transaction'),
-          const SizedBox(height: 24),
-
-          Text(
-            'Choose Type',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
+          const StatusPill('OPEN', TC.green, solid: true),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text('Opened ${_timeFmt.format(s.openedAt)}  •  Live',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(12, c: Colors.white70)),
           ),
-          const SizedBox(height: 24),
-
-          _buildResponsiveGrid(
-            children: [
-              _buildTransactionTypeCard(
-                'Shares Deposit',
-                'Add funds to a members share account.',
-                Icons.add_circle_outline,
-                Colors.green,
-                () => _showSharesDepositDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Shares Withdrawal',
-                'Withdraw funds from a members share account.',
-                Icons.remove_circle_outline,
-                Colors.red,
-                () => _showSharesWithdrawalDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Savings Deposit',
-                'Add funds to a members savings account.',
-                Icons.savings_outlined,
-                Colors.blue,
-                () => _showSavingsDepositDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Savings Withdrawal',
-                'Withdraw funds from a members savings account.',
-                Icons.money_off_outlined,
-                Colors.orange,
-                () => _showSavingsWithdrawalDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Fixed Deposit',
-                'Create a fixed deposit account with maturity date.',
-                Icons.account_balance_outlined,
-                Colors.cyan,
-                () => _showFixedDepositDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Mature Fixed Deposit',
-                'Mature a fixed deposit and transfer to savings.',
-                Icons.check_circle_outline,
-                Colors.lightGreen,
-                () => _showMatureFixedDepositDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Loan Repayment',
-                'Record a payment made towards a loan.',
-                Icons.payment_outlined,
-                Colors.purple,
-                () => _showLoanRepaymentDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Disburse Loan',
-                'Release funds for an approved loan.',
-                Icons.send_outlined,
-                Colors.teal,
-                () => _showDisburseLoanDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Apply Fee / Penalty',
-                'Apply a fee, penalty or application charge.',
-                Icons.receipt_outlined,
-                Colors.brown,
-                () => _showApplyFeeDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Reverse Fee/Penalty',
-                'Reverse a previously applied charge.',
-                Icons.undo_outlined,
-                Colors.indigo,
-                () => _showReverseFeeDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Loan Application Fee',
-                'Pay fees for granting loan applications.',
-                Icons.request_page_outlined,
-                Colors.pink,
-                () => _showLoanApplicationFeeDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Error Correction',
-                'Correct a previously recorded transaction.',
-                Icons.edit_outlined,
-                Colors.deepOrange,
-                () => _showErrorCorrectionDialog(),
-              ),
-            ],
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _openTillManagement,
+            icon: const Icon(Icons.tune_rounded, size: 16),
+            label: Text(compact ? 'Manage' : 'Manage till', style: ts(12.5, w: FontWeight.w600, c: Colors.white)),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: Colors.white.withOpacity(0.12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
           ),
         ],
-      ),
-    );
-  }
+      );
 
-  Widget _buildTransactionTypeCard(
-    String title,
-    String description,
-    IconData icon,
-    MaterialColor color,
-    VoidCallback onTap,
-  ) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.all(12),
+      final balance = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('TILL BALANCE', style: ts(10.5, w: FontWeight.w600, c: Colors.white70, ls: 1)),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(ugx(expected), style: ts(compact ? 26 : 32, w: FontWeight.w800, c: Colors.white)),
+          ),
+        ],
+      );
+
+      final inStat = stat('Cash in', ugx(s.totalIn), Icons.south_west_rounded, const Color(0xFF86EFAC));
+      final outStat = stat('Cash out', ugx(s.totalOut), Icons.north_east_rounded, const Color(0xFFFCA5A5));
+      final floatStat = stat('Opening float', ugx(s.openingFloat), Icons.flag_outlined, Colors.white70);
+
+      return Container(
+        padding: EdgeInsets.all(compact ? 16 : 22),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade200),
+          gradient: const LinearGradient(
+            colors: [TC.navy, Color(0xFF16407A)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.shade50,
-                borderRadius: BorderRadius.circular(6),
+            head,
+            SizedBox(height: compact ? 14 : 18),
+            if (wide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(flex: 3, child: balance),
+                  Container(width: 1, height: 44, color: Colors.white.withOpacity(0.15)),
+                  const SizedBox(width: 24),
+                  Expanded(flex: 2, child: inStat),
+                  Expanded(flex: 2, child: outStat),
+                  Expanded(flex: 2, child: floatStat),
+                ],
+              )
+            else ...[
+              balance,
+              const SizedBox(height: 14),
+              Container(height: 1, color: Colors.white.withOpacity(0.15)),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: inStat),
+                  const SizedBox(width: 12),
+                  Expanded(child: outStat),
+                  const SizedBox(width: 12),
+                  Expanded(child: floatStat),
+                ],
               ),
-              child: Icon(icon, color: color.shade700, size: 22),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              description,
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                color: Colors.grey.shade600,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+            ],
           ],
+        ),
+      );
+    });
+  }
+
+  Widget _tillNotice({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String message,
+    required String action,
+    required VoidCallback onTap,
+  }) {
+    return LayoutBuilder(builder: (context, box) {
+      final narrow = box.maxWidth < 520;
+      final iconBox = Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+        child: Icon(icon, color: color, size: 22),
+      );
+      final texts = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title, style: ts(15, w: FontWeight.w700, c: TC.navy)),
+          const SizedBox(height: 2),
+          Text(message, style: ts(12.5, c: TC.muted)),
+        ],
+      );
+      final button = ElevatedButton(
+        onPressed: onTap,
+        style: primaryButton(TC.navy),
+        child: Text(action),
+      );
+
+      return Container(
+        padding: EdgeInsets.all(narrow ? 16 : 20),
+        decoration: cardDeco(color: color.withOpacity(0.05), border: color.withOpacity(0.35)),
+        child: narrow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    iconBox,
+                    const SizedBox(width: 12),
+                    Expanded(child: texts),
+                  ]),
+                  const SizedBox(height: 14),
+                  button,
+                ],
+              )
+            : Row(
+                children: [
+                  iconBox,
+                  const SizedBox(width: 16),
+                  Expanded(child: texts),
+                  const SizedBox(width: 16),
+                  button,
+                ],
+              ),
+      );
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHARED UI PIECES
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _sectionHeader(String title, String subtitle) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: ts(18, w: FontWeight.w700, c: TC.navy)),
+          const SizedBox(height: 2),
+          Text(subtitle, style: ts(12.5, c: TC.muted)),
+        ],
+      );
+
+  Widget _breadcrumb(String current) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        TextButton.icon(
+          onPressed: () => setState(() => _selectedCategory = null),
+          icon: const Icon(Icons.arrow_back_rounded, size: 16),
+          label: Text('Categories', style: ts(13, w: FontWeight.w600, c: TC.blue)),
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+        ),
+        Text('/', style: ts(13, c: TC.muted)),
+        const SizedBox(width: 8),
+        Text(current, style: ts(13, w: FontWeight.w600, c: TC.navy)),
+      ],
+    );
+  }
+
+  Widget _grid(
+    List<Widget> children, {
+    double minTileWidth = 300,
+    double tileHeight = 92,
+    int maxColumns = 3,
+  }) {
+    return LayoutBuilder(builder: (context, c) {
+      final cols = math.max(1, math.min(maxColumns, (c.maxWidth / minTileWidth).floor()));
+      return GridView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cols,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          mainAxisExtent: tileHeight,
+        ),
+        children: children,
+      );
+    });
+  }
+
+  Widget _tile({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    bool soon = false,
+    double iconSize = 22,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: TC.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: iconSize),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ts(14, w: FontWeight.w700, c: TC.navy)),
+                        ),
+                        if (soon) ...[
+                          const SizedBox(width: 8),
+                          const StatusPill('Soon', TC.muted),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(description,
+                        maxLines: 2, overflow: TextOverflow.ellipsis, style: ts(11.5, c: TC.muted)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: TC.muted.withOpacity(0.6)),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildGeneralLedgerTypes() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildBreadcrumb('General Ledger'),
-          const SizedBox(height: 24),
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NEW TRANSACTION
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _newTransactionView(double w) {
+    switch (_selectedCategory) {
+      case 'client':
+        return _typesPage(w, 'Client transaction', _clientTypes());
+      case 'general':
+        return _typesPage(w, 'General ledger', _generalTypes());
+      case 'till':
+        return _typesPage(w, 'Till administration', _tillAdminTypes());
+      case 'bulk':
+        return _typesPage(w, 'Bulk transaction', _bulkTypes());
+      default:
+        return _categorySelection(w);
+    }
+  }
 
-          Text(
-            'Choose Type',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
+  Widget _categorySelection(double w) {
+    Widget cat(String id, String title, String desc, IconData icon, Color color) => _tile(
+          title: title,
+          description: desc,
+          icon: icon,
+          color: color,
+          iconSize: 26,
+          onTap: () => setState(() => _selectedCategory = id),
+        );
 
-          _buildResponsiveGrid(
-            children: [
-              _buildTransactionTypeCard(
-                'Journal Entry',
-                'Record general journal entries for accounting.',
-                Icons.book_outlined,
-                Colors.purple,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Journal Entry - Feature available in next update', style: GoogleFonts.inter())),
-                ),
-              ),
-              _buildTransactionTypeCard(
-                'Expense Payment',
-                'Record organizational expenses and bills.',
-                Icons.receipt_long_outlined,
-                Colors.red,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Expense Payment - Feature available in next update', style: GoogleFonts.inter())),
-                ),
-              ),
-              _buildTransactionTypeCard(
-                'Revenue Entry',
-                'Record non-member income and revenues.',
-                Icons.trending_up_outlined,
-                Colors.green,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Revenue Entry - Feature available in next update', style: GoogleFonts.inter())),
-                ),
-              ),
-            ],
+    return _page(w, [
+      _sectionHeader('Choose a category', 'What would you like to process?'),
+      const SizedBox(height: 16),
+      _grid(
+        [
+          cat('client', 'Client transaction', 'Record transactions for an individual member.',
+              Icons.person_outline, TC.blue),
+          cat('general', 'General ledger', 'Internal entries such as expenses or journal postings.',
+              Icons.account_balance_wallet_outlined, TC.purple),
+          cat('till', 'Till administration', 'Open, close, view and reconcile your till.',
+              Icons.point_of_sale_outlined, TC.amber),
+          cat('bulk', 'Bulk transaction', 'Process many member transactions in one operation.',
+              Icons.cloud_upload_outlined, TC.green),
+        ],
+        minTileWidth: 420,
+        tileHeight: 104,
+        maxColumns: 2,
+      ),
+    ]);
+  }
+
+  Widget _typesPage(double w, String category, List<Widget> tiles) {
+    return _page(w, [
+      _breadcrumb(category),
+      const SizedBox(height: 8),
+      _sectionHeader('Choose a type', category),
+      const SizedBox(height: 16),
+      _grid(tiles),
+    ]);
+  }
+
+  List<Widget> _clientTypes() => [
+        _tile(
+          title: 'Shares deposit',
+          description: 'Add funds to a member\'s share account.',
+          icon: Icons.add_circle_outline,
+          color: TC.green,
+          onTap: () => _cashTxn(isDeposit: true, accountType: 'shares', title: 'Shares deposit'),
+        ),
+        _tile(
+          title: 'Shares withdrawal',
+          description: 'Withdraw funds from a member\'s share account.',
+          icon: Icons.remove_circle_outline,
+          color: TC.red,
+          onTap: () => _cashTxn(isDeposit: false, accountType: 'shares', title: 'Shares withdrawal'),
+        ),
+        _tile(
+          title: 'Savings deposit',
+          description: 'Add funds to a member\'s savings account.',
+          icon: Icons.savings_outlined,
+          color: TC.blue,
+          onTap: () => _cashTxn(isDeposit: true, accountType: 'savings', title: 'Savings deposit'),
+        ),
+        _tile(
+          title: 'Savings withdrawal',
+          description: 'Withdraw funds from a member\'s savings account.',
+          icon: Icons.money_off_outlined,
+          color: TC.amber,
+          onTap: () => _cashTxn(isDeposit: false, accountType: 'savings', title: 'Savings withdrawal'),
+        ),
+        _tile(
+          title: 'Fixed deposit',
+          description: 'Create a fixed deposit with a maturity date.',
+          icon: Icons.account_balance_outlined,
+          color: _cyan,
+          onTap: _fixedDepositFlow,
+        ),
+        _tile(
+          title: 'Mature fixed deposit',
+          description: 'Mature a fixed deposit and move it to savings.',
+          icon: Icons.check_circle_outline,
+          color: _lime,
+          onTap: _matureFlow,
+        ),
+        _tile(
+          title: 'Loan repayment',
+          description: 'Record a payment made towards a loan.',
+          icon: Icons.payment_outlined,
+          color: TC.purple,
+          onTap: () => _loanFlow(repayment: true),
+        ),
+        _tile(
+          title: 'Disburse loan',
+          description: 'Release funds for an approved loan.',
+          icon: Icons.send_outlined,
+          color: TC.teal,
+          onTap: () => _loanFlow(repayment: false),
+        ),
+        _tile(
+          title: 'Apply fee / penalty',
+          description: 'Apply a fee, penalty or application charge.',
+          icon: Icons.receipt_outlined,
+          color: _brown,
+          soon: true,
+          onTap: () => _comingSoon('Apply fee'),
+        ),
+        _tile(
+          title: 'Reverse fee / penalty',
+          description: 'Reverse a previously applied charge.',
+          icon: Icons.undo_outlined,
+          color: _indigo,
+          soon: true,
+          onTap: () => _comingSoon('Reverse fee'),
+        ),
+        _tile(
+          title: 'Loan application fee',
+          description: 'Collect fees for loan applications.',
+          icon: Icons.request_page_outlined,
+          color: _pink,
+          soon: true,
+          onTap: () => _comingSoon('Loan application fee'),
+        ),
+        _tile(
+          title: 'Error correction',
+          description: 'Correct a previously recorded transaction.',
+          icon: Icons.edit_outlined,
+          color: _orange,
+          soon: true,
+          onTap: () => _comingSoon('Error correction'),
+        ),
+      ];
+
+  List<Widget> _generalTypes() => [
+        _tile(
+          title: 'Journal entry',
+          description: 'Record general journal entries for accounting.',
+          icon: Icons.book_outlined,
+          color: TC.purple,
+          soon: true,
+          onTap: () => _comingSoon('Journal entry'),
+        ),
+        _tile(
+          title: 'Expense payment',
+          description: 'Record organisational expenses and bills.',
+          icon: Icons.receipt_long_outlined,
+          color: TC.red,
+          soon: true,
+          onTap: () => _comingSoon('Expense payment'),
+        ),
+        _tile(
+          title: 'Revenue entry',
+          description: 'Record non-member income and revenues.',
+          icon: Icons.trending_up_outlined,
+          color: TC.green,
+          soon: true,
+          onTap: () => _comingSoon('Revenue entry'),
+        ),
+      ];
+
+  List<Widget> _bulkTypes() => [
+        _tile(
+          title: 'Bulk deposits',
+          description: 'Process many member deposits from a CSV file.',
+          icon: Icons.upload_file_outlined,
+          color: TC.green,
+          soon: true,
+          onTap: () => _comingSoon('Bulk deposits'),
+        ),
+        _tile(
+          title: 'Bulk loan repayments',
+          description: 'Process many loan payments from a CSV file.',
+          icon: Icons.payment_outlined,
+          color: TC.purple,
+          soon: true,
+          onTap: () => _comingSoon('Bulk loan repayments'),
+        ),
+        _tile(
+          title: 'Bulk dividends',
+          description: 'Distribute dividends to many members.',
+          icon: Icons.money_outlined,
+          color: TC.blue,
+          soon: true,
+          onTap: () => _comingSoon('Bulk dividends'),
+        ),
+      ];
+
+  List<Widget> _tillAdminTypes() => [
+        _tile(
+          title: 'Open / close till',
+          description: 'Open your till for the day or close at end of shift.',
+          icon: Icons.vpn_key_outlined,
+          color: TC.blue,
+          onTap: _openTillManagement,
+        ),
+        _tile(
+          title: 'View summary',
+          description: 'Live till figures: float, cash in, cash out.',
+          icon: Icons.summarize_outlined,
+          color: _cyan,
+          onTap: _showTillSummary,
+        ),
+        _tile(
+          title: 'Cash check',
+          description: 'Count your cash and compare it with the till.',
+          icon: Icons.checklist_outlined,
+          color: TC.green,
+          onTap: _showCashCheck,
+        ),
+        _tile(
+          title: 'Till report',
+          description: 'View sessions, variances and approvals.',
+          icon: Icons.assessment_outlined,
+          color: TC.purple,
+          onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const TillReportsScreen())),
+        ),
+      ];
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TILL DIALOGS
+  // ═══════════════════════════════════════════════════════════════════════════
+  void _showTillSummary() {
+    if (!_requireTill()) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: _dlgInset,
+        title: dialogTitle(Icons.summarize_outlined, _cyan, 'Till summary'),
+        content: SizedBox(
+          width: _dialogWidth(ctx, 400),
+          child: StreamBuilder<TillSession?>(
+            stream: TillService.watchOpenSession(FirebaseService.sessionUid),
+            initialData: _till,
+            builder: (context, snap) {
+              final s = snap.data;
+              if (s == null) {
+                return Text('Your till is closed.', style: ts(13, c: TC.muted));
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _kv('Opening float', ugx(s.openingFloat)),
+                  _kv('Cash in', ugx(s.totalIn), c: TC.green),
+                  _kv('Cash out', ugx(s.totalOut), c: TC.red),
+                  const Divider(height: 24),
+                  _kv('Till balance', ugx(TillService.expectedCashOf(s)), c: TC.navy, bold: true),
+                ],
+              );
+            },
           ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
         ],
       ),
     );
   }
 
-  Widget _buildTillAdminTypes() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildBreadcrumb('Till Administration'),
-          const SizedBox(height: 24),
+  void _showCashCheck() {
+    if (!_requireTill()) return;
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          final expected = _till != null ? TillService.expectedCashOf(_till!) : 0;
+          final counted = int.tryParse(ctrl.text.trim()) ?? 0;
+          final diff = counted - expected;
+          final ok = ctrl.text.trim().isNotEmpty && diff == 0;
+          final dColor = ctrl.text.trim().isEmpty ? TC.muted : (ok ? TC.green : TC.red);
 
-          // Till Summary Card
-          FutureBuilder<Map<String, dynamic>>(
-            future: TellerService.getDailySummary(tellerId: FirebaseService.sessionUid),
-            builder: (context, snapshot) {
-              final summary = snapshot.data ?? {};
-              final totalDeposits = (summary['totalDeposits'] as num?)?.toInt() ?? 0;
-              final totalWithdrawals = (summary['totalWithdrawals'] as num?)?.toInt() ?? 0;
-              final tillBalance = totalDeposits - totalWithdrawals;
-
-              return Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.blue.shade700, Colors.blue.shade500],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Row(
+          return AlertDialog(
+            shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+            insetPadding: _dlgInset,
+            title: dialogTitle(Icons.checklist_outlined, TC.green, 'Cash check'),
+            content: SizedBox(
+              width: _dialogWidth(ctx, 400),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 32),
+                    Text('Count the cash in your till and enter the total. Nothing is saved here.',
+                        style: ts(13, c: TC.muted)),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: fieldDeco('Cash counted', prefix: 'UGX '),
+                      onChanged: (_) => setD(() {}),
                     ),
-                    const SizedBox(width: 20),
-                    Expanded(
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: dColor.withOpacity(0.07),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: dColor.withOpacity(0.3)),
+                      ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Your Till Balance',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'UGX ${_currencyFormat.format(tillBalance)}',
-                              style: GoogleFonts.inter(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 24,
-                            runSpacing: 8,
-                            children: [
-                              _buildMiniStat('Deposits', totalDeposits, Colors.green.shade300),
-                              _buildMiniStat('Withdrawals', totalWithdrawals, Colors.red.shade300),
-                            ],
+                          _kv('Till balance', ugx(expected), c: TC.navy),
+                          _kv('Counted', ugx(counted), c: TC.blue),
+                          const Divider(height: 18),
+                          _kv(
+                            ctrl.text.trim().isEmpty
+                                ? 'Difference'
+                                : (diff == 0 ? 'Balanced' : (diff > 0 ? 'Over by' : 'Short by')),
+                            ctrl.text.trim().isEmpty ? '-' : ugx(diff.abs()),
+                            c: dColor,
+                            bold: true,
                           ),
                         ],
                       ),
                     ),
                   ],
                 ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 32),
-
-          Text(
-            'Choose Type',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-
-          _buildResponsiveGrid(
-            children: [
-              _buildTransactionTypeCard(
-                'Open/Close Till',
-                'Open till for the day or close at end of shift.',
-                Icons.vpn_key_outlined,
-                Colors.blue,
-                () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const TillManagementScreen()),
-                  );
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+              ElevatedButton(
+                style: primaryButton(TC.navy),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _openTillManagement();
                 },
-              ),
-              _buildTransactionTypeCard(
-                'View Summary',
-                'View detailed till summary and transactions.',
-                Icons.summarize_outlined,
-                Colors.cyan,
-                () => _showTillSummaryDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Reconcile Till',
-                'Reconcile your till balance at end of day.',
-                Icons.checklist_outlined,
-                Colors.green,
-                () => _showReconcileTillDialog(),
-              ),
-              _buildTransactionTypeCard(
-                'Till Report',
-                'Generate and print till report.',
-                Icons.print_outlined,
-                Colors.purple,
-                () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const TillReportsScreen()),
-                  );
-                },
+                child: const Text('Close till'),
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildMiniStat(String label, int value, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.8)),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'UGX ${_currencyFormat.format(value)}',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: color,
-          ),
-        ),
-      ],
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CASH DEPOSIT / WITHDRAWAL
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _cashTxn({
+    required bool isDeposit,
+    required String accountType,
+    required String title,
+  }) async {
+    if (!_requireTill()) return;
+
+    final res = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _CashTxnDialog(
+        isDeposit: isDeposit,
+        accountType: accountType,
+        title: title,
+        tillCash: TillService.expectedCashOf(_till!),
+      ),
     );
+    if (res == null || !mounted) return;
+
+    final member = res['member'] as Map<String, dynamic>;
+    final amount = res['amount'] as int;
+
+    final till = _till;
+    if (till == null) {
+      tillToast(context, 'Your till was closed. Open it and try again.', error: true);
+      return;
+    }
+
+    final result = await _withLoading<Map<String, dynamic>>(
+      isDeposit ? 'Processing deposit...' : 'Processing withdrawal...',
+      () => isDeposit
+          ? TellerService.processDeposit(
+              memberId: member['id'],
+              memberName: member['name'],
+              memberPhone: member['phone'],
+              amount: amount,
+              accountType: accountType,
+              tellerName: currentTellerName(),
+              tellerId: FirebaseService.sessionUid,
+              tillSession: till,
+            )
+          : TellerService.processWithdrawal(
+              memberId: member['id'],
+              memberName: member['name'],
+              memberPhone: member['phone'],
+              amount: amount,
+              accountType: accountType,
+              tellerName: currentTellerName(),
+              tellerId: FirebaseService.sessionUid,
+              tillSession: till,
+            ),
+    );
+    if (result == null || !mounted) return;
+
+    if (result['success'] == true) {
+      final txn = (result['transaction'] as Map?) ?? const {};
+      _showReceipt(
+        type: isDeposit ? 'Deposit' : 'Withdrawal',
+        amount: amount,
+        memberName: member['name'].toString(),
+        accountType: accountType,
+        accountNumber: (member['accountNumber'] ?? member['memberNumber'] ?? member['phone'] ?? '').toString(),
+        receiptNumber: (txn['receiptNumber'] ?? '').toString(),
+      );
+      setState(() {
+        _selectedTab = 1;
+        _selectedCategory = null;
+      });
+      _refreshHistory();
+    } else {
+      tillToast(context, (result['message'] ?? 'Transaction failed').toString(), error: true);
+    }
   }
 
-  void _showTillSummaryDialog() async {
-    final summary = await TellerService.getDailySummary(tellerId: FirebaseService.sessionUid);
-
-    if (!mounted) return;
-
-    // Extract values with null safety
-    final totalDeposits = (summary['totalDeposits'] as num?)?.toInt() ?? 0;
-    final totalWithdrawals = (summary['totalWithdrawals'] as num?)?.toInt() ?? 0;
-    final depositCount = (summary['depositCount'] as num?)?.toInt() ?? 0;
-    final withdrawalCount = (summary['withdrawalCount'] as num?)?.toInt() ?? 0;
-    final netBalance = totalDeposits - totalWithdrawals;
+  void _showReceipt({
+    required String type,
+    required int amount,
+    required String memberName,
+    required String accountType,
+    required String accountNumber,
+    required String receiptNumber,
+  }) {
+    final last3 = accountNumber.length >= 3 ? accountNumber.substring(accountNumber.length - 3) : accountNumber;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.summarize, color: Colors.blue.shade700),
-            const SizedBox(width: 12),
-            Text('Till Summary', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildSummaryRow('Total Deposits', totalDeposits, Colors.green),
-              _buildSummaryRow('Total Withdrawals', totalWithdrawals, Colors.red),
-              _buildSummaryRow('Deposit Count', depositCount, Colors.blue, isAmount: false),
-              _buildSummaryRow('Withdrawal Count', withdrawalCount, Colors.orange, isAmount: false),
-              const Divider(height: 32),
-              _buildSummaryRow(
-                'Net Balance',
-                netBalance,
-                Colors.blue.shade700,
-                isBold: true,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Close', style: GoogleFonts.inter()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryRow(String label, int value, Color color, {bool isAmount = true, bool isBold = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            isAmount ? 'UGX ${_currencyFormat.format(value)}' : value.toString(),
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showReconcileTillDialog() {
-    final actualCashCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.checklist, color: Colors.green.shade700),
-              const SizedBox(width: 12),
-              Text('Reconcile Till', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: SizedBox(
-            width: 400,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Count the physical cash in your till and enter the amount below for reconciliation.',
-                    style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: actualCashCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Actual Cash in Till',
-                      prefixText: 'UGX ',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) => setState(() {}),
-                  ),
-                  const SizedBox(height: 16),
-                  FutureBuilder<Map<String, dynamic>>(
-                    future: TellerService.getDailySummary(tellerId: FirebaseService.sessionUid),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const CircularProgressIndicator();
-
-                      final summary = snapshot.data!;
-                      final totalDeposits = (summary['totalDeposits'] as num?)?.toInt() ?? 0;
-                      final totalWithdrawals = (summary['totalWithdrawals'] as num?)?.toInt() ?? 0;
-                      final expectedBalance = totalDeposits - totalWithdrawals;
-                      final actualCash = int.tryParse(actualCashCtrl.text) ?? 0;
-                      final difference = actualCash - expectedBalance;
-
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: difference == 0 ? Colors.green.shade50 : Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: difference == 0 ? Colors.green.shade200 : Colors.orange.shade200,
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            _buildSummaryRow('Expected', expectedBalance, Colors.blue.shade700),
-                            _buildSummaryRow('Actual', actualCash, Colors.green.shade700),
-                            const Divider(),
-                            _buildSummaryRow(
-                              'Difference',
-                              difference,
-                              difference == 0 ? Colors.green.shade700 : Colors.red.shade700,
-                              isBold: true,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter()),
-            ),
-            ElevatedButton(
-              onPressed: actualCashCtrl.text.isEmpty
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Till reconciled successfully', style: GoogleFonts.inter()),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: Colors.white,
-              ),
-              child: Text('Reconcile', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBulkTransactionTypes() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildBreadcrumb('Bulk Transaction'),
-          const SizedBox(height: 24),
-
-          Text(
-            'Choose Type',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-
-          _buildResponsiveGrid(
-            children: [
-              _buildTransactionTypeCard(
-                'Bulk Deposits',
-                'Process multiple member deposits from CSV file.',
-                Icons.upload_file_outlined,
-                Colors.green,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Bulk Deposits - Feature available in next update', style: GoogleFonts.inter())),
-                ),
-              ),
-              _buildTransactionTypeCard(
-                'Bulk Loan Repayments',
-                'Process multiple loan payments from CSV file.',
-                Icons.payment_outlined,
-                Colors.purple,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Bulk Loan Repayments - Feature available in next update', style: GoogleFonts.inter())),
-                ),
-              ),
-              _buildTransactionTypeCard(
-                'Bulk Dividends',
-                'Distribute dividends to multiple members.',
-                Icons.money_outlined,
-                Colors.blue,
-                () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Bulk Dividends - Feature available in next update', style: GoogleFonts.inter())),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoryView() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: TellerService.getTransactionHistory(limit: 100),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final transactions = snapshot.data ?? [];
-
-        if (transactions.isEmpty) {
-          return Center(
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: _dlgInset,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.history, size: 64, color: Colors.grey.shade400),
-                const SizedBox(height: 16),
-                Text(
-                  'No Transactions Yet',
-                  style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(color: TC.green.withOpacity(0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.check_circle_rounded, color: TC.green, size: 38),
                 ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    'Start processing transactions to see history here',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(color: Colors.grey.shade600),
+                const SizedBox(height: 14),
+                Text('$type successful', style: ts(19, w: FontWeight.w700, c: TC.navy)),
+                const SizedBox(height: 4),
+                Text('Your till balance has been updated.', style: ts(12.5, c: TC.muted)),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: TC.border),
+                  ),
+                  child: Column(
+                    children: [
+                      _kv('Amount', ugx(amount), c: TC.navy, bold: true),
+                      const Divider(height: 8),
+                      _kv('Account', '${_pretty(accountType)} • ending $last3'),
+                      const Divider(height: 8),
+                      _kv('Member', memberName),
+                      const Divider(height: 8),
+                      _kv('Receipt no.', receiptNumber.isEmpty ? '-' : receiptNumber),
+                      const Divider(height: 8),
+                      _kv('Date', DateFormat('dd MMM yyyy, HH:mm').format(DateTime.now())),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: primaryButton(TC.green),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Done'),
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MEMBER PICKER (shared)
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<Map<String, dynamic>?> _pickMember(String title, IconData icon, Color color, String hint) {
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: _dlgInset,
+        title: dialogTitle(icon, color, title),
+        content: SizedBox(
+          width: _dialogWidth(ctx, 480),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(hint, style: ts(13, c: TC.muted)),
+                const SizedBox(height: 14),
+                _MemberSearch(autofocus: true, onSelected: (m) => Navigator.pop(ctx, m)),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LOANS
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loansFor(
+    Map<String, dynamic> member, {
+    String? status,
+  }) async {
+    final col = FirebaseFirestore.instance.collection(AppConstants.loansCol);
+    final tenant = FirebaseService.sessionTenantId;
+
+    bool statusOk(Map<String, dynamic> d) =>
+        status == null || (d['status'] ?? '').toString().toLowerCase() == status.toLowerCase();
+
+    var snap = await col
+        .where('farmerId', isEqualTo: member['id'])
+        .where('tenantId', isEqualTo: tenant)
+        .get();
+    var docs = snap.docs.where((d) => statusOk(d.data())).toList();
+    if (docs.isNotEmpty) return docs;
+
+    final acct = member['accountNumber'];
+    if (acct != null && acct.toString().isNotEmpty) {
+      snap = await col
+          .where('accountNumber', isEqualTo: acct)
+          .where('tenantId', isEqualTo: tenant)
+          .get();
+      docs = snap.docs.where((d) => statusOk(d.data())).toList();
+      if (docs.isNotEmpty) return docs;
+    }
+
+    // Fallback: match on member name
+    snap = await col.where('tenantId', isEqualTo: tenant).get();
+    final name = member['name'].toString().toLowerCase();
+    return snap.docs
+        .where((d) =>
+            (d.data()['memberName'] ?? '').toString().toLowerCase() == name && statusOk(d.data()))
+        .toList();
+  }
+
+  void _openLoan(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = {'id': doc.id, ...doc.data()};
+    if (widget.onLoanTap != null) {
+      widget.onLoanTap!(doc.id, data);
+    } else {
+      Navigator.pushNamed(context, '/loan-details',
+          arguments: {'loanId': doc.id, 'initialLoanData': data});
+    }
+  }
+
+  Future<void> _loanFlow({required bool repayment}) async {
+    final member = await _pickMember(
+      repayment ? 'Loan repayment' : 'Disburse loan',
+      repayment ? Icons.payment_outlined : Icons.send_outlined,
+      repayment ? TC.purple : TC.teal,
+      repayment
+          ? 'Search for the member to view their loans.'
+          : 'Search for the member to view their approved loans.',
+    );
+    if (member == null || !mounted) return;
+
+    final docs = await _withLoading('Loading loans...',
+        () => _loansFor(member, status: repayment ? null : 'approved'));
+    if (docs == null || !mounted) return;
+
+    if (docs.isEmpty) {
+      tillToast(
+        context,
+        repayment
+            ? 'No loans found for ${member['name']}'
+            : 'No approved loans awaiting disbursement for ${member['name']}',
+        warn: true,
+      );
+      return;
+    }
+    if (docs.length == 1) {
+      _openLoan(docs.first);
+      return;
+    }
+
+    final chosen = await showDialog<QueryDocumentSnapshot<Map<String, dynamic>>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: _dlgInset,
+        title: dialogTitle(Icons.account_balance, TC.blue, 'Select loan'),
+        content: SizedBox(
+          width: _dialogWidth(ctx, 440),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${member['name']} has ${docs.length} loans', style: ts(13, c: TC.muted)),
+                const SizedBox(height: 12),
+                for (final doc in docs)
+                  Builder(builder: (_) {
+                    final loan = doc.data();
+                    final amount = ((loan['loanAmount'] ?? loan['amount'] ?? 0) as num).toInt();
+                    final outstanding = ((loan['principalOutstanding'] ?? 0) as num).toInt();
+                    final ref = loan['referenceNumber'] ?? doc.id;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: cardDeco(),
+                      child: ListTile(
+                        onTap: () => Navigator.pop(ctx, doc),
+                        leading: CircleAvatar(
+                          backgroundColor: TC.blue.withOpacity(0.1),
+                          child: const Icon(Icons.account_balance, color: TC.blue, size: 20),
+                        ),
+                        title: Text('Loan $ref', style: ts(13.5, w: FontWeight.w700, c: TC.navy)),
+                        subtitle: Text(
+                          'Amount: ${ugx(amount)}\nOutstanding: ${ugx(outstanding)}\nStatus: ${_pretty((loan['status'] ?? '').toString())}',
+                          style: ts(11.5, c: TC.muted),
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ],
+      ),
+    );
+    if (chosen != null && mounted) _openLoan(chosen);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FIXED DEPOSITS
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> _fixedDepositFlow() async {
+    final member = await _pickMember('Create fixed deposit', Icons.account_balance_outlined, _cyan,
+        'Search for the member opening the fixed deposit.');
+    if (member == null || !mounted) return;
+
+    final form = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _FixedDepositForm(member: member),
+    );
+    if (form == null || !mounted) return;
+
+    final res = await _withLoading<Map<String, dynamic>>(
+      'Creating fixed deposit...',
+      () => TellerService.createFixedDeposit(
+        memberId: member['id'],
+        memberName: member['name'],
+        amount: (form['amount'] as num).toDouble(),
+        months: form['months'] as int,
+      ),
+    );
+    if (res == null || !mounted) return;
+
+    if (res['success'] == true) {
+      tillToast(context, 'Fixed deposit created - receipt ${res['receiptNumber'] ?? ''}');
+      _refreshHistory();
+    } else {
+      tillToast(context, (res['message'] ?? 'Could not create fixed deposit').toString(), error: true);
+    }
+  }
+
+  Future<void> _matureFlow() async {
+    final member = await _pickMember('Mature fixed deposit', Icons.check_circle_outline, _lime,
+        'Search for the member whose fixed deposit is maturing.');
+    if (member == null || !mounted) return;
+
+    final all = await _withLoading('Loading fixed deposits...',
+        () => TellerService.getMemberFixedDeposits(member['id']));
+    if (all == null || !mounted) return;
+
+    final active = all.where((d) => (d['status'] ?? '').toString().toLowerCase() != 'matured').toList();
+    if (active.isEmpty) {
+      tillToast(context, 'No active fixed deposits found for ${member['name']}', warn: true);
+      return;
+    }
+
+    final chosen = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: _dlgInset,
+        title: dialogTitle(Icons.check_circle_outline, _lime, 'Select fixed deposit'),
+        content: SizedBox(
+          width: _dialogWidth(ctx, 440),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final d in active)
+                  Builder(builder: (_) {
+                    final amount = ((d['amount'] ?? 0) as num).toInt();
+                    final mat = d['maturityDate'] is Timestamp
+                        ? (d['maturityDate'] as Timestamp).toDate()
+                        : DateTime.now();
+                    final isMatured = DateTime.now().isAfter(mat);
+                    final c = isMatured ? TC.green : TC.amber;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: cardDeco(),
+                      child: ListTile(
+                        onTap: () => Navigator.pop(ctx, d),
+                        leading: CircleAvatar(
+                          backgroundColor: c.withOpacity(0.1),
+                          child: Icon(isMatured ? Icons.check_circle : Icons.schedule, color: c, size: 20),
+                        ),
+                        title: Text(ugx(amount), style: ts(14, w: FontWeight.w700, c: TC.navy)),
+                        subtitle: Text('Matures ${DateFormat('MMM dd, yyyy').format(mat)}',
+                            style: ts(11.5, c: TC.muted)),
+                        trailing: StatusPill(isMatured ? 'Matured' : 'Early', c),
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+
+    final res = await _withLoading<Map<String, dynamic>>(
+      'Maturing fixed deposit...',
+      () => TellerService.matureFixedDeposit(
+        fixedDepositId: chosen['id'],
+        tellerId: FirebaseService.sessionUid,
+        tellerName: currentTellerName(),
+      ),
+    );
+    if (res == null || !mounted) return;
+
+    if (res['success'] == true) {
+      tillToast(context, (res['message'] ?? 'Fixed deposit matured').toString());
+      _refreshHistory();
+    } else {
+      tillToast(context, (res['message'] ?? 'Could not mature fixed deposit').toString(), error: true);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HISTORY
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _historyView(double w) {
+    final compact = w < 600;
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _historyFuture,
+      builder: (context, snap) {
+        Widget body;
+        if (snap.connectionState == ConnectionState.waiting) {
+          body = const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()),
           );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: transactions.length,
-          itemBuilder: (context, index) {
-            final txn = transactions[index];
-            final isDeposit = txn['type'] == 'deposit';
-            final source = txn['source'] ?? 'teller';
-            final paymentMethod = txn['paymentMethod'] ?? 'Cash';
-            final telecomProvider = txn['telecomProvider'];
-            final phoneNumber = txn['phoneNumber'];
-            final isMobileApp = source == 'mobile_app';
-
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ExpansionTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: isDeposit ? Colors.green.shade50 : Colors.red.shade50,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isDeposit ? Icons.arrow_downward : Icons.arrow_upward,
-                    color: isDeposit ? Colors.green.shade700 : Colors.red.shade700,
-                    size: 20,
-                  ),
-                ),
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${txn['memberName']}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    if (isMobileApp)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.phone_android, size: 12, color: Colors.blue.shade700),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Mobile App',
-                              style: GoogleFonts.inter(fontSize: 10, color: Colors.blue.shade700, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${txn['accountType']} • ${DateFormat('MMM d, y h:mm a').format(txn['timestamp'])}',
-                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-                    ),
-                    if (paymentMethod != 'Cash')
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          children: [
-                            Icon(Icons.payment, size: 12, color: Colors.orange.shade700),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                paymentMethod,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(fontSize: 11, color: Colors.orange.shade700, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'UGX ${_currencyFormat.format(txn['amount'])}',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.bold,
-                        color: isDeposit ? Colors.green.shade700 : Colors.red.shade700,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      txn['receiptNumber'] ?? '',
-                      style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade500),
-                    ),
-                  ],
-                ),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      border: Border(top: BorderSide(color: Colors.grey.shade200)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildDetailRow('Source', isMobileApp ? 'Mobile App' : 'Teller', Icons.source),
-                        _buildDetailRow('Payment Method', paymentMethod, Icons.payment),
-                        if (telecomProvider != null)
-                          _buildDetailRow('Telecom Provider', telecomProvider, Icons.phone_android),
-                        if (phoneNumber != null)
-                          _buildDetailRow('Phone Number', phoneNumber, Icons.phone),
-                        _buildDetailRow('Member Phone', txn['memberPhone'] ?? 'N/A', Icons.contact_phone),
-                        if (!isMobileApp && txn['tellerName'] != null)
-                          _buildDetailRow('Teller', txn['tellerName'], Icons.person),
-                        if (txn['notes'] != null && txn['notes'].toString().isNotEmpty)
-                          _buildDetailRow('Notes', txn['notes'], Icons.note),
-                      ],
-                    ),
-                  ),
-                ],
+        } else {
+          final txns = snap.data ?? [];
+          if (txns.isEmpty) {
+            body = Container(
+              decoration: cardDeco(),
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: const TillStateMessage(
+                icon: Icons.history,
+                color: TC.muted,
+                title: 'No transactions yet',
+                message: 'Start processing transactions to see your history here.',
               ),
             );
-          },
-        );
+          } else {
+            body = Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [for (final t in txns) _historyTile(t, compact)],
+            );
+          }
+        }
+
+        return _page(w, [
+          Row(
+            children: [
+              Expanded(
+                child: _sectionHeader('Transaction history', 'Latest 100 transactions - teller and mobile app'),
+              ),
+              IconButton(
+                tooltip: 'Refresh',
+                icon: const Icon(Icons.refresh_rounded, color: TC.navy),
+                onPressed: _refreshHistory,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          body,
+        ]);
       },
     );
   }
 
-  Widget _buildDetailRow(String label, String value, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Colors.grey.shade600),
-          const SizedBox(width: 8),
-          Text(
-            '$label: ',
-            style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _historyTile(Map<String, dynamic> txn, bool compact) {
+    final type = (txn['type'] ?? '').toString();
+    final isIn = type == 'deposit' || type == 'fixed_deposit_maturity';
+    final color = isIn ? TC.green : TC.red;
+    final isMobileApp = (txn['source'] ?? 'teller') == 'mobile_app';
+    final method = (txn['paymentMethod'] ?? 'Cash').toString();
+    final stamp = txn['timestamp'] is DateTime ? txn['timestamp'] as DateTime : null;
+    final when = (stamp == null || stamp.millisecondsSinceEpoch == 0)
+        ? ''
+        : DateFormat('MMM d, y  •  h:mm a').format(stamp);
+    final name = (txn['memberName'] ?? txn['accountName'] ?? 'Unknown').toString();
+    final acct = _pretty((txn['accountType'] ?? type).toString());
+    final amount = (txn['amount'] as num?) ?? 0;
+    final receipt = (txn['receiptNumber'] ?? '').toString();
 
-  Widget _buildRequestsView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          Text(
-            'No Pending Requests',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Approval requests will appear here',
-            style: GoogleFonts.inter(color: Colors.grey.shade600),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Dialog implementations
-  // ---------------------------------------------------------------------------
-
-  void _showSharesDepositDialog() async {
-    final memberController = TextEditingController();
-    final amountController = TextEditingController();
-    Map<String, dynamic>? selectedMember;
-    bool isSearching = false;
-    List<Map<String, dynamic>> searchResults = [];
-
-    // Capture parent context
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
+    Widget detail(String label, String value, IconData icon) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.add_circle_outline, color: Colors.green.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text('Shares Deposit', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-              ),
+              Icon(icon, size: 16, color: TC.muted),
+              const SizedBox(width: 8),
+              Text('$label: ', style: ts(12, c: TC.muted)),
+              Expanded(child: Text(value, style: ts(12, w: FontWeight.w600))),
             ],
           ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
+        );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: cardDeco(),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.symmetric(horizontal: compact ? 12 : 16, vertical: 2),
+          childrenPadding: EdgeInsets.zero,
+          leading: CircleAvatar(
+            radius: 19,
+            backgroundColor: color.withOpacity(0.1),
+            child: Icon(isIn ? Icons.south_west_rounded : Icons.north_east_rounded, color: color, size: 19),
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(13.5, w: FontWeight.w600)),
+              ),
+              if (isMobileApp) ...[
+                const SizedBox(width: 6),
+                const StatusPill('Mobile', TC.blue),
+              ],
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(when.isEmpty ? acct : '$acct  •  $when',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(11.5, c: TC.muted)),
+          ),
+          trailing: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: compact ? 104 : 150),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text('${isIn ? '+' : '-'} ${ugx(amount)}',
+                      style: ts(13.5, w: FontWeight.w700, c: color)),
+                ),
+                if (receipt.isNotEmpty)
+                  Text(receipt,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(10, c: TC.muted)),
+              ],
+            ),
+          ),
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FAFC),
+                border: Border(top: BorderSide(color: TC.border)),
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Member search
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) async {
-                      if (value.length >= 3) {
-                        setState(() => isSearching = true);
-                        searchResults = await TellerService.searchMembers(value);
-                        setState(() => isSearching = false);
-                      } else {
-                        setState(() {
-                          searchResults = [];
-                          selectedMember = null;
-                        });
-                      }
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: searchResults.length,
-                        itemBuilder: (context, index) {
-                          final member = searchResults[index];
-                          return ListTile(
-                            title: Text(member['name'], style: GoogleFonts.inter(fontSize: 14)),
-                            subtitle: Text(member['phone'], style: GoogleFonts.inter(fontSize: 12)),
-                            trailing: Text(
-                              'Shares: UGX ${_currencyFormat.format((member['sharesValue'] ?? 0).toInt())}',
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-                            ),
-                            onTap: () {
-                              setState(() {
-                                selectedMember = member;
-                                memberController.text = member['name'];
-                                searchResults = [];
-                              });
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  if (selectedMember != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Selected Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
-                          const SizedBox(height: 8),
-                          Text('${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 14)),
-                          Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
-                          Text('Current Shares: UGX ${_currencyFormat.format(((selectedMember!['sharesValue'] ?? 0) as num).toInt())}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (UGX)',
-                        prefixIcon: Icon(Icons.money),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) => setState(() {}), // Trigger rebuild to enable button
-                    ),
-                  ],
+                  detail('Source', isMobileApp ? 'Mobile app' : 'Teller', Icons.source_outlined),
+                  detail('Payment method', method, Icons.payment),
+                  if (txn['telecomProvider'] != null)
+                    detail('Telecom provider', txn['telecomProvider'].toString(), Icons.phone_android),
+                  if (txn['phoneNumber'] != null)
+                    detail('Phone number', txn['phoneNumber'].toString(), Icons.phone),
+                  detail('Member phone', (txn['memberPhone'] ?? 'N/A').toString(), Icons.contact_phone_outlined),
+                  if (!isMobileApp && txn['tellerName'] != null)
+                    detail('Teller', txn['tellerName'].toString(), Icons.person_outline),
+                  if (txn['notes'] != null && txn['notes'].toString().isNotEmpty)
+                    detail('Notes', txn['notes'].toString(), Icons.note_outlined),
                 ],
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter()),
-            ),
-            ElevatedButton(
-              onPressed: selectedMember == null || amountController.text.isEmpty
-                  ? null
-                  : () async {
-                      final amount = int.tryParse(amountController.text);
-                      if (amount == null || amount <= 0) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Please enter a valid amount', style: GoogleFonts.inter())),
-                        );
-                        return;
-                      }
+          ],
+        ),
+      ),
+    );
+  }
 
-                      // Show confirmation dialog
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: Row(
-                            children: [
-                              Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 24),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text('Confirm Transaction', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
-                              ),
-                            ],
-                          ),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Please confirm this shares deposit:', style: GoogleFonts.inter(fontSize: 14)),
-                              const SizedBox(height: 16),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.blue.shade200),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Member: ${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 4),
-                                    Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const SizedBox(height: 4),
-                                    Text('Account: Shares', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const Divider(height: 16),
-                                    Text('Deposit Amount: UGX ${_currencyFormat.format(amount)}', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green.shade700)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: Text('Cancel', style: GoogleFonts.inter()),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.shade600,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: Text('Confirm & Process', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                            ),
-                          ],
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REQUESTS
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _requestsView(double w) {
+    return _page(w, [
+      _sectionHeader('Requests', 'Approvals waiting for you'),
+      const SizedBox(height: 16),
+      Container(
+        decoration: cardDeco(),
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: const TillStateMessage(
+          icon: Icons.inbox_outlined,
+          color: TC.muted,
+          title: 'No pending requests',
+          message: 'Approval requests will appear here.',
+        ),
+      ),
+    ]);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBER SEARCH FIELD (debounced)
+// ═══════════════════════════════════════════════════════════════════════════════
+class _MemberSearch extends StatefulWidget {
+  final void Function(Map<String, dynamic> member) onSelected;
+  final String Function(Map<String, dynamic> member)? trailingBuilder;
+  final bool autofocus;
+
+  const _MemberSearch({required this.onSelected, this.trailingBuilder, this.autofocus = false});
+
+  @override
+  State<_MemberSearch> createState() => _MemberSearchState();
+}
+
+class _MemberSearchState extends State<_MemberSearch> {
+  final _ctrl = TextEditingController();
+  Timer? _debounce;
+  List<Map<String, dynamic>> _results = [];
+  bool _searching = false;
+  bool _searched = false;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    final q = value.trim();
+    if (q.length < 2) {
+      setState(() {
+        _results = [];
+        _searching = false;
+        _searched = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      final r = await TellerService.searchMembers(q);
+      if (!mounted || _ctrl.text.trim() != q) return;
+      setState(() {
+        _results = r;
+        _searching = false;
+        _searched = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _ctrl,
+          autofocus: widget.autofocus,
+          decoration: fieldDeco('Search member (name or phone)')
+              .copyWith(prefixIcon: const Icon(Icons.search, size: 20)),
+          onChanged: _onChanged,
+        ),
+        if (_searching)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        if (_results.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            constraints: const BoxConstraints(maxHeight: 240),
+            decoration: cardDeco(),
+            clipBehavior: Clip.antiAlias,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _results.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, color: TC.border),
+              itemBuilder: (context, i) {
+                final m = _results[i];
+                final name = (m['name'] ?? 'Unknown').toString();
+                return ListTile(
+                  dense: true,
+                  leading: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: TC.blue.withOpacity(0.1),
+                    child: Text(name.isEmpty ? '?' : name[0].toUpperCase(),
+                        style: ts(13, w: FontWeight.w700, c: TC.blue)),
+                  ),
+                  title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(13.5, w: FontWeight.w600)),
+                  subtitle: Text((m['phone'] ?? '').toString(), style: ts(11.5, c: TC.muted)),
+                  trailing: widget.trailingBuilder == null
+                      ? const Icon(Icons.chevron_right_rounded)
+                      : ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 130),
+                          child: Text(widget.trailingBuilder!(m),
+                              textAlign: TextAlign.right,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: ts(11, c: TC.muted)),
                         ),
-                      );
-
-                      if (confirmed != true) return;
-
-                      Navigator.pop(dialogContext);
-
-                      await Future.delayed(const Duration(milliseconds: 100));
-                      if (!mounted) return;
-
-                      // Show loading
-                      showDialog(
-                        context: parentContext,
-                        barrierDismissible: false,
-                        builder: (loadingContext) => _loadingCard('Processing...'),
-                      );
-
-                      try {
-                        final result = await TellerService.processDeposit(
-                          memberId: selectedMember!['id'],
-                          memberName: selectedMember!['name'],
-                          memberPhone: selectedMember!['phone'],
-                          amount: amount,
-                          accountType: 'shares',
-                          tellerName: 'Admin',
-                          tellerId: FirebaseService.sessionUid,
-                          tillSession: null, // TODO: Pass actual till session in Phase 3
-                        );
-
-                        if (!mounted) return;
-                        Navigator.pop(parentContext); // Close loading
-
-                        if (!mounted) return;
-                        
-                        // Show bank-style transaction alert dialog
-                        if (result['success']) {
-                          _showTransactionAlertDialog(
-                            context: parentContext,
-                            type: 'Deposit',
-                            amount: amount!,
-                            memberName: selectedMember!['name'],
-                            accountNumber: selectedMember!['accountNumber'] ?? selectedMember!['phone'] ?? '',
-                            accountType: 'savings', // Fixed: use string literal
-                            receiptNumber: result['receiptNumber'] ?? '',
-                          );
-                          // Switch to history tab
-                          this.setState(() => _selectedTab = 1);
-                        } else {
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(
-                              content: Text(result['message'], style: GoogleFonts.inter()),
-                              backgroundColor: Colors.red,
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (!mounted) return;
-                        Navigator.pop(parentContext); // Close loading even on error
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(parentContext).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: $e', style: GoogleFonts.inter()),
-                            backgroundColor: Colors.red,
-                            duration: const Duration(seconds: 4),
-                          ),
-                        );
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: Colors.white,
-              ),
-              child: Text('Process Deposit', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                  onTap: () => widget.onSelected(m),
+                );
+              },
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSharesWithdrawalDialog() {
-    _showWithdrawalDialog('shares', 'Shares Withdrawal');
-  }
-
-  void _showSavingsDepositDialog() {
-    _showDepositDialog('savings', 'Savings Deposit');
-  }
-
-  void _showSavingsWithdrawalDialog() {
-    _showWithdrawalDialog('savings', 'Savings Withdrawal');
-  }
-
-  void _showDepositDialog(String accountType, String title) async {
-    final memberController = TextEditingController();
-    final amountController = TextEditingController();
-    Map<String, dynamic>? selectedMember;
-    bool isSearching = false;
-    List<Map<String, dynamic>> searchResults = [];
-
-    // Capture parent context
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.savings_outlined, color: Colors.blue.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-              ),
-            ],
+          )
+        else if (_searched && !_searching)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Text('No members found', textAlign: TextAlign.center, style: ts(12.5, c: TC.muted)),
           ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) async {
-                      if (value.length >= 3) {
-                        setState(() => isSearching = true);
-                        searchResults = await TellerService.searchMembers(value);
-                        setState(() => isSearching = false);
-                      } else {
-                        setState(() {
-                          searchResults = [];
-                          selectedMember = null;
-                        });
-                      }
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: searchResults.length,
-                        itemBuilder: (context, index) {
-                          final member = searchResults[index];
-                          return ListTile(
-                            title: Text(member['name'], style: GoogleFonts.inter(fontSize: 14)),
-                            subtitle: Text(member['phone'], style: GoogleFonts.inter(fontSize: 12)),
-                            trailing: Text(
-                              '$accountType: UGX ${_currencyFormat.format(((member['${accountType}Balance'] ?? 0) as num).toInt())}',
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-                            ),
-                            onTap: () {
-                              setState(() {
-                                selectedMember = member;
-                                memberController.text = member['name'];
-                                searchResults = [];
-                              });
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  if (selectedMember != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Selected Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
-                          const SizedBox(height: 8),
-                          Text('${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 14)),
-                          Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
-                          Text('Current Balance: UGX ${_currencyFormat.format(((selectedMember!['${accountType}Balance'] ?? 0) as num).toInt())}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (UGX)',
-                        prefixIcon: Icon(Icons.money),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) => setState(() {}), // Trigger rebuild to enable button
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter()),
-            ),
-            ElevatedButton(
-              onPressed: selectedMember == null || amountController.text.isEmpty
-                  ? null
-                  : () async {
-                      final amount = int.tryParse(amountController.text);
-                      if (amount == null || amount <= 0) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Please enter a valid amount', style: GoogleFonts.inter())),
-                        );
-                        return;
-                      }
-
-                      // Show confirmation dialog
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: Row(
-                            children: [
-                              Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 24),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text('Confirm Transaction', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
-                              ),
-                            ],
-                          ),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Please confirm this $accountType deposit:', style: GoogleFonts.inter(fontSize: 14)),
-                              const SizedBox(height: 16),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.blue.shade200),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Member: ${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 4),
-                                    Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const SizedBox(height: 4),
-                                    Text('Account: ${accountType[0].toUpperCase()}${accountType.substring(1)}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const Divider(height: 16),
-                                    Text('Deposit Amount: UGX ${_currencyFormat.format(amount)}', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green.shade700)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: Text('Cancel', style: GoogleFonts.inter()),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.shade600,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: Text('Confirm & Process', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (confirmed != true) return;
-
-                      Navigator.pop(dialogContext);
-
-                      await Future.delayed(const Duration(milliseconds: 100));
-                      if (!mounted) return;
-
-                      showDialog(
-                        context: parentContext,
-                        barrierDismissible: false,
-                        builder: (loadingContext) => _loadingCard('Processing...'),
-                      );
-
-                      try {
-                        final result = await TellerService.processDeposit(
-                          memberId: selectedMember!['id'],
-                          memberName: selectedMember!['name'],
-                          memberPhone: selectedMember!['phone'],
-                          amount: amount,
-                          accountType: accountType,
-                          tellerName: 'Admin',
-                          tellerId: FirebaseService.sessionUid,
-                          tillSession: null, // TODO: Pass actual till session in Phase 3
-                        );
-
-                        if (!mounted) return;
-                        Navigator.pop(parentContext);
-
-                        if (!mounted) return;
-                        
-                        // Show bank-style transaction alert dialog
-                        if (result['success']) {
-                          _showTransactionAlertDialog(
-                            context: parentContext,
-                            type: 'Deposit',
-                            amount: amount!,
-                            memberName: selectedMember!['name'],
-                            accountNumber: selectedMember!['accountNumber'] ?? selectedMember!['phone'] ?? '',
-                            accountType: accountType, // This is the function parameter
-                            receiptNumber: result['receiptNumber'] ?? '',
-                          );
-                          this.setState(() => _selectedTab = 1);
-                        } else {
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(
-                              content: Text(result['message'], style: GoogleFonts.inter()),
-                              backgroundColor: Colors.red,
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (!mounted) return;
-                        Navigator.pop(parentContext);
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(parentContext).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: $e', style: GoogleFonts.inter()),
-                            backgroundColor: Colors.red,
-                            duration: const Duration(seconds: 4),
-                          ),
-                        );
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade600,
-                foregroundColor: Colors.white,
-              ),
-              child: Text('Process Deposit', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showWithdrawalDialog(String accountType, String title) async {
-    final memberController = TextEditingController();
-    final amountController = TextEditingController();
-    Map<String, dynamic>? selectedMember;
-    bool isSearching = false;
-    List<Map<String, dynamic>> searchResults = [];
-
-    // Capture parent context
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.remove_circle_outline, color: Colors.red.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) async {
-                      if (value.length >= 3) {
-                        setState(() => isSearching = true);
-                        searchResults = await TellerService.searchMembers(value);
-                        setState(() => isSearching = false);
-                      } else {
-                        setState(() {
-                          searchResults = [];
-                          selectedMember = null;
-                        });
-                      }
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: searchResults.length,
-                        itemBuilder: (context, index) {
-                          final member = searchResults[index];
-                          return ListTile(
-                            title: Text(member['name'], style: GoogleFonts.inter(fontSize: 14)),
-                            subtitle: Text(member['phone'], style: GoogleFonts.inter(fontSize: 12)),
-                            trailing: Text(
-                              '$accountType: UGX ${_currencyFormat.format(((member['${accountType}Balance'] ?? 0) as num).toInt())}',
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
-                            ),
-                            onTap: () {
-                              setState(() {
-                                selectedMember = member;
-                                memberController.text = member['name'];
-                                searchResults = [];
-                              });
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  if (selectedMember != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Selected Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
-                          const SizedBox(height: 8),
-                          Text('${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 14)),
-                          Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
-                          Text('Available Balance: UGX ${_currencyFormat.format(((selectedMember!['${accountType}Balance'] ?? 0) as num).toInt())}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (UGX)',
-                        prefixIcon: Icon(Icons.money),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) => setState(() {}), // Trigger rebuild to enable button
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter()),
-            ),
-            ElevatedButton(
-              onPressed: selectedMember == null || amountController.text.isEmpty
-                  ? null
-                  : () async {
-                      final amount = int.tryParse(amountController.text);
-                      if (amount == null || amount <= 0) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Please enter a valid amount', style: GoogleFonts.inter())),
-                        );
-                        return;
-                      }
-
-                      // Check balance
-                      final availableBalance = ((selectedMember!['${accountType}Balance'] ?? 0) as num).toInt();
-                      if (amount > availableBalance) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Insufficient balance. Available: UGX ${_currencyFormat.format(availableBalance)}', style: GoogleFonts.inter()),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                        return;
-                      }
-
-                      // Show confirmation dialog
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: Row(
-                            children: [
-                              Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 24),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text('Confirm Withdrawal', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16)),
-                              ),
-                            ],
-                          ),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Please confirm this $accountType withdrawal:', style: GoogleFonts.inter(fontSize: 14)),
-                              const SizedBox(height: 16),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.red.shade200),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Member: ${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 4),
-                                    Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const SizedBox(height: 4),
-                                    Text('Account: ${accountType[0].toUpperCase()}${accountType.substring(1)}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const Divider(height: 16),
-                                    Text('Available Balance: UGX ${_currencyFormat.format(availableBalance)}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
-                                    const SizedBox(height: 4),
-                                    Text('Withdrawal Amount: UGX ${_currencyFormat.format(amount)}', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
-                                    const SizedBox(height: 4),
-                                    Text('New Balance: UGX ${_currencyFormat.format(availableBalance - amount)}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green.shade700)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: Text('Cancel', style: GoogleFonts.inter()),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red.shade600,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: Text('Confirm & Withdraw', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (confirmed != true) return;
-
-                      Navigator.pop(dialogContext);
-
-                      await Future.delayed(const Duration(milliseconds: 100));
-                      if (!mounted) return;
-
-                      showDialog(
-                        context: parentContext,
-                        barrierDismissible: false,
-                        builder: (loadingContext) => _loadingCard('Processing...'),
-                      );
-
-                      try {
-                        final result = await TellerService.processWithdrawal(
-                          memberId: selectedMember!['id'],
-                          memberName: selectedMember!['name'],
-                          memberPhone: selectedMember!['phone'],
-                          amount: amount,
-                          accountType: accountType,
-                          tellerName: 'Admin',
-                          tellerId: FirebaseService.sessionUid,
-                          tillSession: null, // TODO: Pass actual till session in Phase 3
-                        );
-
-                        if (!mounted) return;
-                        Navigator.pop(parentContext);
-
-                        if (!mounted) return;
-                        
-                        // Show bank-style transaction alert dialog
-                        if (result['success']) {
-                          _showTransactionAlertDialog(
-                            context: parentContext,
-                            type: 'Withdrawal',
-                            amount: amount!,
-                            memberName: selectedMember!['name'],
-                            accountNumber: selectedMember!['accountNumber'] ?? selectedMember!['phone'] ?? '',
-                            accountType: accountType, // This is the function parameter
-                            receiptNumber: result['receiptNumber'] ?? '',
-                          );
-                          this.setState(() => _selectedTab = 1);
-                        } else {
-                          ScaffoldMessenger.of(parentContext).showSnackBar(
-                            SnackBar(
-                              content: Text(result['message'], style: GoogleFonts.inter()),
-                              backgroundColor: Colors.red,
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (!mounted) return;
-                        Navigator.pop(parentContext);
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(parentContext).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: $e', style: GoogleFonts.inter()),
-                            backgroundColor: Colors.red,
-                            duration: const Duration(seconds: 4),
-                          ),
-                        );
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade600,
-                foregroundColor: Colors.white,
-              ),
-              child: Text('Process Withdrawal', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showLoanRepaymentDialog() async {
-    final memberController = TextEditingController();
-    Map<String, dynamic>? selectedMember;
-    bool isSearching = false;
-    List<Map<String, dynamic>> searchResults = [];
-
-    // Capture parent context before dialog
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.payment_outlined, color: Colors.purple.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text('Loan Repayment', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Search for member to view their active loans',
-                    style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 16),
-                  // Member search
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) async {
-                      if (value.length >= 3) {
-                        setState(() => isSearching = true);
-                        searchResults = await TellerService.searchMembers(value);
-                        setState(() => isSearching = false);
-                      } else {
-                        setState(() {
-                          searchResults = [];
-                          selectedMember = null;
-                        });
-                      }
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: searchResults.length,
-                        itemBuilder: (context, index) {
-                          final member = searchResults[index];
-                          return ListTile(
-                            title: Text(member['name'], style: GoogleFonts.inter(fontSize: 14)),
-                            subtitle: Text(member['phone'], style: GoogleFonts.inter(fontSize: 12)),
-                            trailing: Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey.shade600),
-                            onTap: () async {
-                              // Close the dialog first using dialogContext
-                              Navigator.pop(dialogContext);
-
-                              // Small delay to ensure dialog is closed
-                              await Future.delayed(const Duration(milliseconds: 100));
-
-                              // Check if widget is still mounted
-                              if (!mounted) return;
-
-                              // Show loading while fetching loans using parentContext
-                              showDialog(
-                                context: parentContext,
-                                barrierDismissible: false,
-                                builder: (loadingContext) => _loadingCard('Loading loans...'),
-                              );
-
-                              // Get member's active loans (Active, Ongoing, Disbursed, Overdue)
-                              print('🔍 Searching loans for member: ${member['id']}');
-                              print('🔍 Member name: ${member['name']}');
-                              print('🔍 Member accountNumber: ${member['accountNumber']}');
-                              print('🔍 Tenant ID: ${FirebaseService.sessionTenantId}');
-                              
-                              // First, let's check ALL loans in the system to see what farmerId values exist
-                              final allSystemLoans = await FirebaseFirestore.instance
-                                  .collection(AppConstants.loansCol)
-                                  .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                  .limit(10)
-                                  .get();
-                              
-                              print('🔍 Sample loans in system:');
-                              for (var doc in allSystemLoans.docs) {
-                                final data = doc.data();
-                                print('  - Loan ${doc.id}: memberName=${data['memberName']}, farmerId=${data['farmerId']}, accountNumber=${data['accountNumber']}');
-                              }
-                              
-                              final loansQuery = await FirebaseFirestore.instance
-                                  .collection(AppConstants.loansCol)
-                                  .where('farmerId', isEqualTo: member['id'])
-                                  .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                  .get();
-
-                              print('🔍 Found ${loansQuery.docs.length} loans with member ID');
-                              
-                              // Try searching by memberName if member ID search fails and farmerId is commonly null
-                              QuerySnapshot<Map<String, dynamic>>? finalLoansQuery = loansQuery;
-                              
-                              if (loansQuery.docs.isEmpty) {
-                                print('🔍 Trying search by memberName: ${member['name']}');
-                                
-                                // Search by exact member name (case-insensitive)
-                                final loansByName = await FirebaseFirestore.instance
-                                    .collection(AppConstants.loansCol)
-                                    .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                    .get();
-                                
-                                // Filter by name (case-insensitive comparison)
-                                final memberNameLower = member['name'].toString().toLowerCase();
-                                final matchingLoans = loansByName.docs.where((doc) {
-                                  final loanName = (doc.data()['memberName'] ?? '').toString().toLowerCase();
-                                  return loanName == memberNameLower;
-                                }).toList();
-                                
-                                print('🔍 Found ${matchingLoans.length} loans by memberName');
-                                
-                                if (matchingLoans.isNotEmpty) {
-                                  finalLoansQuery = loansByName; // Use the full query but we'll filter below
-                                  
-                                  // Close loading dialog
-                                  if (!mounted) return;
-                                  Navigator.pop(parentContext);
-                                  
-                                  // If only one loan, go directly to it
-                                  if (matchingLoans.length == 1) {
-                                    final loanDoc = matchingLoans.first;
-                                    final loanData = {'id': loanDoc.id, ...loanDoc.data()};
-                                    
-                                    if (widget.onLoanTap != null) {
-                                      widget.onLoanTap!(loanDoc.id, loanData);
-                                    } else {
-                                      Navigator.pushNamed(
-                                        parentContext,
-                                        '/loan-details',
-                                        arguments: {
-                                          'loanId': loanDoc.id,
-                                          'loanData': loanData,
-                                        },
-                                      );
-                                    }
-                                    return;
-                                  } else {
-                                    // Multiple loans - show selection dialog
-                                    final selectedLoan = await showDialog<Map<String, dynamic>>(
-                                      context: parentContext,
-                                      builder: (context) => AlertDialog(
-                                        title: Text('Select Loan', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                                        content: SizedBox(
-                                          width: 400,
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: matchingLoans.map((doc) {
-                                              final data = doc.data();
-                                              return ListTile(
-                                                title: Text(
-                                                  'A/C: ${data['accountNumber']}',
-                                                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                                                ),
-                                                subtitle: Text(
-                                                  'Amount: UGX ${_currencyFormat.format((data['loanAmount'] ?? 0).round())}\nStatus: ${data['status']}',
-                                                  style: GoogleFonts.inter(fontSize: 12),
-                                                ),
-                                                onTap: () => Navigator.pop(context, {'id': doc.id, ...data}),
-                                              );
-                                            }).toList(),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                    
-                                    if (selectedLoan != null && mounted) {
-                                      if (widget.onLoanTap != null) {
-                                        widget.onLoanTap!(selectedLoan['id'], selectedLoan);
-                                      } else {
-                                        Navigator.pushNamed(
-                                          parentContext,
-                                          '/loan-details',
-                                          arguments: {
-                                            'loanId': selectedLoan['id'],
-                                            'loanData': selectedLoan,
-                                          },
-                                        );
-                                      }
-                                    }
-                                    return;
-                                  }
-                                }
-                              }
-                              
-                              // Try searching by accountNumber if member ID search fails
-                              if (loansQuery.docs.isEmpty && member['accountNumber'] != null) {
-                                print('🔍 Trying search by accountNumber: ${member['accountNumber']}');
-                                final loansByAccount = await FirebaseFirestore.instance
-                                    .collection(AppConstants.loansCol)
-                                    .where('accountNumber', isEqualTo: member['accountNumber'])
-                                    .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                    .get();
-                                
-                                print('🔍 Found ${loansByAccount.docs.length} loans by accountNumber');
-                                
-                                if (loansByAccount.docs.isNotEmpty) {
-                                  // Use the account-based search results
-                                  if (!mounted) return;
-                                  Navigator.pop(parentContext); // Close loading
-                                  
-                                  if (loansByAccount.docs.length == 1) {
-                                    final loanDoc = loansByAccount.docs.first;
-                                    final loanData = {'id': loanDoc.id, ...loanDoc.data()};
-                                    
-                                    if (widget.onLoanTap != null) {
-                                      widget.onLoanTap!(loanDoc.id, loanData);
-                                    }
-                                  }
-                                  return;
-                                }
-                              }
-                              
-                              if (loansQuery.docs.isNotEmpty) {
-                                for (var doc in loansQuery.docs) {
-                                  final data = doc.data();
-                                  print('  - Loan ${doc.id}: status=${data['status']}, farmerId=${data['farmerId']}');
-                                }
-                              }
-
-                              // Try without status filter to see all loans
-                              final allLoans = await FirebaseFirestore.instance
-                                  .collection(AppConstants.loansCol)
-                                  .where('farmerId', isEqualTo: member['id'])
-                                  .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                  .get();
-                              
-                              print('🔍 Total loans for this member (all statuses): ${allLoans.docs.length}');
-                              for (var doc in allLoans.docs) {
-                                final data = doc.data();
-                                print('  - Loan ${doc.id}: status=${data['status']}');
-                              }
-
-                              // Check if still mounted before closing loading
-                              if (!mounted) return;
-                              Navigator.pop(parentContext); // Close loading
-
-                              if (loansQuery.docs.isEmpty) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(parentContext).showSnackBar(
-                                  SnackBar(
-                                    content: Text('No loans found for ${member['name']}', style: GoogleFonts.inter()),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                                return;
-                              }
-
-                              // If only one loan, go directly to it
-                              if (loansQuery.docs.length == 1) {
-                                if (!mounted) return;
-                                final loanDoc = loansQuery.docs.first;
-                                final loanData = {'id': loanDoc.id, ...loanDoc.data()};
-                                
-                                // Use callback if available, otherwise push route
-                                if (widget.onLoanTap != null) {
-                                  widget.onLoanTap!(loanDoc.id, loanData);
-                                } else {
-                                  Navigator.pushNamed(
-                                    parentContext,
-                                    '/loan-details',
-                                    arguments: {
-                                      'loanId': loanDoc.id,
-                                      'initialLoanData': loanData,
-                                    },
-                                  );
-                                }
-                                return;
-                              }
-
-                              // If multiple loans, show selection dialog
-                              if (!mounted) return;
-                              final selectedLoan = await showDialog<String>(
-                                context: parentContext,
-                                builder: (loanSelectContext) => AlertDialog(
-                                  title: Text('Select Loan', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                                  content: SizedBox(
-                                    width: 400,
-                                    child: SingleChildScrollView(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            '${member['name']} has ${loansQuery.docs.length} active loans',
-                                            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          ...loansQuery.docs.map((doc) {
-                                            final loan = doc.data();
-                                            final amount = ((loan['loanAmount'] ?? loan['amount'] ?? 0) as num).toInt();
-                                            final outstanding = ((loan['principalOutstanding'] ?? 0) as num).toInt();
-                                            final refNumber = loan['referenceNumber'] ?? doc.id;
-
-                                            return Card(
-                                              margin: const EdgeInsets.only(bottom: 8),
-                                              child: ListTile(
-                                                leading: Container(
-                                                  padding: const EdgeInsets.all(8),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.blue.shade50,
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: Icon(Icons.account_balance, color: Colors.blue.shade700, size: 20),
-                                                ),
-                                                title: Text('Loan $refNumber', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
-                                                subtitle: Text(
-                                                  'Amount: UGX ${_currencyFormat.format(amount)}\nOutstanding: UGX ${_currencyFormat.format(outstanding)}',
-                                                  style: GoogleFonts.inter(fontSize: 12),
-                                                ),
-                                                trailing: Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey.shade600),
-                                                onTap: () => Navigator.pop(loanSelectContext, doc.id),
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(loanSelectContext),
-                                      child: Text('Cancel', style: GoogleFonts.inter()),
-                                    ),
-                                  ],
-                                ),
-                              );
-
-                              if (selectedLoan != null && mounted) {
-                                final loanDoc = loansQuery.docs.firstWhere((doc) => doc.id == selectedLoan);
-                                final loanData = {'id': loanDoc.id, ...loanDoc.data()};
-                                
-                                // Use callback if available, otherwise push route
-                                if (widget.onLoanTap != null) {
-                                  widget.onLoanTap!(loanDoc.id, loanData);
-                                } else {
-                                  Navigator.pushNamed(
-                                    parentContext,
-                                    '/loan-details',
-                                    arguments: {
-                                      'loanId': loanDoc.id,
-                                      'initialLoanData': loanData,
-                                    },
-                                  );
-                                }
-                              }
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  if (selectedMember != null)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(top: 16),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Selected Member', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
-                          const SizedBox(height: 8),
-                          Text('${selectedMember!['name']}', style: GoogleFonts.inter(fontSize: 14)),
-                          Text('Phone: ${selectedMember!['phone']}', style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600)),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter()),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showDisburseLoanDialog() async {
-    final memberController = TextEditingController();
-    bool isSearching = false;
-    List<Map<String, dynamic>> searchResults = [];
-
-    // Capture parent context before dialog
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.teal.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.send_outlined, color: Colors.teal.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text('Disburse Loan', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Search for member to view their approved loans',
-                    style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) async {
-                      if (value.length >= 3) {
-                        setState(() => isSearching = true);
-                        searchResults = await TellerService.searchMembers(value);
-                        setState(() => isSearching = false);
-                      } else {
-                        setState(() => searchResults = []);
-                      }
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: searchResults.length,
-                        itemBuilder: (context, index) {
-                          final member = searchResults[index];
-                          return ListTile(
-                            title: Text(member['name'], style: GoogleFonts.inter(fontSize: 14)),
-                            subtitle: Text(member['phone'], style: GoogleFonts.inter(fontSize: 12)),
-                            trailing: Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey.shade600),
-                            onTap: () async {
-                              Navigator.pop(dialogContext);
-
-                              // Small delay to ensure dialog is closed
-                              await Future.delayed(const Duration(milliseconds: 100));
-
-                              if (!mounted) return;
-
-                              showDialog(
-                                context: parentContext,
-                                barrierDismissible: false,
-                                builder: (loadingContext) => _loadingCard('Loading loans...'),
-                              );
-
-                              final loansQuery = await FirebaseFirestore.instance
-                                  .collection(AppConstants.loansCol)
-                                  .where('farmerId', isEqualTo: member['id'])
-                                  .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                  .where('status', isEqualTo: 'approved')
-                                  .get();
-
-                              if (!mounted) return;
-                              Navigator.pop(parentContext);
-
-                              if (loansQuery.docs.isEmpty) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(parentContext).showSnackBar(
-                                  SnackBar(
-                                    content: Text('No loans found for ${member['name']}', style: GoogleFonts.inter()),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                                return;
-                              }
-
-                              if (loansQuery.docs.length == 1) {
-                                if (!mounted) return;
-                                final loanDoc = loansQuery.docs.first;
-                                Navigator.pushNamed(
-                                  parentContext,
-                                  '/loan-details',
-                                  arguments: {
-                                    'loanId': loanDoc.id,
-                                    'initialLoanData': {'id': loanDoc.id, ...loanDoc.data()},
-                                  },
-                                );
-                                return;
-                              }
-
-                              if (!mounted) return;
-                              final selectedLoan = await showDialog<String>(
-                                context: parentContext,
-                                builder: (loanSelectContext) => AlertDialog(
-                                  title: Text('Select Loan to Disburse', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                                  content: SizedBox(
-                                    width: 400,
-                                    child: SingleChildScrollView(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            '${member['name']} has ${loansQuery.docs.length} approved loans',
-                                            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          ...loansQuery.docs.map((doc) {
-                                            final loan = doc.data();
-                                            final amount = ((loan['loanAmount'] ?? loan['amount'] ?? 0) as num).toInt();
-                                            final refNumber = loan['referenceNumber'] ?? doc.id;
-
-                                            return Card(
-                                              margin: const EdgeInsets.only(bottom: 8),
-                                              child: ListTile(
-                                                leading: Container(
-                                                  padding: const EdgeInsets.all(8),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.green.shade50,
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: Icon(Icons.check_circle, color: Colors.green.shade700, size: 20),
-                                                ),
-                                                title: Text('Loan $refNumber', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
-                                                subtitle: Text(
-                                                  'Amount: UGX ${_currencyFormat.format(amount)}\nStatus: Approved',
-                                                  style: GoogleFonts.inter(fontSize: 12),
-                                                ),
-                                                trailing: Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey.shade600),
-                                                onTap: () => Navigator.pop(loanSelectContext, doc.id),
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(loanSelectContext),
-                                      child: Text('Cancel', style: GoogleFonts.inter()),
-                                    ),
-                                  ],
-                                ),
-                              );
-
-                              if (selectedLoan != null && mounted) {
-                                final loanDoc = loansQuery.docs.firstWhere((doc) => doc.id == selectedLoan);
-                                final loanData = {'id': loanDoc.id, ...loanDoc.data()};
-                                
-                                // Use callback if available, otherwise push route
-                                if (widget.onLoanTap != null) {
-                                  widget.onLoanTap!(loanDoc.id, loanData);
-                                } else {
-                                  Navigator.pushNamed(
-                                    parentContext,
-                                    '/loan-details',
-                                    arguments: {
-                                      'loanId': loanDoc.id,
-                                      'initialLoanData': loanData,
-                                    },
-                                  );
-                                }
-                              }
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter()),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showApplyFeeDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Apply Fee - Feature available in next update', style: GoogleFonts.inter())),
-    );
-  }
-
-  void _showReverseFeeDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reverse Fee - Feature available in next update', style: GoogleFonts.inter())),
-    );
-  }
-
-  void _showLoanApplicationFeeDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Loan Application Fee - Feature available in next update', style: GoogleFonts.inter())),
-    );
-  }
-
-  void _showErrorCorrectionDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error Correction - Feature available in next update', style: GoogleFonts.inter())),
-    );
-  }
-
-  // ─── Fixed Deposit Dialog ─────────────────────────────────────────────────
-  void _showFixedDepositDialog() async {
-    final memberController = TextEditingController();
-    final amountController = TextEditingController();
-    final monthsController = TextEditingController(text: '12');
-    Map<String, dynamic>? selectedMember;
-    bool isSearching = false;
-    List<Map<String, dynamic>> searchResults = [];
-    DateTime maturityDate = DateTime.now().add(const Duration(days: 365));
-
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.cyan.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.account_balance_outlined, color: Colors.cyan.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Flexible(
-                child: Text('Create Fixed Deposit', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (query) async {
-                      if (query.length < 2) {
-                        setState(() {
-                          searchResults = [];
-                          isSearching = false;
-                        });
-                        return;
-                      }
-                      setState(() => isSearching = true);
-                      final results = await TellerService.searchMembers(query);
-                      setState(() {
-                        searchResults = results;
-                        isSearching = false;
-                      });
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty && selectedMember == null)
-                    ...searchResults.map((member) => ListTile(
-                          leading: const Icon(Icons.person),
-                          title: Text(member['name'] ?? 'Unknown'),
-                          subtitle: Text(member['phone'] ?? ''),
-                          onTap: () {
-                            setState(() {
-                              selectedMember = member;
-                              searchResults = [];
-                              memberController.text = member['name'] ?? '';
-                            });
-                          },
-                        )),
-                  if (selectedMember != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.cyan.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Selected Member:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.cyan.shade900)),
-                          Text(selectedMember!['name'] ?? ''),
-                          Text('Phone: ${selectedMember!['phone']}', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Deposit Amount (UGX)',
-                        prefixIcon: Icon(Icons.money),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: monthsController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Term (Months)',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        helperText: 'Interest: 10% per annum',
-                      ),
-                      onChanged: (value) {
-                        final months = int.tryParse(value) ?? 12;
-                        setState(() {
-                          maturityDate = DateTime.now().add(Duration(days: months * 30));
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Maturity Date: ${DateFormat('MMM dd, yyyy').format(maturityDate)}',
-                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            if (selectedMember != null)
-              ElevatedButton(
-                onPressed: () async {
-                  final amount = double.tryParse(amountController.text);
-                  final months = int.tryParse(monthsController.text) ?? 12;
-
-                  if (amount == null || amount <= 0) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      const SnackBar(content: Text('Please enter a valid amount')),
-                    );
-                    return;
-                  }
-
-                  Navigator.pop(context);
-
-                  // Show loading
-                  showDialog(
-                    context: parentContext,
-                    barrierDismissible: false,
-                    builder: (c) => _loadingCard('Creating fixed deposit...'),
-                  );
-
-                  try {
-                    await TellerService.createFixedDeposit(
-                      memberId: selectedMember!['id'],
-                      memberName: selectedMember!['name'],
-                      amount: amount,
-                      months: months,
-                    );
-
-                    if (parentContext.mounted) {
-                      Navigator.pop(parentContext); // Close loading
-                      ScaffoldMessenger.of(parentContext).showSnackBar(
-                        const SnackBar(
-                          content: Text('Fixed deposit created successfully'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    if (parentContext.mounted) {
-                      Navigator.pop(parentContext); // Close loading
-                      ScaffoldMessenger.of(parentContext).showSnackBar(
-                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-                      );
-                    }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyan.shade600,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Create Fixed Deposit'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─── Mature Fixed Deposit Dialog ──────────────────────────────────────────
-  void _showMatureFixedDepositDialog() async {
-    final memberController = TextEditingController();
-    Map<String, dynamic>? selectedMember;
-    List<Map<String, dynamic>> memberFixedDeposits = [];
-    Map<String, dynamic>? selectedDeposit;
-    bool isSearching = false;
-    bool isLoadingDeposits = false;
-    List<Map<String, dynamic>> searchResults = [];
-
-    final parentContext = context;
-
-    await showDialog(
-      context: parentContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.lightGreen.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.check_circle_outline, color: Colors.lightGreen.shade700, size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Flexible(
-                child: Text('Mature Fixed Deposit', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: memberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Member (Name or Phone)',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (query) async {
-                      if (query.length < 2) {
-                        setState(() {
-                          searchResults = [];
-                          isSearching = false;
-                        });
-                        return;
-                      }
-                      setState(() => isSearching = true);
-                      final results = await TellerService.searchMembers(query);
-                      setState(() {
-                        searchResults = results;
-                        isSearching = false;
-                      });
-                    },
-                  ),
-                  if (isSearching)
-                    const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  if (searchResults.isNotEmpty && selectedMember == null)
-                    ...searchResults.map((member) => ListTile(
-                          leading: const Icon(Icons.person),
-                          title: Text(member['name'] ?? 'Unknown'),
-                          subtitle: Text(member['phone'] ?? ''),
-                          onTap: () async {
-                            setState(() {
-                              selectedMember = member;
-                              searchResults = [];
-                              memberController.text = member['name'] ?? '';
-                              isLoadingDeposits = true;
-                            });
-
-                            // Load member's fixed deposits
-                            final deposits = await TellerService.getMemberFixedDeposits(member['id']);
-                            setState(() {
-                              memberFixedDeposits = deposits;
-                              isLoadingDeposits = false;
-                            });
-                          },
-                        )),
-                  if (selectedMember != null) ...[
-                    const SizedBox(height: 16),
-                    if (isLoadingDeposits)
-                      const Center(child: CircularProgressIndicator())
-                    else if (memberFixedDeposits.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text('No active fixed deposits found for this member.'),
-                      )
-                    else ...[
-                      const Text('Select Fixed Deposit to Mature:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      ...memberFixedDeposits.map((deposit) {
-                        final amount = (deposit['amount'] ?? 0).toDouble();
-                        final interest = (deposit['interestEarned'] ?? 0).toDouble();
-                        final maturityDate = deposit['maturityDate'] != null
-                            ? (deposit['maturityDate'] as Timestamp).toDate()
-                            : DateTime.now();
-                        final isMatured = DateTime.now().isAfter(maturityDate);
-
-                        return Card(
-                          color: selectedDeposit?['id'] == deposit['id']
-                              ? Colors.lightGreen.shade50
-                              : Colors.white,
-                          child: ListTile(
-                            leading: Icon(
-                              isMatured ? Icons.check_circle : Icons.schedule,
-                              color: isMatured ? Colors.green : Colors.orange,
-                            ),
-                            title: Text('UGX ${_currencyFormat.format(amount)}'),
-                            subtitle: Text(
-                              'Maturity: ${DateFormat('MMM dd, yyyy').format(maturityDate)}\n'
-                              'Interest: UGX ${_currencyFormat.format(interest)}',
-                            ),
-                            trailing: Text(
-                              isMatured ? 'Matured' : 'Pending',
-                              style: TextStyle(
-                                color: isMatured ? Colors.green : Colors.orange,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            onTap: () {
-                              setState(() => selectedDeposit = deposit);
-                            },
-                          ),
-                        );
-                      }),
-                    ],
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            if (selectedDeposit != null)
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-
-                  // Show loading
-                  showDialog(
-                    context: parentContext,
-                    barrierDismissible: false,
-                    builder: (c) => _loadingCard('Maturing fixed deposit...'),
-                  );
-
-                  try {
-                    await TellerService.matureFixedDeposit(
-                      fixedDepositId: selectedDeposit!['id'],
-                      tellerId: FirebaseService.sessionUid,
-                      tellerName: FirebaseService.sessionProfile?['name'] as String? ?? 
-                                  FirebaseService.sessionProfile?['fullName'] as String? ?? 'Teller',
-                    );
-
-                    if (parentContext.mounted) {
-                      Navigator.pop(parentContext); // Close loading
-                      ScaffoldMessenger.of(parentContext).showSnackBar(
-                        const SnackBar(
-                          content: Text('Fixed deposit matured successfully'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    if (parentContext.mounted) {
-                      Navigator.pop(parentContext); // Close loading
-                      ScaffoldMessenger.of(parentContext).showSnackBar(
-                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-                      );
-                    }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.lightGreen.shade600,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Mature Deposit'),
-              ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }
 
-  // Bank-style transaction alert dialog
-  void _showTransactionAlertDialog({
-    required BuildContext context,
-    required String type,
-    required int amount,
-    required String memberName,
-    required String accountNumber,
-    required String accountType,
-    required String receiptNumber,
-  }) {
-    // Get last 3 digits of account number
-    final accountLast3 = accountNumber.length >= 3 
-        ? accountNumber.substring(accountNumber.length - 3) 
-        : accountNumber;
-    
-    final accountTypeText = accountType == 'savings' ? 'Savings' : 'Shares';
-    final isDeposit = type == 'Deposit';
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Success icon
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.check_circle,
-                  color: Colors.green.shade600,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Transaction type
-              Text(
-                '$type Successful',
-                style: GoogleFonts.inter(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 24),
-              
-              // Transaction details - Bank style
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  children: [
-                    _buildAlertDetailRow('Amount', 'UGX ${NumberFormat('#,###', 'en_US').format(amount)}', bold: true),
-                    const Divider(height: 20),
-                    _buildAlertDetailRow('Account', '$accountTypeText A/C ending xxx$accountLast3'),
-                    const Divider(height: 20),
-                    _buildAlertDetailRow('Member', memberName),
-                    const Divider(height: 20),
-                    _buildAlertDetailRow('Receipt No.', receiptNumber),
-                    const Divider(height: 20),
-                    _buildAlertDetailRow('Date', DateFormat('dd MMM yyyy, HH:mm').format(DateTime.now())),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              
-              // Message
-              Text(
-                isDeposit 
-                    ? 'Your deposit has been processed successfully.'
-                    : 'Your withdrawal has been processed successfully.',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: Colors.grey.shade600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              
-              // Close button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    'Done',
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+// ═══════════════════════════════════════════════════════════════════════════════
+// CASH DEPOSIT / WITHDRAWAL DIALOG  (form -> confirm, all in one dialog)
+// ═══════════════════════════════════════════════════════════════════════════════
+class _CashTxnDialog extends StatefulWidget {
+  final bool isDeposit;
+  final String accountType;
+  final String title;
+  final int tillCash;
+
+  const _CashTxnDialog({
+    required this.isDeposit,
+    required this.accountType,
+    required this.title,
+    required this.tillCash,
+  });
+
+  @override
+  State<_CashTxnDialog> createState() => _CashTxnDialogState();
+}
+
+class _CashTxnDialogState extends State<_CashTxnDialog> {
+  final _amountCtrl = TextEditingController();
+  Map<String, dynamic>? _member;
+  String? _error;
+  bool _confirm = false;
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  Color get _color => widget.isDeposit ? TC.green : TC.red;
+  String get _label => _pretty(widget.accountType);
+  int get _amount => int.tryParse(_amountCtrl.text.trim()) ?? 0;
+
+  int _balance(Map<String, dynamic> m) {
+    final v = widget.accountType == 'shares'
+        ? (m['sharesBalance'] ?? m['sharesValue'] ?? 0)
+        : (m['${widget.accountType}Balance'] ?? 0);
+    return (v as num).toInt();
+  }
+
+  void _continue() {
+    final a = _amount;
+    if (a <= 0) {
+      setState(() => _error = 'Enter an amount greater than zero');
+      return;
+    }
+    if (!widget.isDeposit) {
+      final bal = _balance(_member!);
+      if (a > bal) {
+        setState(() => _error = 'Insufficient balance. Available ${ugx(bal)}');
+        return;
+      }
+      if (a > widget.tillCash) {
+        setState(() => _error = 'Not enough cash in till. Available ${ugx(widget.tillCash)}');
+        return;
+      }
+    }
+    setState(() => _confirm = true);
+  }
+
+  Widget _memberCard(Map<String, dynamic> m) {
+    final name = (m['name'] ?? 'Unknown').toString();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _color.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: _color.withOpacity(0.12),
+            child: Text(name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: ts(14, w: FontWeight.w700, c: _color)),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(13.5, w: FontWeight.w700, c: TC.navy)),
+                Text((m['phone'] ?? '').toString(), style: ts(11.5, c: TC.muted)),
+                const SizedBox(height: 2),
+                Text('$_label balance: ${ugx(_balance(m))}', style: ts(11.5, w: FontWeight.w600, c: TC.text)),
+              ],
+            ),
+          ),
+          if (!_confirm)
+            TextButton(
+              onPressed: () => setState(() {
+                _member = null;
+                _amountCtrl.clear();
+                _error = null;
+              }),
+              child: const Text('Change'),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildAlertDetailRow(String label, String value, {bool bold = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _formBody() {
+    if (_member == null) {
+      return _MemberSearch(
+        autofocus: true,
+        trailingBuilder: (m) => '$_label: ${money(_balance(m))}',
+        onSelected: (m) => setState(() => _member = m),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: Colors.grey.shade600,
-          ),
+        _memberCard(_member!),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _amountCtrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: fieldDeco('Amount', prefix: 'UGX ', error: _error),
+          onChanged: (_) => setState(() => _error = null),
         ),
-        Flexible(
-          child: Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: bold ? FontWeight.bold : FontWeight.w600,
-              color: Colors.black87,
-            ),
-            textAlign: TextAlign.right,
-            overflow: TextOverflow.ellipsis,
+        if (!widget.isDeposit)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text('Cash available in till: ${ugx(widget.tillCash)}', style: ts(11.5, c: TC.muted)),
+          ),
+      ],
+    );
+  }
+
+  Widget _confirmBody() {
+    final m = _member!;
+    final bal = _balance(m);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Please confirm this ${widget.title.toLowerCase()}.', style: ts(13, c: TC.muted)),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: TC.border),
+          ),
+          child: Column(
+            children: [
+              _kv('Member', (m['name'] ?? '').toString()),
+              _kv('Phone', (m['phone'] ?? '').toString()),
+              _kv('Account', _label),
+              const Divider(height: 12),
+              _kv(widget.isDeposit ? 'Deposit amount' : 'Withdrawal amount', ugx(_amount),
+                  c: _color, bold: true),
+              if (!widget.isDeposit) _kv('New balance', ugx(bal - _amount), c: TC.green),
+            ],
           ),
         ),
       ],
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+      insetPadding: _dlgInset,
+      title: dialogTitle(
+        widget.isDeposit ? Icons.add_circle_outline : Icons.remove_circle_outline,
+        _color,
+        _confirm ? 'Confirm ${widget.title.toLowerCase()}' : widget.title,
+      ),
+      content: SizedBox(
+        width: _dialogWidth(context, 460),
+        child: SingleChildScrollView(child: _confirm ? _confirmBody() : _formBody()),
+      ),
+      actions: _confirm
+          ? [
+              TextButton(onPressed: () => setState(() => _confirm = false), child: const Text('Back')),
+              ElevatedButton(
+                style: primaryButton(_color),
+                onPressed: () => Navigator.pop(context, {'member': _member, 'amount': _amount}),
+                child: Text(widget.isDeposit ? 'Confirm & process' : 'Confirm & withdraw'),
+              ),
+            ]
+          : [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              ElevatedButton(
+                style: primaryButton(_color),
+                onPressed: _member == null ? null : _continue,
+                child: const Text('Continue'),
+              ),
+            ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIXED DEPOSIT FORM
+// ═══════════════════════════════════════════════════════════════════════════════
+class _FixedDepositForm extends StatefulWidget {
+  final Map<String, dynamic> member;
+  const _FixedDepositForm({required this.member});
+
+  @override
+  State<_FixedDepositForm> createState() => _FixedDepositFormState();
+}
+
+class _FixedDepositFormState extends State<_FixedDepositForm> {
+  final _amountCtrl = TextEditingController();
+  final _monthsCtrl = TextEditingController(text: '12');
+  String? _error;
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _monthsCtrl.dispose();
+    super.dispose();
+  }
+
+  int get _months => int.tryParse(_monthsCtrl.text.trim()) ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.member;
+    final savings = ((m['savingsBalance'] ?? 0) as num).toInt();
+    final maturity = DateTime.now().add(Duration(days: (_months > 0 ? _months : 12) * 30));
+
+    return AlertDialog(
+      shape: _dlgShape,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+      insetPadding: _dlgInset,
+      title: dialogTitle(Icons.account_balance_outlined, _cyan, 'Create fixed deposit'),
+      content: SizedBox(
+        width: _dialogWidth(context, 460),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _cyan.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _cyan.withOpacity(0.25)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text((m['name'] ?? '').toString(), style: ts(13.5, w: FontWeight.w700, c: TC.navy)),
+                    Text((m['phone'] ?? '').toString(), style: ts(11.5, c: TC.muted)),
+                    const SizedBox(height: 2),
+                    Text('Savings balance: ${ugx(savings)}', style: ts(11.5, w: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _amountCtrl,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: fieldDeco('Deposit amount', prefix: 'UGX ', error: _error,
+                    helper: 'Funded from the member\'s savings'),
+                onChanged: (_) => setState(() => _error = null),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _monthsCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: fieldDeco('Term (months)', helper: 'Interest: 10% per annum'),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 10),
+              Text('Maturity date: ${DateFormat('MMM dd, yyyy').format(maturity)}',
+                  style: ts(12.5, w: FontWeight.w600, c: TC.muted)),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ElevatedButton(
+          style: primaryButton(_cyan),
+          onPressed: () {
+            final amount = int.tryParse(_amountCtrl.text.trim()) ?? 0;
+            if (amount <= 0) {
+              setState(() => _error = 'Enter an amount greater than zero');
+              return;
+            }
+            if (amount > savings) {
+              setState(() => _error = 'Exceeds savings balance (${ugx(savings)})');
+              return;
+            }
+            if (_months <= 0) {
+              setState(() => _error = 'Enter a valid term in months');
+              return;
+            }
+            Navigator.pop(context, {'amount': amount, 'months': _months});
+          },
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
+}

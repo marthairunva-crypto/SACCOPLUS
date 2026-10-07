@@ -145,7 +145,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
       // TELLER CENTER
       case 'teller':
-        return TellerCenterReorganized(onLoanTap: _openLoan);
+        return TellerCenterReorganized(
+          onLoanTap: _openLoan,
+          onNavigate: (screen) => setState(() => _selectedScreen = screen),
+        );
       case 'till_management':
         return const TillManagementScreen(embedded: true);
       case 'till_reports':
