@@ -211,6 +211,7 @@ class _LoanDataCorrectionScreenEnhancedState extends State<LoanDataCorrectionScr
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 800),
         child: _LoanEditForm(
+          key: ValueKey(_selectedLoanId), // Force rebuild when loan changes!
           loan: loan,
           onSave: () => _loadLoans(),
         ),
@@ -223,7 +224,7 @@ class _LoanEditForm extends StatefulWidget {
   final Map<String, dynamic> loan;
   final VoidCallback onSave;
 
-  const _LoanEditForm({required this.loan, required this.onSave});
+  const _LoanEditForm({Key? key, required this.loan, required this.onSave}) : super(key: key);
 
   @override
   State<_LoanEditForm> createState() => _LoanEditFormState();
