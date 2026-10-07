@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -6,23 +9,95 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../services/audit_service.dart';
 
-/// Comprehensive Loan Data Correction Screen
-/// Allows editing ALL loan fields including interest rate, principal, tenure, etc.
+// ─────────────────────────────────────────────────────────────────────────────
+// Design tokens
+// ─────────────────────────────────────────────────────────────────────────────
+const _primary = Color(0xFF1E3A8A);
+const _bg = Color(0xFFF1F5F9);
+const _border = Color(0xFFE2E8F0);
+const _ink = Color(0xFF0F172A);
+const _muted = Color(0xFF64748B);
+const _selectedTint = Color(0xFFEFF6FF);
+
+final _numFmt = NumberFormat('#,###', 'en_US');
+String _money(num v) => 'UGX ${_numFmt.format(v.round())}';
+
+Color _statusColor(String status) {
+  switch (status.toLowerCase()) {
+    case 'active':
+    case 'disbursed':
+      return const Color(0xFF16A34A);
+    case 'overdue':
+      return const Color(0xFFDC2626);
+    case 'paid':
+      return const Color(0xFF0D9488);
+    case 'approved':
+      return const Color(0xFF2563EB);
+    default:
+      return const Color(0xFFEA580C);
+  }
+}
+
+String _initials(String name) {
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first[0].toUpperCase();
+  return (parts.first[0] + parts[1][0]).toUpperCase();
+}
+
+/// Lays children out in equal-width columns that adapt to the available width.
+Widget _grid(
+  List<Widget> children, {
+  double minItemWidth = 260,
+  int maxCols = 2,
+  double gap = 16,
+}) {
+  return LayoutBuilder(builder: (context, cons) {
+    final cols = math
+        .max(1, ((cons.maxWidth + gap) / (minItemWidth + gap)).floor())
+        .clamp(1, maxCols);
+    final w = (cons.maxWidth - gap * (cols - 1)) / cols;
+    return Wrap(
+      spacing: gap,
+      runSpacing: gap,
+      children: [for (final c in children) SizedBox(width: w, child: c)],
+    );
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Loan Data Correction screen: master-detail on wide screens,
+/// list → detail navigation on narrow screens.
 class LoanDataCorrectionScreenEnhanced extends StatefulWidget {
   const LoanDataCorrectionScreenEnhanced({super.key});
 
   @override
-  State<LoanDataCorrectionScreenEnhanced> createState() => _LoanDataCorrectionScreenEnhancedState();
+  State<LoanDataCorrectionScreenEnhanced> createState() =>
+      _LoanDataCorrectionScreenEnhancedState();
 }
 
-class _LoanDataCorrectionScreenEnhancedState extends State<LoanDataCorrectionScreenEnhanced> {
+class _LoanDataCorrectionScreenEnhancedState
+    extends State<LoanDataCorrectionScreenEnhanced> {
+  static const _statusFilters = [
+    'All',
+    'Overdue',
+    'Disbursed',
+    'Approved',
+    'Paid',
+    'Pending',
+  ];
+
   final _db = FirebaseFirestore.instance;
-  final _currencyFormat = NumberFormat('#,###', 'en_US');
   final _searchController = TextEditingController();
-  List<Map<String, dynamic>>? _loans;
-  List<Map<String, dynamic>>? _filteredLoans;
+  List<Map<String, dynamic>> _loans = [];
+  List<Map<String, dynamic>> _filteredLoans = [];
   bool _isLoading = true;
   String? _selectedLoanId;
+  String _statusFilter = 'All';
 
   @override
   void initState() {
@@ -30,8 +105,14 @@ class _LoanDataCorrectionScreenEnhancedState extends State<LoanDataCorrectionScr
     _loadLoans();
   }
 
-  Future<void> _loadLoans() async {
-    setState(() => _isLoading = true);
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLoans({bool silent = false}) async {
+    if (!silent) setState(() => _isLoading = true);
 
     try {
       final snapshot = await _db
@@ -42,24 +123,29 @@ class _LoanDataCorrectionScreenEnhancedState extends State<LoanDataCorrectionScr
       final newLoans = snapshot.docs.map((doc) {
         final data = doc.data();
         return <String, dynamic>{
-          'id': doc.id,
-          'memberName': data['memberName'] ?? 'N/A',
-          'accountNumber': data['accountNumber'] ?? 'N/A',
-          'status': data['status'] ?? 'N/A',
-          'loanAmount': (data['loanAmount'] ?? data['amount'] ?? 0).toDouble(),
-          'interestRate': (data['interestRate'] ?? 0).toDouble(),
-          'principalOutstanding': (data['principalOutstanding'] ?? 0).toDouble(),
+          // Raw data first, normalised values after so defaults always win.
           ...data,
+          'id': doc.id,
+          'memberName': (data['memberName'] ?? 'N/A').toString(),
+          'accountNumber': (data['accountNumber'] ?? 'N/A').toString(),
+          'status': (data['status'] ?? 'N/A').toString(),
+          'loanAmount': ((data['loanAmount'] ?? data['amount'] ?? 0) as num)
+              .toDouble(),
+          'interestRate': ((data['interestRate'] ?? 0) as num).toDouble(),
+          'principalOutstanding':
+              ((data['principalOutstanding'] ?? 0) as num).toDouble(),
         };
       }).toList();
 
+      if (!mounted) return;
       setState(() {
         _loans = newLoans;
-        _filteredLoans = List.from(newLoans);
         _isLoading = false;
       });
+      _applyFilters();
     } catch (e) {
       debugPrint('❌ Error loading loans: $e');
+      if (!mounted) return;
       setState(() {
         _loans = [];
         _filteredLoans = [];
@@ -68,83 +154,190 @@ class _LoanDataCorrectionScreenEnhancedState extends State<LoanDataCorrectionScr
     }
   }
 
-  void _filterLoans(String query) {
-    if (_loans == null) return;
+  void _applyFilters() {
+    final q = _searchController.text.trim().toLowerCase();
     setState(() {
-      if (query.isEmpty) {
-        _filteredLoans = List.from(_loans!);
-      } else {
-        final q = query.toLowerCase();
-        _filteredLoans = _loans!.where((loan) {
-          return loan['memberName'].toString().toLowerCase().contains(q) ||
-              loan['accountNumber'].toString().toLowerCase().contains(q);
-        }).toList();
-      }
+      _filteredLoans = _loans.where((loan) {
+        final matchesStatus = _statusFilter == 'All' ||
+            loan['status'].toString().toLowerCase() ==
+                _statusFilter.toLowerCase();
+        final matchesQuery = q.isEmpty ||
+            loan['memberName'].toString().toLowerCase().contains(q) ||
+            loan['accountNumber'].toString().toLowerCase().contains(q);
+        return matchesStatus && matchesQuery;
+      }).toList();
     });
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFF1E3A8A),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.edit_note_rounded, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 12),
-            const Text('Loan Data Correction'),
-          ],
-        ),
-      ),
-      body: Row(
-        children: [
-          // Left sidebar - loan list
-          SizedBox(
-            width: 400,
-            child: Column(
-              children: [
-                _buildSearchBar(),
-                Expanded(child: _buildLoanList()),
-              ],
-            ),
-          ),
-          const VerticalDivider(width: 1),
-          // Right panel - edit form
-          Expanded(
-            child: _selectedLoanId == null
-                ? _buildEmptyState()
-                : _buildEditForm(),
-          ),
-        ],
+  ThemeData _theme(BuildContext context) {
+    final base = Theme.of(context);
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: c, width: w),
+        );
+    return base.copyWith(
+      scaffoldBackgroundColor: _bg,
+      colorScheme: base.colorScheme.copyWith(primary: _primary),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: border(_border),
+        enabledBorder: border(_border),
+        disabledBorder: border(_border),
+        focusedBorder: border(_primary, 1.6),
+        errorBorder: border(const Color(0xFFDC2626)),
+        focusedErrorBorder: border(const Color(0xFFDC2626), 1.6),
+        labelStyle: GoogleFonts.inter(fontSize: 14, color: _muted),
+        floatingLabelStyle: GoogleFonts.inter(
+            fontSize: 14, color: _primary, fontWeight: FontWeight.w500),
+        hintStyle: GoogleFonts.inter(fontSize: 14, color: _muted),
       ),
     );
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search loans...',
-          prefixIcon: const Icon(Icons.search),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: _theme(context),
+      child: Scaffold(
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: _primary,
+          foregroundColor: Colors.white,
+          iconTheme: const IconThemeData(color: Colors.white),
+          titleSpacing: 16,
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.edit_note_rounded,
+                    color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'Loan Data Correction',
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        onChanged: _filterLoans,
+        body: LayoutBuilder(builder: (context, cons) {
+          final wide = cons.maxWidth >= 900;
+          if (wide) {
+            final listWidth = cons.maxWidth >= 1300 ? 400.0 : 340.0;
+            return Row(
+              children: [
+                SizedBox(width: listWidth, child: _buildListPane()),
+                const VerticalDivider(width: 1, color: _border),
+                Expanded(
+                  child: _selectedLoanId == null
+                      ? _buildEmptyState()
+                      : _buildEditForm(showBack: false),
+                ),
+              ],
+            );
+          }
+
+          // Narrow: show either the list or the form.
+          return PopScope(
+            canPop: _selectedLoanId == null,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) setState(() => _selectedLoanId = null);
+            },
+            child: _selectedLoanId == null
+                ? _buildListPane()
+                : _buildEditForm(showBack: true),
+          );
+        }),
+      ),
+    );
+  }
+
+  // ── List pane ──────────────────────────────────────────────────────────────
+
+  Widget _buildListPane() {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (_) => _applyFilters(),
+              decoration: InputDecoration(
+                hintText: 'Search by name or account',
+                prefixIcon: const Icon(Icons.search, color: _muted),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          _applyFilters();
+                        },
+                      ),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: _statusFilters.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final f = _statusFilters[i];
+                final selected = f == _statusFilter;
+                return Center(
+                  child: ChoiceChip(
+                    label: Text(f),
+                    selected: selected,
+                    showCheckmark: false,
+                    labelStyle: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : _muted,
+                    ),
+                    selectedColor: _primary,
+                    backgroundColor: _bg,
+                    side: BorderSide.none,
+                    onSelected: (_) {
+                      _statusFilter = f;
+                      _applyFilters();
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${_filteredLoans.length} ${_filteredLoans.length == 1 ? 'loan' : 'loans'}',
+                style: GoogleFonts.inter(fontSize: 12, color: _muted),
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: _border),
+          Expanded(child: _buildLoanList()),
+        ],
       ),
     );
   }
@@ -153,78 +346,158 @@ class _LoanDataCorrectionScreenEnhancedState extends State<LoanDataCorrectionScr
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    if (_filteredLoans == null || _filteredLoans!.isEmpty) {
-      return const Center(child: Text('No loans found'));
+    if (_filteredLoans.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off, size: 40, color: Colors.grey.shade400),
+              const SizedBox(height: 8),
+              Text('No loans match your search',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(color: _muted)),
+            ],
+          ),
+        ),
+      );
     }
 
     return ListView.builder(
-      itemCount: _filteredLoans!.length,
+      itemCount: _filteredLoans.length,
       itemBuilder: (context, index) {
-        final loan = _filteredLoans![index];
+        final loan = _filteredLoans[index];
         final isSelected = loan['id'] == _selectedLoanId;
-        
-        return ListTile(
-          selected: isSelected,
-          selectedTileColor: Colors.blue.shade50,
-          title: Text(
-            loan['memberName'],
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        final name = loan['memberName'].toString();
+        final status = loan['status'].toString();
+
+        return Material(
+          color: isSelected ? _selectedTint : Colors.white,
+          child: InkWell(
+            onTap: () => setState(() => _selectedLoanId = loan['id']),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(
+                      color: isSelected ? _primary : Colors.transparent,
+                      width: 3),
+                  bottom: const BorderSide(color: _border),
+                ),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: _primary.withOpacity(0.1),
+                    child: Text(
+                      _initials(name),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: _primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: _ink,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _money(loan['loanAmount'] as num),
+                          style:
+                              GoogleFonts.inter(fontSize: 12, color: _muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _StatusChip(status: status, compact: true),
+                ],
+              ),
+            ),
           ),
-          subtitle: Text(
-            'UGX ${_currencyFormat.format(loan['loanAmount'].round())} • ${loan['status']}',
-            style: GoogleFonts.inter(fontSize: 12),
-          ),
-          trailing: Icon(
-            Icons.chevron_right,
-            color: isSelected ? Colors.blue : Colors.grey,
-          ),
-          onTap: () {
-            setState(() => _selectedLoanId = loan['id']);
-          },
         );
       },
     );
   }
 
+  // ── Detail pane ────────────────────────────────────────────────────────────
+
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.edit_note, size: 80, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          Text(
-            'Select a loan to edit',
-            style: GoogleFonts.inter(fontSize: 18, color: Colors.grey.shade600),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEditForm() {
-    final loan = _loans!.firstWhere((l) => l['id'] == _selectedLoanId);
-    
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 800),
-        child: _LoanEditForm(
-          key: ValueKey(_selectedLoanId), // Force rebuild when loan changes!
-          loan: loan,
-          onSave: () => _loadLoans(),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: _border),
+              ),
+              child: Icon(Icons.edit_note_rounded,
+                  size: 48, color: Colors.grey.shade400),
+            ),
+            const SizedBox(height: 16),
+            Text('Select a loan to correct',
+                style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: _ink)),
+            const SizedBox(height: 4),
+            Text('Pick a loan from the list to review and edit its details.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 14, color: _muted)),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildEditForm({required bool showBack}) {
+    final index = _loans.indexWhere((l) => l['id'] == _selectedLoanId);
+    if (index == -1) return _buildEmptyState();
+
+    return _LoanEditForm(
+      key: ValueKey(_selectedLoanId), // Rebuild when the loan changes
+      loan: _loans[index],
+      onBack: showBack ? () => setState(() => _selectedLoanId = null) : null,
+      onSave: () => _loadLoans(silent: true),
+    );
+  }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Edit form
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _LoanEditForm extends StatefulWidget {
   final Map<String, dynamic> loan;
   final VoidCallback onSave;
+  final VoidCallback? onBack;
 
-  const _LoanEditForm({Key? key, required this.loan, required this.onSave}) : super(key: key);
+  const _LoanEditForm({
+    super.key,
+    required this.loan,
+    required this.onSave,
+    this.onBack,
+  });
 
   @override
   State<_LoanEditForm> createState() => _LoanEditFormState();
@@ -233,138 +506,196 @@ class _LoanEditForm extends StatefulWidget {
 class _LoanEditFormState extends State<_LoanEditForm> {
   final _formKey = GlobalKey<FormState>();
   final _db = FirebaseFirestore.instance;
-  late TextEditingController _loanAmountCtrl;
-  late TextEditingController _interestRateCtrl;
-  late TextEditingController _tenureCtrl;
-  late TextEditingController _installmentCtrl;
-  late TextEditingController _principalOutCtrl;
-  late TextEditingController _interestOutCtrl;
-  late TextEditingController _arrearsCtrl;
-  late TextEditingController _loanTypeCtrl;
+
+  final _loanAmountCtrl = TextEditingController();
+  final _interestRateCtrl = TextEditingController();
+  final _tenureCtrl = TextEditingController();
+  final _installmentCtrl = TextEditingController();
+  final _principalOutCtrl = TextEditingController();
+  final _interestOutCtrl = TextEditingController();
+  final _arrearsCtrl = TextEditingController();
+  final _loanTypeCtrl = TextEditingController();
+
   DateTime? _disbursementDate;
   String _interestMethod = 'flat'; // flat, declining, simple
   bool _isSaving = false;
+  bool _suppressListeners = false;
+
+  List<TextEditingController> get _all => [
+        _loanAmountCtrl,
+        _interestRateCtrl,
+        _tenureCtrl,
+        _installmentCtrl,
+        _principalOutCtrl,
+        _interestOutCtrl,
+        _arrearsCtrl,
+        _loanTypeCtrl,
+      ];
 
   @override
   void initState() {
     super.initState();
-    _initializeControllers();
-    _setupCalculationListeners();
-  }
-
-  void _initializeControllers() {
-    final loan = widget.loan;
-    _loanAmountCtrl = TextEditingController(
-      text: (loan['loanAmount'] ?? loan['amount'] ?? 0).toString(),
-    );
-    _interestRateCtrl = TextEditingController(
-      text: (loan['interestRate'] ?? 0).toString(),
-    );
-    _tenureCtrl = TextEditingController(
-      text: (loan['tenure'] ?? loan['loanTenure'] ?? 0).toString(),
-    );
-    _installmentCtrl = TextEditingController(
-      text: (loan['installment'] ?? loan['monthlyInstallment'] ?? 0).toString(),
-    );
-    _principalOutCtrl = TextEditingController(
-      text: (loan['principalOutstanding'] ?? 0).toString(),
-    );
-    _interestOutCtrl = TextEditingController(
-      text: (loan['interestOutstanding'] ?? 0).toString(),
-    );
-    _arrearsCtrl = TextEditingController(
-      text: (loan['arrears'] ?? 0).toString(),
-    );
-    _loanTypeCtrl = TextEditingController(
-      text: loan['loanType'] ?? loan['loanProduct'] ?? '',
-    );
-    
-    // Get interest method
-    _interestMethod = loan['interestMethod'] ?? 'flat';
-
-    // Parse disbursement date
-    final disbDate = loan['disbursementDate'] ?? loan['disbursedAt'];
-    if (disbDate != null && disbDate is Timestamp) {
-      _disbursementDate = disbDate.toDate();
+    _populate();
+    // Rebuild live summaries on any change.
+    for (final c in _all) {
+      c.addListener(_onAnyChanged);
     }
-  }
-
-  void _setupCalculationListeners() {
-    // Auto-calculate installment when amount, rate, or tenure changes
+    // Auto-calculate installment when amount, rate, or tenure changes.
     _loanAmountCtrl.addListener(_calculateInstallment);
     _interestRateCtrl.addListener(_calculateInstallment);
     _tenureCtrl.addListener(_calculateInstallment);
   }
 
-  void _calculateInstallment() {
-    try {
-      final principal = double.tryParse(_loanAmountCtrl.text) ?? 0;
-      final ratePercent = double.tryParse(_interestRateCtrl.text) ?? 0;
-      final months = int.tryParse(_tenureCtrl.text) ?? 0;
-
-      if (principal > 0 && months > 0) {
-        double totalInterest = 0;
-        
-        // Calculate based on selected method
-        if (_interestMethod == 'flat' || _interestMethod == 'simple') {
-          // Flat rate: Interest on full principal for entire tenure
-          totalInterest = principal * (ratePercent / 100) * months;
-        } else if (_interestMethod == 'declining') {
-          // Declining balance would need more complex calculation
-          // For now, default to flat rate
-          totalInterest = principal * (ratePercent / 100) * months;
-        }
-        
-        // Calculate monthly installment
-        final totalLoan = principal + totalInterest;
-        final installment = totalLoan / months;
-
-        // Update installment field
-        if (installment.isFinite && installment > 0) {
-          _installmentCtrl.text = installment.toStringAsFixed(0);
-        }
-      }
-    } catch (e) {
-      // Ignore calculation errors while typing
+  @override
+  void didUpdateWidget(_LoanEditForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the loan ID changed or the loan data was updated, repopulate the form
+    if (oldWidget.loan['id'] != widget.loan['id'] ||
+        oldWidget.loan['loanAmount'] != widget.loan['loanAmount'] ||
+        oldWidget.loan['principalOutstanding'] !=
+            widget.loan['principalOutstanding']) {
+      _populate();
     }
   }
 
   @override
   void dispose() {
-    _loanAmountCtrl.dispose();
-    _interestRateCtrl.dispose();
-    _tenureCtrl.dispose();
-    _installmentCtrl.dispose();
-    _principalOutCtrl.dispose();
-    _interestOutCtrl.dispose();
-    _arrearsCtrl.dispose();
-    _loanTypeCtrl.dispose();
+    for (final c in _all) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  void _onAnyChanged() {
+    if (_suppressListeners || !mounted) return;
+    setState(() {});
+  }
+
+  /// Fills the controllers from the loan. Also used by Reset.
+  void _populate() {
+    _suppressListeners = true;
+    final loan = widget.loan;
+
+    String num0(dynamic v) {
+      if (v == null) return '0';
+      if (v is num && v == v.roundToDouble()) return v.toInt().toString();
+      return v.toString();
+    }
+
+    _loanAmountCtrl.text = num0(loan['loanAmount'] ?? loan['amount']);
+    _interestRateCtrl.text = num0(loan['interestRate']);
+    _tenureCtrl.text = num0(loan['tenure'] ?? loan['loanTenure']);
+    _installmentCtrl.text =
+        num0(loan['installment'] ?? loan['monthlyInstallment']);
+    _principalOutCtrl.text = num0(loan['principalOutstanding']);
+    _interestOutCtrl.text = num0(loan['interestOutstanding']);
+    _arrearsCtrl.text = num0(loan['arrears']);
+    _loanTypeCtrl.text = (loan['loanType'] ?? loan['loanProduct'] ?? '').toString();
+
+    _interestMethod = (loan['interestMethod'] ?? 'flat').toString();
+    if (!['flat', 'declining', 'simple'].contains(_interestMethod)) {
+      _interestMethod = 'flat';
+    }
+
+    final disbDate = loan['disbursementDate'] ?? loan['disbursedAt'];
+    _disbursementDate = disbDate is Timestamp ? disbDate.toDate() : null;
+    _suppressListeners = false;
+  }
+
+  void _reset() {
+    setState(() {
+      _populate();
+      _formKey.currentState?.reset();
+    });
+  }
+
+  // ── Calculations ───────────────────────────────────────────────────────────
+
+  double _num(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
+
+  double _computeTotalInterest() {
+    final principal = _num(_loanAmountCtrl);
+    final rate = _num(_interestRateCtrl) / 100; // rate is per month
+    final months = int.tryParse(_tenureCtrl.text.trim()) ?? 0;
+    if (principal <= 0 || months <= 0 || rate <= 0) return 0;
+
+    if (_interestMethod == 'declining') {
+      // Reducing-balance EMI: total interest = EMI × n − principal
+      final f = math.pow(1 + rate, months).toDouble();
+      final emi = principal * rate * f / (f - 1);
+      return emi * months - principal;
+    }
+    // Flat / simple: interest on the full principal for the whole tenure
+    return principal * rate * months;
+  }
+
+  void _calculateInstallment() {
+    if (_suppressListeners) return;
+    final principal = _num(_loanAmountCtrl);
+    final months = int.tryParse(_tenureCtrl.text.trim()) ?? 0;
+    if (principal <= 0 || months <= 0) return;
+
+    final installment = (principal + _computeTotalInterest()) / months;
+    if (installment.isFinite && installment > 0) {
+      _installmentCtrl.text = installment.toStringAsFixed(0);
+    }
+  }
+
+  DateTime? get _dueDate {
+    final months = int.tryParse(_tenureCtrl.text.trim());
+    final d = _disbursementDate;
+    if (d == null || months == null) return null;
+    return DateTime(d.year, d.month + months, d.day);
+  }
+
+  // ── Save ───────────────────────────────────────────────────────────────────
+
+  Future<bool> _confirmSave() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Save changes?',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        content: Text(
+          'You are about to update the loan for ${widget.loan['memberName']}. '
+          'This changes financial reports and is recorded in the audit trail.',
+          style: GoogleFonts.inter(fontSize: 14, color: _muted),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save changes')),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<void> _saveLoan() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!await _confirmSave()) return;
 
     setState(() => _isSaving = true);
 
     try {
-      final loanAmount = double.parse(_loanAmountCtrl.text);
-      final interestRate = double.parse(_interestRateCtrl.text);
-      final tenure = int.parse(_tenureCtrl.text);
-      final installment = double.parse(_installmentCtrl.text);
-      final principalOut = double.parse(_principalOutCtrl.text);
-      final interestOut = double.parse(_interestOutCtrl.text);
-      final arrears = double.parse(_arrearsCtrl.text);
-      
-      // Calculate total interest (rate is per period, not annual)
-      final totalInterest = loanAmount * (interestRate / 100) * tenure;
-      
-      // Calculate paid amounts
+      final loanAmount = double.parse(_loanAmountCtrl.text.trim());
+      final interestRate = double.parse(_interestRateCtrl.text.trim());
+      final tenure = int.parse(_tenureCtrl.text.trim());
+      final installment = double.parse(_installmentCtrl.text.trim());
+      final principalOut = double.parse(_principalOutCtrl.text.trim());
+      final interestOut = double.parse(_interestOutCtrl.text.trim());
+      final arrears = double.parse(_arrearsCtrl.text.trim());
+
+      final totalInterest = _computeTotalInterest();
       final principalPaid = loanAmount - principalOut;
       final interestPaid = totalInterest - interestOut;
       final totalOut = principalOut + interestOut;
 
-      final updateData = {
+      final updateData = <String, dynamic>{
         'loanAmount': loanAmount,
         'amount': loanAmount,
         'interestRate': interestRate,
@@ -383,7 +714,8 @@ class _LoanEditFormState extends State<_LoanEditForm> {
         'interestOriginalBalance': totalInterest,
         'principalPaid': principalPaid > 0 ? principalPaid : 0,
         'interestPaid': interestPaid > 0 ? interestPaid : 0,
-        'totalRepaid': principalPaid + interestPaid,
+        'totalRepaid': (principalPaid > 0 ? principalPaid : 0) +
+            (interestPaid > 0 ? interestPaid : 0),
         'correctionDate': Timestamp.now(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -391,22 +723,18 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       if (_disbursementDate != null) {
         updateData['disbursementDate'] = Timestamp.fromDate(_disbursementDate!);
         updateData['disbursedAt'] = Timestamp.fromDate(_disbursementDate!);
-        
-        // Calculate due date (disbursement + tenure months)
-        final dueDate = DateTime(
-          _disbursementDate!.year,
-          _disbursementDate!.month + tenure,
-          _disbursementDate!.day,
-        );
-        updateData['dueDate'] = Timestamp.fromDate(dueDate);
+        updateData['dueDate'] = Timestamp.fromDate(_dueDate!);
       }
 
-      await _db.collection(AppConstants.loansCol).doc(widget.loan['id']).update(updateData);
+      await _db
+          .collection(AppConstants.loansCol)
+          .doc(widget.loan['id'])
+          .update(updateData);
 
-      // Log audit trail
       await AuditService.log(
         action: 'loan_data_correction',
-        details: 'Updated loan data for ${widget.loan['memberName']} - Loan Amount: UGX $loanAmount, Interest Rate: $interestRate%, Corrected fields: ${updateData.keys.join(', ')}',
+        details:
+            'Updated loan data for ${widget.loan['memberName']} - Loan Amount: UGX $loanAmount, Interest Rate: $interestRate%, Corrected fields: ${updateData.keys.join(', ')}',
         userId: FirebaseService.sessionUid,
         affectedUserId: widget.loan['farmerId'] ?? widget.loan['memberId'],
         metadata: {
@@ -419,230 +747,343 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       );
 
       if (!mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Loan updated successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
+      _showSnack('Loan updated successfully', const Color(0xFF16A34A));
       widget.onSave();
     } catch (e) {
       debugPrint('❌ Error saving loan: $e');
       if (!mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showSnack('Could not save the loan: $e', const Color(0xFFDC2626));
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
+  void _showSnack(String message, Color color) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: color,
+        content: Text(message),
+      ));
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final pad = width < 600 ? 16.0 : 24.0;
+
     return Form(
       key: _formKey,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.loan['memberName'],
-                      style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'Account: ${widget.loan['accountNumber']}',
-                      style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade600),
-                    ),
-                  ],
-                ),
-              ),
-              _statusChip(widget.loan['status']),
-            ],
-          ),
-          const SizedBox(height: 32),
-
-          // Warning banner
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.shade200),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Caution: Editing loan data affects financial reports. Changes are logged in the audit trail.',
-                    style: GoogleFonts.inter(fontSize: 13, color: Colors.orange.shade900),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Loan Basic Info
-          Text('Loan Information', style: _sectionHeader()),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _textField('Loan Amount (UGX)', _loanAmountCtrl, isNumber: true)),
-              const SizedBox(width: 16),
-              Expanded(child: _textField('Interest Rate (%)', _interestRateCtrl, isNumber: true)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _textField('Tenure (Months)', _tenureCtrl, isNumber: true)),
-              const SizedBox(width: 16),
-              Expanded(child: _buildInterestMethodDropdown()),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _textField('Monthly Installment (UGX)', _installmentCtrl, isNumber: true)),
-              const SizedBox(width: 16),
-              Expanded(child: _textField('Loan Type/Product', _loanTypeCtrl)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildDatePicker(),
-          const SizedBox(height: 32),
-
-          // Outstanding Balances
-          Text('Outstanding Balances', style: _sectionHeader()),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _textField('Principal Outstanding (UGX)', _principalOutCtrl, isNumber: true)),
-              const SizedBox(width: 16),
-              Expanded(child: _textField('Interest Outstanding (UGX)', _interestOutCtrl, isNumber: true)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _textField('Arrears (UGX)', _arrearsCtrl, isNumber: true)),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(pad),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Total Outstanding',
-                        style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600),
+                      _buildHeader(),
+                      const SizedBox(height: 16),
+                      _buildWarning(),
+                      const SizedBox(height: 16),
+                      _buildSummary(),
+                      const SizedBox(height: 16),
+                      _SectionCard(
+                        title: 'Loan information',
+                        icon: Icons.description_outlined,
+                        child: _grid([
+                          _numField('Loan amount (UGX)', _loanAmountCtrl,
+                              min: 1),
+                          _numField('Interest rate (% per month)',
+                              _interestRateCtrl,
+                              min: 0, max: 100),
+                          _numField('Tenure (months)', _tenureCtrl,
+                              integer: true, min: 1),
+                          _buildInterestMethodDropdown(),
+                          _numField('Monthly installment (UGX)',
+                              _installmentCtrl,
+                              min: 0),
+                          _textField('Loan type / product', _loanTypeCtrl),
+                          _buildDatePicker(),
+                          _buildReadOnlyField(
+                            'Due date',
+                            _dueDate == null
+                                ? '—'
+                                : DateFormat('yyyy-MM-dd').format(_dueDate!),
+                            Icons.event_available_outlined,
+                          ),
+                        ]),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _calculateTotalOutstanding(),
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade700,
-                        ),
+                      const SizedBox(height: 16),
+                      _SectionCard(
+                        title: 'Outstanding balances',
+                        icon: Icons.account_balance_wallet_outlined,
+                        child: _grid([
+                          _numField('Principal outstanding (UGX)',
+                              _principalOutCtrl,
+                              min: 0),
+                          _numField('Interest outstanding (UGX)',
+                              _interestOutCtrl,
+                              min: 0),
+                          _numField('Arrears (UGX)', _arrearsCtrl, min: 0),
+                          _buildTotalOutstanding(),
+                        ]),
                       ),
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 32),
+          _buildActionBar(pad),
+        ],
+      ),
+    );
+  }
 
-          // Action buttons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: _isSaving ? null : () => _initializeControllers(),
-                child: const Text('Reset'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton.icon(
-                onPressed: _isSaving ? null : _saveLoan,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(_isSaving ? 'Saving...' : 'Save Changes'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+  Widget _buildHeader() {
+    final name = widget.loan['memberName'].toString();
+    final status = widget.loan['status'].toString();
+
+    return _Card(
+      child: Row(
+        children: [
+          if (widget.onBack != null) ...[
+            IconButton(
+              tooltip: 'Back to loans',
+              onPressed: widget.onBack,
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+            const SizedBox(width: 4),
+          ],
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: _primary.withOpacity(0.1),
+            child: Text(_initials(name),
+                style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700, color: _primary)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                      fontSize: 20, fontWeight: FontWeight.w700, color: _ink),
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  'Account ${widget.loan['accountNumber']}',
+                  style: GoogleFonts.inter(fontSize: 13, color: _muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _StatusChip(status: status),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWarning() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: Color(0xFFEA580C), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Editing loan data affects financial reports. Every change is recorded in the audit trail.',
+              style: GoogleFonts.inter(
+                  fontSize: 13, color: const Color(0xFF9A3412), height: 1.4),
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildSummary() {
+    final principal = _num(_loanAmountCtrl);
+    final interest = _computeTotalInterest();
+    final outstanding = _num(_principalOutCtrl) + _num(_interestOutCtrl);
+
+    return _grid(
+      [
+        _StatTile(label: 'Loan amount', value: _money(principal)),
+        _StatTile(label: 'Total interest', value: _money(interest)),
+        _StatTile(label: 'Total payable', value: _money(principal + interest)),
+        _StatTile(
+            label: 'Outstanding', value: _money(outstanding), highlight: true),
+      ],
+      minItemWidth: 190,
+      maxCols: 4,
+      gap: 12,
+    );
+  }
+
+  Widget _buildTotalOutstanding() {
+    final total = _num(_principalOutCtrl) + _num(_interestOutCtrl);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _selectedTint,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Total outstanding',
+              style: GoogleFonts.inter(fontSize: 12, color: _muted)),
+          const SizedBox(height: 2),
+          Text(
+            _money(total),
+            style: GoogleFonts.inter(
+                fontSize: 18, fontWeight: FontWeight.w700, color: _primary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionBar(double pad) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: pad, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: _border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _isSaving ? null : _reset,
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Reset'),
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _isSaving ? null : _saveLoan,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.save_outlined, size: 18),
+                label: Text(_isSaving ? 'Saving…' : 'Save changes'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _primary,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Fields ─────────────────────────────────────────────────────────────────
+
   Widget _buildInterestMethodDropdown() {
     return DropdownButtonFormField<String>(
       value: _interestMethod,
-      decoration: InputDecoration(
-        labelText: 'Interest Calculation Method',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      ),
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Interest method'),
       items: const [
-        DropdownMenuItem(value: 'flat', child: Text('Flat Rate (Principal × Rate × Tenure)')),
-        DropdownMenuItem(value: 'declining', child: Text('Declining Balance')),
-        DropdownMenuItem(value: 'simple', child: Text('Simple Interest')),
+        DropdownMenuItem(
+          value: 'flat',
+          child: Text('Flat rate (principal × rate × tenure)',
+              overflow: TextOverflow.ellipsis),
+        ),
+        DropdownMenuItem(
+            value: 'declining',
+            child: Text('Declining balance', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(
+            value: 'simple',
+            child: Text('Simple interest', overflow: TextOverflow.ellipsis)),
       ],
       onChanged: (value) {
-        if (value != null) {
-          setState(() {
-            _interestMethod = value;
-            _calculateInstallment(); // Recalculate when method changes
-          });
-        }
+        if (value == null) return;
+        setState(() => _interestMethod = value);
+        _calculateInstallment();
       },
     );
   }
 
-  Widget _textField(String label, TextEditingController controller, {bool isNumber = false}) {
+  Widget _textField(String label, TextEditingController controller) {
     return TextFormField(
       controller: controller,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      ),
+      decoration: InputDecoration(labelText: label),
+      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+    );
+  }
+
+  Widget _numField(
+    String label,
+    TextEditingController controller, {
+    bool integer = false,
+    double? min,
+    double? max,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: TextInputType.numberWithOptions(decimal: !integer),
+      inputFormatters: [
+        integer
+            ? FilteringTextInputFormatter.digitsOnly
+            : FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+      ],
+      decoration: InputDecoration(labelText: label),
       validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Required';
+        final v = value?.trim() ?? '';
+        if (v.isEmpty) return 'Required';
+        final n = double.tryParse(v);
+        if (n == null) return 'Enter a valid number';
+        if (min != null && n < min) {
+          return min == 0 ? 'Cannot be negative' : 'Must be at least ${_numFmt.format(min)}';
         }
-        if (isNumber && double.tryParse(value) == null) {
-          return 'Enter a valid number';
-        }
+        if (max != null && n > max) return 'Must be at most ${_numFmt.format(max)}';
         return null;
       },
     );
@@ -650,81 +1091,173 @@ class _LoanEditFormState extends State<_LoanEditForm> {
 
   Widget _buildDatePicker() {
     return InkWell(
+      borderRadius: BorderRadius.circular(10),
       onTap: () async {
+        final now = DateTime.now();
+        final latest = now.add(const Duration(days: 365));
+        final initial = _disbursementDate ?? now;
         final picked = await showDatePicker(
           context: context,
-          initialDate: _disbursementDate ?? DateTime.now(),
-          firstDate: DateTime(2020),
-          lastDate: DateTime.now(),
+          initialDate: initial.isAfter(latest) ? latest : initial,
+          firstDate: DateTime(2015),
+          lastDate: latest,
         );
-        if (picked != null) {
-          setState(() => _disbursementDate = picked);
-        }
+        if (picked != null) setState(() => _disbursementDate = picked);
       },
       child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: 'Disbursement Date',
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        ),
+        decoration: const InputDecoration(labelText: 'Disbursement date'),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              _disbursementDate != null
-                  ? DateFormat('yyyy-MM-dd').format(_disbursementDate!)
-                  : 'Select date',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: _disbursementDate != null ? Colors.black87 : Colors.grey.shade600,
+            Expanded(
+              child: Text(
+                _disbursementDate != null
+                    ? DateFormat('yyyy-MM-dd').format(_disbursementDate!)
+                    : 'Select date',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  color: _disbursementDate != null ? _ink : _muted,
+                ),
               ),
             ),
-            const Icon(Icons.calendar_today, size: 18),
+            const Icon(Icons.calendar_today_outlined, size: 18, color: _muted),
           ],
         ),
       ),
     );
   }
 
-  String _calculateTotalOutstanding() {
-    final principal = double.tryParse(_principalOutCtrl.text) ?? 0;
-    final interest = double.tryParse(_interestOutCtrl.text) ?? 0;
-    final total = principal + interest;
-    return 'UGX ${NumberFormat('#,###').format(total.round())}';
+  Widget _buildReadOnlyField(String label, String value, IconData icon) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label, fillColor: _bg),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(value,
+                style: GoogleFonts.inter(fontSize: 15, color: _ink)),
+          ),
+          Icon(icon, size: 18, color: _muted),
+        ],
+      ),
+    );
   }
+}
 
-  TextStyle _sectionHeader() {
-    return GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold);
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// Small reusable widgets
+// ─────────────────────────────────────────────────────────────────────────────
 
-  Widget _statusChip(String status) {
-    Color color;
-    switch (status.toLowerCase()) {
-      case 'active':
-      case 'disbursed':
-        color = Colors.green;
-        break;
-      case 'overdue':
-        color = Colors.red;
-        break;
-      case 'paid':
-        color = Colors.teal;
-        break;
-      default:
-        color = Colors.orange;
-    }
+class _Card extends StatelessWidget {
+  final Widget child;
+  const _Card({required this.child});
 
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _border),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+  const _SectionCard(
+      {required this.title, required this.icon, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 20, color: _primary),
+              const SizedBox(width: 8),
+              Text(title,
+                  style: GoogleFonts.inter(
+                      fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool highlight;
+  const _StatTile(
+      {required this.label, required this.value, this.highlight = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: highlight ? _primary : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: highlight ? _primary : _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: highlight ? Colors.white70 : _muted)),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: highlight ? Colors.white : _ink,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String status;
+  final bool compact;
+  const _StatusChip({required this.status, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _statusColor(status);
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 12, vertical: compact ? 3 : 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         status,
         style: GoogleFonts.inter(
-          fontSize: 12,
+          fontSize: compact ? 11 : 12,
           fontWeight: FontWeight.w600,
-          color: Colors.white,
+          color: color,
         ),
       ),
     );
