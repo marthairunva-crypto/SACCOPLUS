@@ -768,6 +768,225 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       ));
   }
 
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red[700], size: 28),
+            const SizedBox(width: 12),
+            const Text('Delete Loan?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You are about to permanently delete this loan:',
+              style: GoogleFonts.inter(fontSize: 14, color: _muted),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _bg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.loan['memberName'].toString(),
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Account: ${widget.loan['accountNumber']}',
+                    style: GoogleFonts.inter(fontSize: 13, color: _muted),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Amount: ${_money(widget.loan['loanAmount'] ?? 0)}',
+                    style: GoogleFonts.inter(fontSize: 13, color: _muted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This action cannot be undone. The deletion will be recorded in the audit trail.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.red[800],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('Delete Loan'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteLoan();
+    }
+  }
+
+  Future<void> _deleteLoan() async {
+    setState(() => _isSaving = true);
+
+    try {
+      final loanId = widget.loan['id'];
+      final memberName = widget.loan['memberName'].toString();
+      final accountNumber = widget.loan['accountNumber'].toString();
+      final loanAmount = widget.loan['loanAmount'] ?? 0;
+      final memberId = widget.loan['memberId'] ?? widget.loan['farmerId'];
+      final principalOut = widget.loan['principalOutstanding'] ?? 0;
+      final interestOut = widget.loan['interestOutstanding'] ?? 0;
+      final totalOut = principalOut + interestOut;
+
+      // 1. Update member's loan balance (reduce outstanding)
+      if (memberId != null && totalOut > 0) {
+        final memberRef = _db.collection(AppConstants.membersCol).doc(memberId);
+        await memberRef.update({
+          'loanBalance': FieldValue.increment(-totalOut),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        debugPrint('✅ Updated member loan balance: reduced by ${_money(totalOut)}');
+      }
+
+      // 2. If loan was disbursed and till session exists, reverse the disbursement entry
+      final disbursementDate = widget.loan['disbursementDate'];
+      if (disbursementDate != null && loanAmount > 0) {
+        // Find till entries for this loan disbursement
+        final tillEntries = await _db
+            .collection(AppConstants.tillEntriesCol)
+            .where('loanId', isEqualTo: loanId)
+            .where('entryType', isEqualTo: 'loan_disbursement')
+            .get();
+
+        if (tillEntries.docs.isNotEmpty) {
+          // Delete the disbursement entries and update till balance
+          for (final doc in tillEntries.docs) {
+            final entry = doc.data();
+            final tillSessionId = entry['tillSessionId'];
+            final amount = entry['amount'] ?? 0;
+
+            // Delete the till entry
+            await doc.reference.delete();
+
+            // Update till session balance (add back the disbursed amount)
+            if (tillSessionId != null) {
+              await _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId).update({
+                'currentBalance': FieldValue.increment(amount),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              debugPrint('✅ Reversed till disbursement entry: ${_money(amount)}');
+            }
+          }
+        }
+
+        // Also reverse any loan repayment entries in the till
+        final repaymentEntries = await _db
+            .collection(AppConstants.tillEntriesCol)
+            .where('loanId', isEqualTo: loanId)
+            .where('entryType', isEqualTo: 'loan_repayment')
+            .get();
+
+        if (repaymentEntries.docs.isNotEmpty) {
+          for (final doc in repaymentEntries.docs) {
+            final entry = doc.data();
+            final tillSessionId = entry['tillSessionId'];
+            final amount = entry['amount'] ?? 0;
+
+            // Delete the till entry
+            await doc.reference.delete();
+
+            // Update till session balance (subtract the repayment amount)
+            if (tillSessionId != null) {
+              await _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId).update({
+                'currentBalance': FieldValue.increment(-amount),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              debugPrint('✅ Reversed till repayment entry: ${_money(amount)}');
+            }
+          }
+        }
+      }
+
+      // 3. Delete all loan repayment records
+      final repayments = await _db
+          .collection(AppConstants.loanRepaymentsCol)
+          .where('loanId', isEqualTo: loanId)
+          .get();
+
+      if (repayments.docs.isNotEmpty) {
+        for (final doc in repayments.docs) {
+          await doc.reference.delete();
+        }
+        debugPrint('✅ Deleted ${repayments.docs.length} loan repayment records');
+      }
+
+      // 4. Delete the loan document
+      await _db.collection(AppConstants.loansCol).doc(loanId).delete();
+
+      // 5. Log the deletion in audit trail
+      await AuditService.log(
+        action: 'loan_deleted',
+        details:
+            'Deleted loan for $memberName (Account: $accountNumber) - Loan Amount: ${_money(loanAmount)}, Outstanding: ${_money(totalOut)}. Reversed till entries and updated member balance.',
+        userId: FirebaseService.sessionUid,
+        affectedUserId: memberId,
+        metadata: {
+          'loanId': loanId,
+          'memberName': memberName,
+          'accountNumber': accountNumber,
+          'loanAmount': loanAmount,
+          'principalOutstanding': principalOut,
+          'interestOutstanding': interestOut,
+          'totalOutstanding': totalOut,
+          'deletedAt': DateTime.now().toIso8601String(),
+        },
+      );
+
+      if (!mounted) return;
+      _showSnack('Loan deleted and balances updated successfully', const Color(0xFF16A34A));
+      
+      // Navigate back to loan list
+      if (widget.onBack != null) {
+        widget.onBack!();
+      } else {
+        widget.onSave(); // Refresh the list
+      }
+    } catch (e) {
+      debugPrint('❌ Error deleting loan: $e');
+      if (!mounted) return;
+      _showSnack('Could not delete the loan: $e', const Color(0xFFDC2626));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -979,45 +1198,62 @@ class _LoanEditFormState extends State<_LoanEditForm> {
       ),
       child: SafeArea(
         top: false,
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            alignment: WrapAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _isSaving ? null : _reset,
-                icon: const Icon(Icons.restart_alt, size: 18),
-                label: const Text('Reset'),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
+        child: Row(
+          children: [
+            // Delete button on the left
+            OutlinedButton.icon(
+              onPressed: _isSaving ? null : _confirmDelete,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('Delete Loan'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFDC2626),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                side: const BorderSide(color: Color(0xFFDC2626)),
               ),
-              FilledButton.icon(
-                onPressed: _isSaving ? null : _saveLoan,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.save_outlined, size: 18),
-                label: Text(_isSaving ? 'Saving…' : 'Save changes'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+            ),
+            const Spacer(),
+            // Reset and Save buttons on the right
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _reset,
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('Reset'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
-            ],
-          ),
+                FilledButton.icon(
+                  onPressed: _isSaving ? null : _saveLoan,
+                  icon: _isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.save_outlined, size: 18),
+                  label: Text(_isSaving ? 'Saving…' : 'Save changes'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primary,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
