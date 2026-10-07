@@ -131,7 +131,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 'create_loan':
         return const CreateLoanScreen();
       case 'loan_correction':
-        return const LoanDataCorrectionScreen();
+        return LoanDataCorrectionScreen();
       case 'loan_products':
         return const LoanProductsScreen();
       case 'loan_calc':
@@ -497,28 +497,26 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     _checkForUpdates();
   }
 
-  // ── Status snackbar (banking-app style) ───────────────────────────────────
-  void _snack(String message,
-      {bool busy = false, Duration duration = const Duration(seconds: 2), VoidCallback? onRetry}) {
+  // ── Toast (same style as the loan details screen) ─────────────────────────
+  void _snack(String msg,
+      {bool ok = true, VoidCallback? onRetry, Duration duration = const Duration(seconds: 4)}) {
     if (!mounted) return;
-    final m = ScaffoldMessenger.of(context);
-    m.hideCurrentSnackBar();
-    m.showSnackBar(SnackBar(
-      behavior: SnackBarBehavior.floating,
-      width: 340,
-      backgroundColor: _C.ink,
-      elevation: 2,
-      duration: duration,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      content: Row(children: [
-        Icon(busy ? Icons.sync : Icons.check_circle_outline, size: 18, color: Colors.white),
-        const SizedBox(width: 10),
-        Expanded(child: Text(message, style: _t(13, FontWeight.w500, Colors.white))),
-      ]),
-      action: onRetry == null
-          ? null
-          : SnackBarAction(label: 'Retry', textColor: Colors.white, onPressed: onRetry),
-    ));
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg, style: _t(13.5, FontWeight.w400, Colors.white)),
+          backgroundColor: ok ? _C.ink : _C.neg,
+          behavior: SnackBarBehavior.floating,
+          width: wide ? 440 : null,
+          duration: duration,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          action: onRetry == null
+              ? null
+              : SnackBarAction(label: 'Retry', textColor: Colors.white, onPressed: onRetry),
+        ),
+      );
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -553,8 +551,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   }
 
   Future<void> _load() async {
-    if (mounted) setState(() => _error = null);
-    _snack('Refreshing…', busy: true, duration: const Duration(minutes: 1));
+    if (mounted) setState(() { _error = null; _loading = true; });
     try {
       final loans = await FirebaseService.getAllLoansOnce();
       final members = await FirebaseService.getAllFarmersOnce();
@@ -619,11 +616,10 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         _lastRefresh = DateTime.now();
         _loading = false;
       });
-      _snack('Dashboard updated');
     } catch (e) {
       debugPrint('Dashboard load error: $e');
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
-      _snack('Refresh failed', duration: const Duration(seconds: 6), onRetry: _load);
+      _snack('Couldn\'t refresh the dashboard', ok: false, onRetry: _load);
     }
   }
 
@@ -734,7 +730,9 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
     return ColoredBox(
       color: _C.bg,
-      child: SingleChildScrollView(
+      child: Column(children: [
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        Expanded(child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.all(desktop ? 24 : 14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -764,7 +762,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
               (2, _linksPanel()),
             ]),
           ]),
-      ),
+        )),
+      ]),
     );
   }
 
