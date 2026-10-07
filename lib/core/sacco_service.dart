@@ -27,9 +27,9 @@ class SaccoService {
   // ── Load at login ──────────────────────────────────────────────────────────
 
   /// Call after successful PIN login. Reads tenantId from userProfile,
-  /// loads the matching SACCO config, falls back to sacco_001 if absent.
+  /// loads the matching SACCO config, falls back to mbadifa if absent.
   static Future<void> loadForUser(Map<String, dynamic> userProfile) async {
-    final tid = userProfile['tenantId'] as String? ?? 'sacco_001';
+    final tid = userProfile['tenantId'] as String? ?? 'mbadifa';
     await loadById(tid);
   }
 
@@ -69,7 +69,7 @@ class SaccoService {
     // 3. Ultimate fallback
     _current = SaccoProfile(
       tenantId:  tid,
-      saccoName: tid == 'sacco_001' ? 'MBADIFA SACCO' : 'SACCO',
+      saccoName: tid == 'mbadifa' || tid == 'sacco_001' ? 'MBADIFA SACCO' : 'SACCO',
       country:   'UG',
       currency:  'UGX',
     );
