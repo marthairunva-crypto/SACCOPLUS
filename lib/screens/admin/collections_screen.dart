@@ -426,7 +426,6 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
                     stream: FirebaseFirestore.instance
                         .collection('saccoplus-loans')
                         .where('memberId', isEqualTo: selectedMemberId)
-                        .where('status', whereIn: ['active', 'disbursed', 'overdue', 'approved'])
                         .snapshots(),
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) {
@@ -443,7 +442,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> with SingleTicker
                             color: Colors.orange.shade50,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text('No active loans for this member'),
+                          child: const Text('No loans for this member'),
                         );
                       }
                       

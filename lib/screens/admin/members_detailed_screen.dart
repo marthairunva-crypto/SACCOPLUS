@@ -81,13 +81,16 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
       final loansSnapshot = await FirebaseFirestore.instance
           .collection('saccoplus-loans')
           .where('memberId', isEqualTo: memberId)
-          .where('status', whereIn: ['active', 'overdue', 'disbursed'])
           .get();
 
       double totalOutstanding = 0;
       for (final doc in loansSnapshot.docs) {
         final data = doc.data();
-        totalOutstanding += (data['principalOutstanding'] ?? 0).toDouble();
+        final principalOut = (data['principalOutstanding'] ?? 0).toDouble();
+        // Only count loans with outstanding balance
+        if (principalOut > 0) {
+          totalOutstanding += principalOut;
+        }
       }
 
       return totalOutstanding;

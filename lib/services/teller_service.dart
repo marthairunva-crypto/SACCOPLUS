@@ -172,20 +172,29 @@ class TellerService {
           break;
 
         case 'loan_payment':
-          // Find active loan for this member
+          // Find loan for this member (any status with outstanding balance)
           final loansQuery = await _db
               .collection('saccoplus-loans')
               .where('farmerId', isEqualTo: memberId)
               .where('tenantId', isEqualTo: _tenantId)
-              .where('status', whereIn: ['active', 'overdue', 'approved'])
               .get();
 
           if (loansQuery.docs.isEmpty) {
-            throw Exception('No active loan found for this member');
+            throw Exception('No loan found for this member');
           }
 
-          // Use the first active loan (or most recent)
-          final loanDoc = loansQuery.docs.first;
+          // Filter to loans with outstanding balance
+          final activeLoans = loansQuery.docs.where((doc) {
+            final principalOut = (doc.data()['principalOutstanding'] as num?)?.toDouble() ?? 0.0;
+            return principalOut > 0;
+          }).toList();
+
+          if (activeLoans.isEmpty) {
+            throw Exception('No loans with outstanding balance found for this member');
+          }
+
+          // Use the first loan with outstanding balance
+          final loanDoc = activeLoans.first;
           final loanData = loanDoc.data();
           final loanId = loanDoc.id;
 

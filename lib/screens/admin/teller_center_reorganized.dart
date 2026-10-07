@@ -2287,12 +2287,6 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                   .collection(AppConstants.loansCol)
                                   .where('farmerId', isEqualTo: member['id'])
                                   .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                  .where('status', whereIn: [
-                                    AppConstants.statusActive,     // 'Active'
-                                    AppConstants.statusDisbursed,  // 'Disbursed'
-                                    AppConstants.statusOverdue,    // 'Overdue'
-                                    AppConstants.statusApproved,   // 'Approved' (not yet disbursed)
-                                  ])
                                   .get();
 
                               print('🔍 Found ${loansQuery.docs.length} loans with member ID');
@@ -2307,12 +2301,6 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                 final loansByName = await FirebaseFirestore.instance
                                     .collection(AppConstants.loansCol)
                                     .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                    .where('status', whereIn: [
-                                      AppConstants.statusActive,     // 'Active'
-                                      AppConstants.statusDisbursed,  // 'Disbursed'
-                                      AppConstants.statusOverdue,    // 'Overdue'
-                                      AppConstants.statusApproved,   // 'Approved'
-                                    ])
                                     .get();
                                 
                                 // Filter by name (case-insensitive comparison)
@@ -2404,12 +2392,6 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                     .collection(AppConstants.loansCol)
                                     .where('accountNumber', isEqualTo: member['accountNumber'])
                                     .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                                    .where('status', whereIn: [
-                                      AppConstants.statusActive,
-                                      AppConstants.statusDisbursed,
-                                      AppConstants.statusOverdue,
-                                      AppConstants.statusApproved,
-                                    ])
                                     .get();
                                 
                                 print('🔍 Found ${loansByAccount.docs.length} loans by accountNumber');
@@ -2459,7 +2441,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(parentContext).showSnackBar(
                                   SnackBar(
-                                    content: Text('No active loans found for ${member['name']}', style: GoogleFonts.inter()),
+                                    content: Text('No loans found for ${member['name']}', style: GoogleFonts.inter()),
                                     backgroundColor: Colors.orange,
                                   ),
                                 );
@@ -2709,7 +2691,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(parentContext).showSnackBar(
                                   SnackBar(
-                                    content: Text('No approved loans found for ${member['name']}', style: GoogleFonts.inter()),
+                                    content: Text('No loans found for ${member['name']}', style: GoogleFonts.inter()),
                                     backgroundColor: Colors.orange,
                                   ),
                                 );
