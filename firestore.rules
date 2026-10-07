@@ -417,6 +417,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── Till Management (append-only cash ledger) ──────────────────────────────
+    // Till sessions: can create and read; updates allowed only for specific fields
+    match /saccoplus-till-sessions/{docId} {
+      allow read, create: if true;
+      allow update: if true;  // Status changes, close operations, variance approval
+      allow delete: if false;  // Never allow session deletion
+    }
+    
+    // Till entries: strictly append-only (no updates or deletes ever)
+    match /saccoplus-till-entries/{docId} {
+      allow read, create: if true;
+      allow update, delete: if false;  // APPEND-ONLY: corrections via reversing entries
+    }
+
+    // ── Teller Transactions ───────────────────────────────────────────────────
+    match /saccoplus-teller-transactions/{docId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
     // ── Migration sentinel ────────────────────────────────────────────────────
     match /saccoplus-meta/{docId} {
       allow read, create, update: if true;

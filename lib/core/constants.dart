@@ -41,6 +41,9 @@ class AppConstants {
   // Staff & RBAC
   static const String staffCol         = 'saccoplus-staff';
   static const String rolesCol         = 'saccoplus-roles';
+  // Till Management
+  static const String tillSessionsCol  = 'saccoplus-till-sessions';
+  static const String tillEntriesCol   = 'saccoplus-till-entries';
 
   // ── Loan Statuses ─────────────────────────────────────────────────────────
   static const String statusPending   = 'Pending';
