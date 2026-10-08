@@ -2,11 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:  # Manual trigger only
-  # Disabled automatic builds - uncomment below to re-enable
-  # push:
-  #   branches: [ main, master ]
-  # pull_request:
-  #   branches: [ main, master ]
 
 permissions:
   contents: write
@@ -60,8 +55,8 @@ jobs:
             build/app/outputs/flutter-apk/app-x86_64-release.apk
           retention-days: 7
       
-      - name: Create Release (on main/master push)
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      - name: Create Release
+        if: always()  # Always create release whether manual or push
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v1.0.${{ github.run_number }}
