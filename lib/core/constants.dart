@@ -4,7 +4,7 @@ class AppConstants {
   static const String appSubtitle = 'Poverty Must Go';
   static const String appTagline  = 'Empowering Communities • Building Futures';
   static const String appVersion  = '2.0.0';
-  static const String logoPath    = 'assets/images/mbadifa-logo.png';
+  static const String logoPath    = 'assets/images/logo2.png';
 
   // ── Image Upload (ImgBB) ──────────────────────────────────────────────────
   static const String imgbbApiKey    = '3f4e8e2c4b5c204728716579fe9355bf';
