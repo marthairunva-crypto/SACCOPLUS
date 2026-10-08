@@ -2003,7 +2003,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
 
   Widget _historyTile(Map<String, dynamic> txn, bool compact) {
     final type = (txn['type'] ?? '').toString();
-    final isIn = type == 'deposit' || type == 'fixed_deposit_maturity';
+    final isIn = type == 'deposit' || type == 'fixed_deposit_maturity' || type == 'loan_payment';
     final color = isIn ? TC.green : TC.red;
     final isMobileApp = (txn['source'] ?? 'teller') == 'mobile_app';
     final method = (txn['paymentMethod'] ?? 'Cash').toString();

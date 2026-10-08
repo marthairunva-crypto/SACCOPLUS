@@ -963,65 +963,110 @@ class TellerService {
     bool includeAllSources = true, // Include both teller and mobile app transactions
   }) async {
     try {
-      print('🔍 TellerService.getTransactionHistory: Querying ${AppConstants.tellerTxnCol}');
+      print('🔍 TellerService.getTransactionHistory: Querying ${AppConstants.tellerTxnCol} AND ${AppConstants.tillEntriesCol}');
       print('🔍   - tenantId: $_tenantId');
       print('🔍   - memberId: $memberId');
       print('🔍   - tellerId: $tellerId');
       print('🔍   - includeAllSources: $includeAllSources');
 
-      Query query = _db
+      // Query 1: Get teller transactions (deposits, withdrawals, etc.)
+      Query query1 = _db
           .collection(AppConstants.tellerTxnCol)
           .where('tenantId', isEqualTo: _tenantId);
-      // Removed orderBy to avoid composite index requirement
-      // .orderBy('timestamp', descending: true);
 
       if (memberId != null) {
-        query = query.where('memberId', isEqualTo: memberId);
+        query1 = query1.where('memberId', isEqualTo: memberId);
       }
 
       if (tellerId != null) {
-        query = query.where('tellerId', isEqualTo: tellerId);
+        query1 = query1.where('tellerId', isEqualTo: tellerId);
       }
 
-      // If includeAllSources is false, only show teller transactions
       if (!includeAllSources) {
-        query = query.where('source', isEqualTo: 'teller');
+        query1 = query1.where('source', isEqualTo: 'teller');
       }
 
       if (startDate != null) {
-        query = query.where('timestamp', isGreaterThanOrEqualTo: startDate);
+        query1 = query1.where('timestamp', isGreaterThanOrEqualTo: startDate);
       }
 
       if (endDate != null) {
-        query = query.where('timestamp', isLessThanOrEqualTo: endDate);
+        query1 = query1.where('timestamp', isLessThanOrEqualTo: endDate);
       }
 
-      final snapshot = await query.limit(limit).get();
+      // Query 2: Get till entries (loan repayments, disbursements, etc.)
+      Query query2 = _db
+          .collection(AppConstants.tillEntriesCol)
+          .where('tenantId', isEqualTo: _tenantId);
 
-      print('🔍 TellerService.getTransactionHistory: Found ${snapshot.docs.length} documents');
-      if (snapshot.docs.isNotEmpty) {
-        print('🔍   First transaction: ${snapshot.docs.first.data()}');
+      if (memberId != null) {
+        query2 = query2.where('memberId', isEqualTo: memberId);
       }
 
-      final results = snapshot.docs.map((doc) {
+      if (tellerId != null) {
+        query2 = query2.where('tellerId', isEqualTo: tellerId);
+      }
+
+      if (startDate != null) {
+        query2 = query2.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate));
+      }
+
+      if (endDate != null) {
+        query2 = query2.where('createdAt', isLessThanOrEqualTo: Timestamp.fromDate(endDate));
+      }
+
+      // Execute both queries
+      final snapshot1 = await query1.limit(limit).get();
+      final snapshot2 = await query2.limit(limit).get();
+
+      print('🔍 TellerService.getTransactionHistory: Found ${snapshot1.docs.length} teller transactions + ${snapshot2.docs.length} till entries');
+
+      final results = <Map<String, dynamic>>[];
+
+      // Add teller transactions
+      for (final doc in snapshot1.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        return {
+        results.add({
           'id': doc.id,
           ...data,
-          // Null-safe: one record without a timestamp no longer breaks the whole list
           'timestamp': (data['timestamp'] as Timestamp?)?.toDate() ??
               DateTime.fromMillisecondsSinceEpoch(0),
-          // Ensure source field exists (default to 'teller' for old records)
           'source': data['source'] ?? 'teller',
           'paymentMethod': data['paymentMethod'] ?? 'Cash',
-        };
-      }).toList();
+        });
+      }
 
-      // Sort in memory since we removed orderBy
+      // Add till entries (convert to transaction format)
+      for (final doc in snapshot2.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final entryType = data['entryType'] ?? '';
+        
+        // Map till entry types to transaction types
+        String transactionType = entryType;
+        if (entryType == 'loan_repayment') {
+          transactionType = 'loan_payment';
+        } else if (entryType == 'loan_disbursement') {
+          transactionType = 'loan_disbursement';
+        }
+
+        results.add({
+          'id': doc.id,
+          ...data,
+          'type': transactionType,
+          'timestamp': (data['createdAt'] as Timestamp?)?.toDate() ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+          'source': 'teller',
+          'paymentMethod': data['affectsCash'] == true ? 'Cash' : 'Bank Transfer',
+          'receiptNumber': data['notes'] ?? '', // Till entries don't have receipt numbers yet
+        });
+      }
+
+      // Sort combined results by timestamp
       results.sort((a, b) =>
           (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
 
-      return results;
+      // Apply limit to combined results
+      return results.take(limit).toList();
     } catch (e) {
       print('🔍 TellerService.getTransactionHistory ERROR: $e');
       return [];
