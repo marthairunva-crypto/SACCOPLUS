@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../services/teller_service.dart';
 import '../core/firebase_service.dart';
 
-/// Clean Mobile Money Loan Payment Dialog
-/// Features:
-/// - Phone verification showing account holder name
-/// - Clear outstanding breakdown
-/// - Payment options: Pay All, Partial, Interest Only, Principal Only
-/// - Simple, non-confusing UI
+/// Mobile money loan payment dialog.
+///
+/// Public API and payment flow are unchanged (drop-in replacement).
+/// Fixes included:
+/// - Responsive: two columns on wide screens, single column on phones.
+/// - Custom amount fields keep their cursor while typing.
+/// - Amounts above the outstanding balance show an inline error.
+/// - Success/failure messages still show after the dialog closes
+///   (the messenger is captured before the dialog is popped).
+/// - The Send button re-enables if the user cancels or the payment fails.
 class LoanPaymentMobileMoneyDialog extends StatefulWidget {
   final double principalOutstanding;
   final double interestOutstanding;
@@ -29,23 +34,59 @@ class LoanPaymentMobileMoneyDialog extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<LoanPaymentMobileMoneyDialog> createState() => _LoanPaymentMobileMoneyDialogState();
+  State<LoanPaymentMobileMoneyDialog> createState() =>
+      _LoanPaymentMobileMoneyDialogState();
 }
 
-class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDialog> {
-  final _currencyFormat = NumberFormat('#,###', 'en_US');
+/// Design tokens: one brand colour, neutral greys, status colours used sparingly.
+class _C {
+  static const brand = Color(0xFF047857);
+  static const brandSoft = Color(0xFFECFDF5);
+  static const brandLine = Color(0xFFA7F3D0);
+  static const ink = Color(0xFF1F2937);
+  static const muted = Color(0xFF6B7280);
+  static const line = Color(0xFFE5E7EB);
+  static const surface = Color(0xFFF9FAFB);
+  static const error = Color(0xFFB91C1C);
+  static const warn = Color(0xFFB45309);
+  static const warnSoft = Color(0xFFFFFBEB);
+}
+
+class _Option {
+  final String value;
+  final String title;
+  final String subtitle;
+  const _Option(this.value, this.title, this.subtitle);
+}
+
+class _LoanPaymentMobileMoneyDialogState
+    extends State<LoanPaymentMobileMoneyDialog> {
+  final _fmt = NumberFormat('#,###', 'en_US');
   final _phoneController = TextEditingController();
-  
+  final _principalCtrl = TextEditingController();
+  final _interestCtrl = TextEditingController();
+  final _chargesCtrl = TextEditingController();
+
   String _paymentType = 'full'; // full, partial, interest_only, principal_only
   String _provider = 'MTN';
   String? _verifiedAccountName;
+  bool _isVerified = false; // true = verified by service, false = skipped
   bool _isVerifying = false;
   bool _isProcessing = false;
-  
+
   double _principalAmount = 0;
   double _interestAmount = 0;
   double _chargesAmount = 0;
-  double _customAmount = 0;
+
+  static const _options = [
+    _Option('full', 'Pay full balance', 'Principal, interest and charges'),
+    _Option('interest_only', 'Interest and charges', 'Leave principal unpaid'),
+    _Option('principal_only', 'Principal only',
+        'Leave interest and charges unpaid'),
+    _Option('partial', 'Custom amounts', 'Choose how much goes to each part'),
+  ];
+
+  // ---------------------------------------------------------------- logic
 
   @override
   void initState() {
@@ -59,6 +100,9 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
   @override
   void dispose() {
     _phoneController.dispose();
+    _principalCtrl.dispose();
+    _interestCtrl.dispose();
+    _chargesCtrl.dispose();
     super.dispose();
   }
 
@@ -81,30 +125,41 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
           _chargesAmount = 0;
           break;
         case 'partial':
-          // Keep custom amounts as is
+          // Keep current amounts as the starting point.
           break;
       }
+      _principalCtrl.text = _principalAmount.round().toString();
+      _interestCtrl.text = _interestAmount.round().toString();
+      _chargesCtrl.text = _chargesAmount.round().toString();
     });
   }
 
-  double get _totalAmount => _principalAmount + _interestAmount + _chargesAmount;
+  double get _totalAmount =>
+      _principalAmount + _interestAmount + _chargesAmount;
+
+  double get _totalOutstanding =>
+      widget.principalOutstanding +
+      widget.interestOutstanding +
+      widget.chargesOutstanding;
+
+  bool get _hasAmountError =>
+      _principalAmount > widget.principalOutstanding ||
+      _interestAmount > widget.interestOutstanding ||
+      _chargesAmount > widget.chargesOutstanding;
 
   Future<void> _verifyPhoneNumber() async {
     final phone = _phoneController.text.trim();
     if (phone.isEmpty) {
-      _showError('Please enter phone number');
+      _showError('Enter a phone number.');
       return;
     }
-
-    // Validate phone number format - must be 12 digits (256XXXXXXXXX)
     if (phone.length != 12 || !phone.startsWith('256')) {
-      _showError('Invalid phone number. Uganda numbers must be 256 followed by 9 digits (e.g., 256777123456)');
+      _showError(
+          'Invalid number. Use 256 followed by 9 digits, for example 256777123456.');
       return;
     }
-
-    // Check if all characters are digits
     if (!RegExp(r'^\d+$').hasMatch(phone)) {
-      _showError('Phone number must contain only digits');
+      _showError('Phone number must contain digits only.');
       return;
     }
 
@@ -118,27 +173,29 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
         phoneNumber: phone,
         provider: _provider,
       );
+      if (!mounted) return;
 
-      setState(() {
-        _isVerifying = false;
-        if (result['success'] == true) {
-          _verifiedAccountName = result['accountName'] ?? result['full_name'] ?? 'Account Verified';
-        } else {
-          // Check if we can skip verification
-          final canSkip = result['canSkip'] == true;
-          final message = result['message'] ?? 'Verification failed';
-          
-          if (canSkip) {
-            // Show option to proceed without verification
-            _showSkipVerificationDialog(message);
-          } else {
-            _showError(message);
-          }
-        }
-      });
-    } catch (e) {
       setState(() => _isVerifying = false);
-      _showSkipVerificationDialog('Unable to connect to verification service. You can proceed without verification.');
+
+      if (result['success'] == true) {
+        setState(() {
+          _isVerified = true;
+          _verifiedAccountName =
+              result['accountName'] ?? result['full_name'] ?? 'Account verified';
+        });
+      } else {
+        final message = result['message'] ?? 'Verification failed';
+        if (result['canSkip'] == true) {
+          _showSkipVerificationDialog(message);
+        } else {
+          _showError(message);
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isVerifying = false);
+      _showSkipVerificationDialog(
+          'Unable to reach the verification service. You can continue without verifying.');
     }
   }
 
@@ -146,44 +203,44 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber, color: Colors.orange.shade700),
-            const SizedBox(width: 12),
-            Text('Verification Unavailable', style: GoogleFonts.inter(fontSize: 16)),
-          ],
-        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text('Verification unavailable',
+            style: _t(16, weight: FontWeight.w600)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(message, style: _t(14)),
+            const SizedBox(height: 12),
             Text(
-              message,
-              style: GoogleFonts.inter(fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'You can proceed with the payment without verification, or wait and try verifying again.',
-              style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700),
+              'You can continue without verification, or cancel and try again later.',
+              style: _t(13, color: _C.muted),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey)),
+            child: Text('Cancel', style: _t(14, color: _C.muted)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
               setState(() {
+                _isVerified = false;
                 _verifiedAccountName = 'Unverified - ${_phoneController.text}';
               });
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: _C.brand,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
-            child: Text('Proceed Without Verification', style: GoogleFonts.inter()),
+            child: Text('Continue without verifying',
+                style: _t(14, weight: FontWeight.w600, color: Colors.white)),
           ),
         ],
       ),
@@ -191,42 +248,58 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
   }
 
   Future<void> _initiatePayment() async {
-    // Verification is now optional - warn if not verified but allow proceeding
     if (_verifiedAccountName == null) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('Confirm Payment', style: GoogleFonts.inter(fontSize: 16)),
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Text('Send without verifying?',
+              style: _t(16, weight: FontWeight.w600)),
           content: Text(
-            'Phone number has not been verified. Are you sure you want to send a payment request to ${_phoneController.text}?',
-            style: GoogleFonts.inter(fontSize: 14),
+            'This number has not been verified. Send a payment request to ${_phoneController.text}?',
+            style: _t(14),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: GoogleFonts.inter()),
+              child: Text('Cancel', style: _t(14, color: _C.muted)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
-              child: Text('Yes, Send Payment', style: GoogleFonts.inter()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _C.brand,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text('Send request',
+                  style: _t(14, weight: FontWeight.w600, color: Colors.white)),
             ),
           ],
         ),
       );
-      
       if (confirm != true) return;
     }
 
     if (_totalAmount <= 0) {
-      _showError('Payment amount must be greater than zero');
+      _showError('Enter an amount greater than zero.');
+      return;
+    }
+    if (_hasAmountError) {
+      _showError('One or more amounts exceed the outstanding balance.');
       return;
     }
 
     setState(() => _isProcessing = true);
 
+    // Capture before the dialog is popped, so messages still show afterwards.
+    final messenger = ScaffoldMessenger.of(context);
+    final navContext = context;
+
     try {
-      // Use the same method as farmer screen - FirebaseService.walletDeposit
       final result = await FirebaseService.walletDeposit(
         uid: FirebaseService.sessionUid,
         amount: _totalAmount.round(),
@@ -239,49 +312,50 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
 
       final uuid = result['uuid'] as String?;
       final txnId = result['txnId'] as String?;
-
       if (uuid == null || txnId == null) {
         throw Exception('Payment request failed to initialize');
       }
 
-      // Show processing dialog with polling (same as farmer screen)
-      if (!mounted) return;
-      Navigator.pop(context); // Close payment dialog
-      
+      final phone = _phoneController.text.trim();
+      final paymentData = {
+        'principalPaid': _principalAmount,
+        'interestPaid': _interestAmount,
+        'chargesPaid': _chargesAmount,
+        'totalPaid': _totalAmount,
+        'paymentMethod': 'Mobile Money',
+        'provider': _provider,
+        'phoneNumber': phone,
+        'transactionId': txnId,
+        'accountName': _verifiedAccountName,
+        'paymentType': _paymentType,
+        'timestamp': DateTime.now(),
+      };
+      final totalLabel = 'UGX ${_fmt.format(_totalAmount.round())}';
+
+      Navigator.pop(navContext); // Close payment dialog
+
       final paymentSuccess = await showDialog<bool>(
-        context: context,
+        context: navContext,
         barrierDismissible: false,
-        builder: (ctx) => _PollingDialog(
-          uuid: uuid,
-          phoneNumber: _phoneController.text.trim(),
-        ),
+        builder: (ctx) => _PollingDialog(uuid: uuid, phoneNumber: phone),
       );
 
       if (paymentSuccess == true) {
-        // Payment completed - record it
-        final paymentData = {
-          'principalPaid': _principalAmount,
-          'interestPaid': _interestAmount,
-          'chargesPaid': _chargesAmount,
-          'totalPaid': _totalAmount,
-          'paymentMethod': 'Mobile Money',
-          'provider': _provider,
-          'phoneNumber': _phoneController.text.trim(),
-          'transactionId': txnId,
-          'accountName': _verifiedAccountName,
-          'paymentType': _paymentType,
-          'timestamp': DateTime.now(),
-        };
-
         widget.onPaymentComplete(paymentData);
-        _showSuccess('Payment of UGX ${_currencyFormat.format(_totalAmount.round())} completed successfully!');
+        messenger.showSnackBar(SnackBar(
+          content: Text('Payment of $totalLabel received.'),
+          backgroundColor: _C.brand,
+          behavior: SnackBarBehavior.floating,
+        ));
       } else {
-        _showError('Payment was cancelled or failed');
+        messenger.showSnackBar(SnackBar(
+          content: const Text('Payment was cancelled or failed.'),
+          backgroundColor: _C.error,
+          behavior: SnackBarBehavior.floating,
+        ));
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
+      if (mounted) setState(() => _isProcessing = false);
       _showError('Error: $e');
     }
   }
@@ -291,464 +365,275 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: _C.error,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  void _showSuccess(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
+  // ---------------------------------------------------------------- styles
+
+  TextStyle _t(double size,
+          {FontWeight weight = FontWeight.w400, Color color = _C.ink}) =>
+      GoogleFonts.inter(fontSize: size, fontWeight: weight, color: color);
+
+  String _ugx(double v) => 'UGX ${_fmt.format(v.round())}';
+
+  // ----------------------------------------------------------------- build
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 900),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF059669), Color(0xFF047857)],
-                ),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.phone_android, color: Colors.white, size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Mobile Money Payment',
-                          style: GoogleFonts.inter(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        Text(
-                          widget.memberName,
-                          style: GoogleFonts.inter(fontSize: 13, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-
-            // Body - Two Column Layout
+            _header(),
+            const Divider(height: 1, color: _C.line),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Left Column
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Outstanding Breakdown
-                          _buildOutstandingSection(),
-                          const SizedBox(height: 24),
-
-                          // Payment Options
-                          _buildPaymentOptionsSection(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 24),
-                    
-                    // Right Column
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Phone Verification
-                          _buildPhoneVerificationSection(),
-                          const SizedBox(height: 24),
-
-                          // Payment Summary
-                          _buildPaymentSummary(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                child: LayoutBuilder(builder: (context, c) {
+                  final left = _leftColumn();
+                  final right = _rightColumn();
+                  if (c.maxWidth >= 640) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: left),
+                        const SizedBox(width: 32),
+                        Expanded(child: right),
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [right, const SizedBox(height: 28), left],
+                  );
+                }),
               ),
             ),
-
-            // Footer with action button
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        side: BorderSide(color: Colors.grey.shade300),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed: _isProcessing ? null : _initiatePayment,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF059669),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: _isProcessing
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Text(
-                              'Send Payment Request',
-                              style: GoogleFonts.inter(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            const Divider(height: 1, color: _C.line),
+            _footer(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildOutstandingSection() {
+  Widget _leftColumn() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Outstanding Balance',
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.red.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.red.shade200),
-          ),
-          child: Column(
-            children: [
-              _buildOutstandingRow('Principal', widget.principalOutstanding, Icons.account_balance),
-              const Divider(height: 12),
-              _buildOutstandingRow('Interest', widget.interestOutstanding, Icons.percent),
-              const Divider(height: 12),
-              _buildOutstandingRow('Charges', widget.chargesOutstanding, Icons.receipt_long),
-              const Divider(height: 12, thickness: 2),
-              _buildOutstandingRow(
-                'Total',
-                widget.principalOutstanding + widget.interestOutstanding + widget.chargesOutstanding,
-                Icons.account_balance_wallet,
-                isBold: true,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOutstandingRow(String label, double amount, IconData icon, {bool isBold = false}) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: Colors.red.shade700),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              color: Colors.grey.shade800,
-            ),
-          ),
-        ),
-        Text(
-          'UGX ${_currencyFormat.format(amount.round())}',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-            color: Colors.red.shade700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentOptionsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Payment Type',
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 10),
-        _buildPaymentOption('Pay All', 'full', 'Complete balance', Icons.check_circle, Colors.green),
-        const SizedBox(height: 6),
-        _buildPaymentOption('Interest + Charges', 'interest_only', 'Skip principal', Icons.percent, Colors.orange),
-        const SizedBox(height: 6),
-        _buildPaymentOption('Principal Only', 'principal_only', 'Principal amount', Icons.account_balance, Colors.blue),
-        const SizedBox(height: 6),
-        _buildPaymentOption('Custom Partial', 'partial', 'Enter amounts', Icons.edit, Colors.purple),
-        
-        // Custom amount fields (show only if partial is selected)
+        _outstandingCard(),
+        const SizedBox(height: 28),
+        _sectionTitle('Payment type'),
+        for (var i = 0; i < _options.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _typeTile(_options[i]),
+        ],
         if (_paymentType == 'partial') ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.purple.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.purple.shade200),
-            ),
-            child: Column(
-              children: [
-                _buildAmountField('Principal', _principalAmount, widget.principalOutstanding, (value) {
-                  setState(() => _principalAmount = value);
-                }),
-                const SizedBox(height: 10),
-                _buildAmountField('Interest', _interestAmount, widget.interestOutstanding, (value) {
-                  setState(() => _interestAmount = value);
-                }),
-                const SizedBox(height: 10),
-                _buildAmountField('Charges', _chargesAmount, widget.chargesOutstanding, (value) {
-                  setState(() => _chargesAmount = value);
-                }),
-              ],
-            ),
-          ),
+          const SizedBox(height: 16),
+          _amountField('Principal', _principalCtrl,
+              widget.principalOutstanding,
+              (v) => setState(() => _principalAmount = v)),
+          const SizedBox(height: 14),
+          _amountField('Interest', _interestCtrl, widget.interestOutstanding,
+              (v) => setState(() => _interestAmount = v)),
+          const SizedBox(height: 14),
+          _amountField('Charges', _chargesCtrl, widget.chargesOutstanding,
+              (v) => setState(() => _chargesAmount = v)),
         ],
       ],
     );
   }
 
-  Widget _buildPaymentOption(
-    String title,
-    String value,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    final isSelected = _paymentType == value;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _paymentType = value;
-          _updateAmounts();
-        });
-      },
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.1) : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? color : Colors.grey.shade300,
-            width: isSelected ? 2 : 1,
+  Widget _rightColumn() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Mobile money account'),
+        _accountSection(),
+        const SizedBox(height: 28),
+        _summaryCard(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------- header
+
+  Widget _header() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 12, 16),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _C.brandSoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.smartphone_outlined,
+                color: _C.brand, size: 22),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isSelected ? color : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(6),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mobile money payment',
+                    style: _t(17, weight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(widget.memberName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _t(13, color: _C.muted)),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Close',
+            icon: const Icon(Icons.close, color: _C.muted, size: 20),
+            onPressed: _isProcessing ? null : () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(text, style: _t(14, weight: FontWeight.w600)),
+      );
+
+  // ----------------------------------------------------------- outstanding
+
+  Widget _outstandingCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _C.line),
+      ),
+      child: Column(
+        children: [
+          _kv('Principal', _ugx(widget.principalOutstanding)),
+          const SizedBox(height: 10),
+          _kv('Interest', _ugx(widget.interestOutstanding)),
+          const SizedBox(height: 10),
+          _kv('Charges', _ugx(widget.chargesOutstanding)),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1, color: _C.line),
+          ),
+          _kv('Total outstanding', _ugx(_totalOutstanding), strong: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _kv(String label, String value, {bool strong = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label,
+            style: _t(strong ? 14 : 13,
+                weight: strong ? FontWeight.w600 : FontWeight.w400,
+                color: strong ? _C.ink : _C.muted)),
+        Text(value,
+            style: _t(strong ? 15 : 13,
+                weight: strong ? FontWeight.w700 : FontWeight.w500)),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------- payment type
+
+  Widget _typeTile(_Option o) {
+    final selected = _paymentType == o.value;
+    return Material(
+      color: selected ? _C.brandSoft : Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          _paymentType = o.value;
+          _updateAmounts();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? _C.brand : _C.line,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 20,
+                color: selected ? _C.brand : _C.muted,
               ),
-              child: Icon(icon, color: Colors.white, size: 16),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                  Text(
-                    description,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(o.title, style: _t(14, weight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(o.subtitle, style: _t(12, color: _C.muted)),
+                  ],
+                ),
               ),
-            ),
-            Icon(
-              isSelected ? Icons.check_circle : Icons.circle_outlined,
-              color: isSelected ? color : Colors.grey.shade400,
-              size: 20,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildAmountField(
-    String label,
-    double currentValue,
-    double maxValue,
-    Function(double) onChanged,
-  ) {
-    final controller = TextEditingController(text: currentValue.round().toString());
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
-              ),
-            ),
-            Text(
-              'Max: ${_currencyFormat.format(maxValue.round())}',
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            prefixText: 'UGX ',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            filled: true,
-            fillColor: Colors.white,
-            isDense: true,
-          ),
-          style: GoogleFonts.inter(fontSize: 13),
-          onChanged: (value) {
-            final amount = double.tryParse(value) ?? 0;
-            if (amount <= maxValue) {
-              onChanged(amount);
-            }
-          },
-        ),
-      ],
+  Widget _amountField(String label, TextEditingController ctrl, double max,
+      ValueChanged<double> onChanged) {
+    final over = (double.tryParse(ctrl.text) ?? 0) > max;
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      style: _t(14, weight: FontWeight.w500),
+      onChanged: (v) => onChanged(double.tryParse(v) ?? 0),
+      decoration: _inputDecoration(
+        label: label,
+        prefixText: 'UGX ',
+        helper: 'Outstanding: ${_ugx(max)}',
+        error: over ? 'Cannot exceed ${_ugx(max)}' : null,
+      ),
     );
   }
 
-  Widget _buildPhoneVerificationSection() {
+  // --------------------------------------------------------------- account
+
+  Widget _accountSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Mobile Money Details',
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 10),
-        
-        // Provider selection
         DropdownButtonFormField<String>(
           value: _provider,
-          decoration: InputDecoration(
-            labelText: 'Provider',
-            prefixIcon: const Icon(Icons.sim_card, size: 20),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            filled: true,
-            fillColor: Colors.grey.shade50,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            isDense: true,
-          ),
-          style: GoogleFonts.inter(fontSize: 13, color: Colors.black),
+          icon: const Icon(Icons.expand_more, color: _C.muted),
+          style: _t(14, weight: FontWeight.w500),
+          decoration:
+              _inputDecoration(label: 'Provider', prefixIcon: Icons.sim_card_outlined),
           items: const [
             DropdownMenuItem(value: 'MTN', child: Text('MTN Mobile Money')),
             DropdownMenuItem(value: 'Airtel', child: Text('Airtel Money')),
@@ -760,162 +645,116 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
             });
           },
         ),
-        const SizedBox(height: 12),
-        
-        // Phone number with verify button
+        const SizedBox(height: 14),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              flex: 2,
               child: TextField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: '256XXXXXXXXX',
-                  prefixIcon: const Icon(Icons.phone, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                  fillColor: Colors.grey.shade50,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  isDense: true,
+                style: _t(14, weight: FontWeight.w500),
+                onChanged: (_) => setState(() => _verifiedAccountName = null),
+                decoration: _inputDecoration(
+                  label: 'Phone number',
+                  hint: '256XXXXXXXXX',
+                  prefixIcon: Icons.phone_outlined,
                 ),
-                style: GoogleFonts.inter(fontSize: 13),
-                onChanged: (_) {
-                  setState(() => _verifiedAccountName = null);
-                },
               ),
             ),
             const SizedBox(width: 10),
             SizedBox(
-              height: 48,
-              child: ElevatedButton.icon(
+              height: 50,
+              child: OutlinedButton(
                 onPressed: _isVerifying ? null : _verifyPhoneNumber,
-                icon: _isVerifying
-                    ? const SizedBox(
-                        height: 14,
-                        width: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.verified_user, size: 16),
-                label: Text(
-                  'Verify',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0891B2),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _C.brand,
+                  side: const BorderSide(color: _C.brand),
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                      borderRadius: BorderRadius.circular(10)),
                 ),
+                child: _isVerifying
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: _C.brand),
+                      )
+                    : Text('Verify', style: _t(14, weight: FontWeight.w600, color: _C.brand)),
               ),
             ),
           ],
         ),
-        
-        // Verification result
         if (_verifiedAccountName != null) ...[
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.green.shade300),
-            ),
-            child: Row(
+          const SizedBox(height: 12),
+          _verificationResult(),
+        ],
+      ],
+    );
+  }
+
+  Widget _verificationResult() {
+    final ok = _isVerified;
+    final fg = ok ? _C.brand : _C.warn;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ok ? _C.brandSoft : _C.warnSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ok ? _C.brandLine : const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          Icon(ok ? Icons.check_circle : Icons.info_outline,
+              size: 20, color: fg),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle, color: Colors.green.shade700, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Registered in names of',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.green.shade700,
-                        ),
-                      ),
-                      Text(
-                        _verifiedAccountName!,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade900,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                Text(ok ? 'Registered to' : 'Not verified',
+                    style: _t(12, color: fg)),
+                const SizedBox(height: 2),
+                Text(_verifiedAccountName!,
+                    style: _t(14, weight: FontWeight.w600)),
               ],
             ),
           ),
         ],
-      ],
+      ),
     );
   }
 
-  Widget _buildPaymentSummary() {
+  // --------------------------------------------------------------- summary
+
+  Widget _summaryCard() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade50, Colors.green.shade50],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
+        color: _C.brandSoft,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.receipt, color: Colors.blue.shade700, size: 18),
-              const SizedBox(width: 6),
-              Text(
-                'Payment Summary',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-            ],
+          _kv('Principal', _ugx(_principalAmount)),
+          const SizedBox(height: 10),
+          _kv('Interest', _ugx(_interestAmount)),
+          const SizedBox(height: 10),
+          _kv('Charges', _ugx(_chargesAmount)),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1, color: _C.brandLine),
           ),
-          const Divider(height: 14),
-          _buildSummaryRow('Principal', _principalAmount),
-          const SizedBox(height: 6),
-          _buildSummaryRow('Interest', _interestAmount),
-          const SizedBox(height: 6),
-          _buildSummaryRow('Charges', _chargesAmount),
-          const Divider(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                'Total Amount',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade900,
-                ),
-              ),
-              Text(
-                'UGX ${_currencyFormat.format(_totalAmount.round())}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF059669),
-                ),
-              ),
+              Text('Amount to request',
+                  style: _t(14, weight: FontWeight.w600)),
+              Text(_ugx(_totalAmount),
+                  style: _t(20, weight: FontWeight.w700, color: _C.brand)),
             ],
           ),
         ],
@@ -923,46 +762,113 @@ class _LoanPaymentMobileMoneyDialogState extends State<LoanPaymentMobileMoneyDia
     );
   }
 
-  Widget _buildSummaryRow(String label, double amount) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: Colors.grey.shade700,
+  // ---------------------------------------------------------------- footer
+
+  Widget _footer() {
+    final canSubmit = !_isProcessing && _totalAmount > 0 && !_hasAmountError;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _isProcessing ? null : () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _C.ink,
+                side: const BorderSide(color: _C.line),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text('Cancel', style: _t(14, weight: FontWeight.w600)),
+            ),
           ),
-        ),
-        Text(
-          'UGX ${_currencyFormat.format(amount.round())}',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey.shade800,
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton(
+              onPressed: canSubmit ? _initiatePayment : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _C.brand,
+                disabledBackgroundColor: _C.line,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: _isProcessing
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: _C.brand),
+                    )
+                  : Text('Send payment request',
+                      style: _t(14,
+                          weight: FontWeight.w600,
+                          color: canSubmit ? Colors.white : _C.muted)),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------- helpers
+
+  InputDecoration _inputDecoration({
+    required String label,
+    String? hint,
+    String? helper,
+    String? error,
+    String? prefixText,
+    IconData? prefixIcon,
+  }) {
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: c, width: w),
+        );
+
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      helperMaxLines: 2,
+      errorText: error,
+      prefixText: prefixText,
+      prefixIcon: prefixIcon == null
+          ? null
+          : Icon(prefixIcon, size: 18, color: _C.muted),
+      labelStyle: _t(13, color: _C.muted),
+      helperStyle: _t(12, color: _C.muted),
+      errorStyle: _t(12, color: _C.error),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      enabledBorder: border(_C.line),
+      focusedBorder: border(_C.brand, 1.5),
+      errorBorder: border(_C.error),
+      focusedErrorBorder: border(_C.error, 1.5),
     );
   }
 }
 
-
-// Polling Dialog - exactly like farmer screen
+// ---------------------------------------------------------------------------
+// Polling dialog: waits for the member to approve the request on their phone.
+// Polls every 5s for up to 3 minutes (unchanged behaviour).
+// ---------------------------------------------------------------------------
 class _PollingDialog extends StatefulWidget {
   final String uuid;
   final String phoneNumber;
 
-  const _PollingDialog({
-    required this.uuid,
-    required this.phoneNumber,
-  });
+  const _PollingDialog({required this.uuid, required this.phoneNumber});
 
   @override
   State<_PollingDialog> createState() => _PollingDialogState();
 }
 
 class _PollingDialogState extends State<_PollingDialog> {
+  static const _totalChecks = 36;
   double _progress = 0.0;
   String _status = 'processing';
 
@@ -973,63 +879,88 @@ class _PollingDialogState extends State<_PollingDialog> {
   }
 
   Future<void> _pollStatus() async {
-    // Poll up to 3 minutes (36 × 5s) - same as farmer screen
-    for (int i = 0; i < 36; i++) {
+    for (int i = 0; i < _totalChecks; i++) {
       await Future.delayed(const Duration(seconds: 5));
       if (!mounted) return;
 
-      setState(() => _progress = (i + 1) / 36);
+      setState(() => _progress = (i + 1) / _totalChecks);
 
       try {
         _status = await FirebaseService.marzPayCheckStatus(widget.uuid);
         debugPrint('Payment status: $_status');
       } catch (e) {
         debugPrint('Error checking status: $e');
-        // Continue polling
       }
 
       if (_status == 'completed') {
-        if (mounted) Navigator.pop(context, true); // Success
+        if (mounted) Navigator.pop(context, true);
         return;
       } else if (_status == 'failed' || _status == 'cancelled') {
-        if (mounted) Navigator.pop(context, false); // Failed
+        if (mounted) Navigator.pop(context, false);
         return;
       }
     }
-
-    // Timeout after 3 minutes
     if (mounted) Navigator.pop(context, false);
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => false,
+    final remainingSeconds = ((1 - _progress) * _totalChecks * 5).round();
+    final mins = remainingSeconds ~/ 60;
+    final secs = (remainingSeconds % 60).toString().padLeft(2, '0');
+
+    return PopScope(
+      canPop: false,
       child: AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(value: _progress),
-            const SizedBox(height: 16),
-            Text(
-              'Payment request sent to ${widget.phoneNumber}',
-              style: GoogleFonts.inter(fontSize: 14),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Please enter PIN on your phone to complete payment',
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.grey),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            LinearProgressIndicator(value: _progress),
-            const SizedBox(height: 8),
-            Text(
-              '${(_progress * 100).round()}% • Checking status...',
-              style: GoogleFonts.inter(fontSize: 11, color: Colors.grey),
-            ),
-          ],
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: const BoxDecoration(
+                  color: _C.brandSoft,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.smartphone_outlined,
+                    color: _C.brand, size: 28),
+              ),
+              const SizedBox(height: 20),
+              Text('Waiting for approval',
+                  style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: _C.ink)),
+              const SizedBox(height: 8),
+              Text(
+                'A payment request was sent to ${widget.phoneNumber}. Ask the member to enter their PIN to approve it.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                    fontSize: 13, color: _C.muted, height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 6,
+                  backgroundColor: _C.line,
+                  color: _C.brand,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Checking status. Times out in $mins:$secs',
+                style: GoogleFonts.inter(fontSize: 12, color: _C.muted),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
-/// Clean Cash Loan Payment Dialog
-/// Features:
-/// - Clear outstanding breakdown
-/// - Payment options: Pay All, Partial, Interest Only, Principal Only
-/// - Simple, non-confusing UI
+/// Cash loan payment dialog.
+///
+/// Public API is unchanged from the previous version, so it is a drop-in
+/// replacement. Behaviour fixes included:
+/// - Custom amount fields keep their cursor while typing (controllers are
+///   created once instead of on every rebuild).
+/// - Amounts above the outstanding balance show an inline error instead of
+///   being silently ignored.
+/// - A phone number is validated when the member has none on file.
 class LoanPaymentCashDialog extends StatefulWidget {
   final double principalOutstanding;
   final double interestOutstanding;
   final double chargesOutstanding;
   final String memberName;
-  final String? memberPhone; // Member's registered phone
+  final String? memberPhone;
   final Function(Map<String, dynamic> paymentData) onPaymentComplete;
 
   const LoanPaymentCashDialog({
@@ -29,74 +34,136 @@ class LoanPaymentCashDialog extends StatefulWidget {
   State<LoanPaymentCashDialog> createState() => _LoanPaymentCashDialogState();
 }
 
+/// Design tokens: one brand colour, neutral greys, one error colour.
+class _C {
+  static const brand = Color(0xFF047857);
+  static const brandSoft = Color(0xFFECFDF5);
+  static const ink = Color(0xFF1F2937);
+  static const muted = Color(0xFF6B7280);
+  static const line = Color(0xFFE5E7EB);
+  static const surface = Color(0xFFF9FAFB);
+  static const error = Color(0xFFB91C1C);
+}
+
+enum _PaymentType { full, interestOnly, principalOnly, partial }
+
 class _LoanPaymentCashDialogState extends State<LoanPaymentCashDialog> {
-  final _currencyFormat = NumberFormat('#,###', 'en_US');
-  final _altPhoneController = TextEditingController();
-  
-  String _paymentType = 'full'; // full, partial, interest_only, principal_only
+  final _fmt = NumberFormat('#,###', 'en_US');
+
+  final _altPhoneCtrl = TextEditingController();
+  final _principalCtrl = TextEditingController();
+  final _interestCtrl = TextEditingController();
+  final _chargesCtrl = TextEditingController();
+
+  _PaymentType _type = _PaymentType.full;
   DateTime _paymentDate = DateTime.now();
-  
-  double _principalAmount = 0;
-  double _interestAmount = 0;
-  double _chargesAmount = 0;
+
+  double _principal = 0;
+  double _interest = 0;
+  double _charges = 0;
+
+  String? _phoneError;
+
+  bool get _hasMemberPhone =>
+      widget.memberPhone != null && widget.memberPhone!.trim().isNotEmpty;
+
+  double get _totalOutstanding =>
+      widget.principalOutstanding +
+      widget.interestOutstanding +
+      widget.chargesOutstanding;
+
+  double get _total => _principal + _interest + _charges;
 
   @override
   void initState() {
     super.initState();
-    _updateAmounts();
+    _applyType(_PaymentType.full);
   }
 
   @override
   void dispose() {
-    _altPhoneController.dispose();
+    _altPhoneCtrl.dispose();
+    _principalCtrl.dispose();
+    _interestCtrl.dispose();
+    _chargesCtrl.dispose();
     super.dispose();
   }
 
-  void _updateAmounts() {
+  // ---------------------------------------------------------------- logic
+
+  void _applyType(_PaymentType type) {
     setState(() {
-      switch (_paymentType) {
-        case 'full':
-          _principalAmount = widget.principalOutstanding;
-          _interestAmount = widget.interestOutstanding;
-          _chargesAmount = widget.chargesOutstanding;
+      _type = type;
+      switch (type) {
+        case _PaymentType.full:
+          _principal = widget.principalOutstanding;
+          _interest = widget.interestOutstanding;
+          _charges = widget.chargesOutstanding;
           break;
-        case 'interest_only':
-          _principalAmount = 0;
-          _interestAmount = widget.interestOutstanding;
-          _chargesAmount = widget.chargesOutstanding;
+        case _PaymentType.interestOnly:
+          _principal = 0;
+          _interest = widget.interestOutstanding;
+          _charges = widget.chargesOutstanding;
           break;
-        case 'principal_only':
-          _principalAmount = widget.principalOutstanding;
-          _interestAmount = 0;
-          _chargesAmount = 0;
+        case _PaymentType.principalOnly:
+          _principal = widget.principalOutstanding;
+          _interest = 0;
+          _charges = 0;
           break;
-        case 'partial':
-          // Keep custom amounts as is
+        case _PaymentType.partial:
+          // Keep whatever amounts are currently set as the starting point.
           break;
       }
+      _principalCtrl.text = _principal.round().toString();
+      _interestCtrl.text = _interest.round().toString();
+      _chargesCtrl.text = _charges.round().toString();
     });
   }
 
-  double get _totalAmount => _principalAmount + _interestAmount + _chargesAmount;
+  bool get _hasAmountError =>
+      _principal > widget.principalOutstanding ||
+      _interest > widget.interestOutstanding ||
+      _charges > widget.chargesOutstanding;
+
+  String get _typeValue {
+    switch (_type) {
+      case _PaymentType.full:
+        return 'full';
+      case _PaymentType.interestOnly:
+        return 'interest_only';
+      case _PaymentType.principalOnly:
+        return 'principal_only';
+      case _PaymentType.partial:
+        return 'partial';
+    }
+  }
 
   void _recordPayment() {
-    if (_totalAmount <= 0) {
-      _showError('Payment amount must be greater than zero');
+    if (_total <= 0) {
+      _showError('Enter an amount greater than zero.');
+      return;
+    }
+    if (_hasAmountError) {
+      _showError('One or more amounts exceed the outstanding balance.');
       return;
     }
 
-    final paymentData = {
-      'principalPaid': _principalAmount,
-      'interestPaid': _interestAmount,
-      'chargesPaid': _chargesAmount,
-      'totalPaid': _totalAmount,
+    final alt = _altPhoneCtrl.text.trim();
+    if (!_hasMemberPhone && alt.isEmpty) {
+      setState(() => _phoneError = 'Enter a phone number to send the receipt.');
+      return;
+    }
+
+    widget.onPaymentComplete({
+      'principalPaid': _principal,
+      'interestPaid': _interest,
+      'chargesPaid': _charges,
+      'totalPaid': _total,
       'paymentMethod': 'Cash',
       'paymentDate': _paymentDate,
-      'paymentType': _paymentType,
-      'alternativePhone': _altPhoneController.text.trim(), // Additional SMS recipient
-    };
-
-    widget.onPaymentComplete(paymentData);
+      'paymentType': _typeValue,
+      'alternativePhone': alt,
+    });
     Navigator.pop(context);
   }
 
@@ -104,674 +171,485 @@ class _LoanPaymentCashDialogState extends State<LoanPaymentCashDialog> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: _C.error,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
+
+  // ---------------------------------------------------------------- styles
+
+  TextStyle _t(double size,
+          {FontWeight weight = FontWeight.w400, Color color = _C.ink}) =>
+      GoogleFonts.inter(fontSize: size, fontWeight: weight, color: color);
+
+  String _ugx(double v) => 'UGX ${_fmt.format(v.round())}';
+
+  // ---------------------------------------------------------------- build
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 600),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF059669), Color(0xFF047857)],
-                ),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.money, color: Colors.white, size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Cash Payment',
-                          style: GoogleFonts.inter(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        Text(
-                          widget.memberName,
-                          style: GoogleFonts.inter(fontSize: 13, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-
-            // Body
+            _header(),
+            const Divider(height: 1, color: _C.line),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Payment Date
-                    _buildPaymentDateSection(),
-                    const SizedBox(height: 24),
-                    
-                    // Alternative Phone for SMS
-                    _buildAlternativePhoneSection(),
-                    const SizedBox(height: 24),
-
-                    // Outstanding Breakdown
-                    _buildOutstandingSection(),
-                    const SizedBox(height: 24),
-
-                    // Payment Options
-                    _buildPaymentOptionsSection(),
-                    const SizedBox(height: 24),
-
-                    // Payment Summary
-                    _buildPaymentSummary(),
+                    _outstandingCard(),
+                    const SizedBox(height: 28),
+                    _sectionTitle('Payment type'),
+                    _paymentTypeList(),
+                    if (_type == _PaymentType.partial) ...[
+                      const SizedBox(height: 16),
+                      _customAmounts(),
+                    ],
+                    const SizedBox(height: 28),
+                    _sectionTitle('Payment date'),
+                    _dateField(),
+                    const SizedBox(height: 28),
+                    _sectionTitle('SMS receipt'),
+                    _smsSection(),
+                    const SizedBox(height: 28),
+                    _summaryCard(),
                   ],
                 ),
               ),
             ),
-
-            // Footer with action button
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        side: BorderSide(color: Colors.grey.shade300),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed: _recordPayment,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF059669),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: Text(
-                        'Record Payment',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            const Divider(height: 1, color: _C.line),
+            _footer(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPaymentDateSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Payment Date',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 12),
-        InkWell(
-          onTap: () async {
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: _paymentDate,
-              firstDate: DateTime(2020),
-              lastDate: DateTime.now(),
-            );
-            if (picked != null) {
-              setState(() => _paymentDate = picked);
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today, color: Colors.blue.shade700, size: 20),
-                const SizedBox(width: 12),
-                Text(
-                  DateFormat('EEEE, MMMM dd, yyyy').format(_paymentDate),
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // ---------------------------------------------------------------- header
 
-  Widget _buildOutstandingSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Outstanding Balance',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.red.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.red.shade200),
-          ),
-          child: Column(
-            children: [
-              _buildOutstandingRow(
-                'Principal',
-                widget.principalOutstanding,
-                Icons.account_balance,
-              ),
-              const Divider(height: 16),
-              _buildOutstandingRow(
-                'Interest',
-                widget.interestOutstanding,
-                Icons.percent,
-              ),
-              const Divider(height: 16),
-              _buildOutstandingRow(
-                'Charges',
-                widget.chargesOutstanding,
-                Icons.receipt_long,
-              ),
-              const Divider(height: 16, thickness: 2),
-              _buildOutstandingRow(
-                'Total Outstanding',
-                widget.principalOutstanding +
-                    widget.interestOutstanding +
-                    widget.chargesOutstanding,
-                Icons.account_balance_wallet,
-                isBold: true,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOutstandingRow(String label, double amount, IconData icon,
-      {bool isBold = false}) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: Colors.red.shade700),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              color: Colors.grey.shade800,
-            ),
-          ),
-        ),
-        Text(
-          'UGX ${_currencyFormat.format(amount.round())}',
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-            color: Colors.red.shade700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentOptionsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Payment Type',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildPaymentOption(
-          'Pay All Outstanding',
-          'full',
-          'Pay the complete outstanding balance',
-          Icons.check_circle,
-          Colors.green,
-        ),
-        const SizedBox(height: 8),
-        _buildPaymentOption(
-          'Interest + Charges Only',
-          'interest_only',
-          'Pay interest and charges, skip principal',
-          Icons.percent,
-          Colors.orange,
-        ),
-        const SizedBox(height: 8),
-        _buildPaymentOption(
-          'Principal Only',
-          'principal_only',
-          'Pay principal amount only',
-          Icons.account_balance,
-          Colors.blue,
-        ),
-        const SizedBox(height: 8),
-        _buildPaymentOption(
-          'Custom Partial Payment',
-          'partial',
-          'Enter custom amounts',
-          Icons.edit,
-          Colors.purple,
-        ),
-        
-        // Custom amount fields (show only if partial is selected)
-        if (_paymentType == 'partial') ...[
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.purple.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.purple.shade200),
-            ),
-            child: Column(
-              children: [
-                _buildAmountField('Principal Amount', _principalAmount, widget.principalOutstanding, (value) {
-                  setState(() => _principalAmount = value);
-                }),
-                const SizedBox(height: 12),
-                _buildAmountField('Interest Amount', _interestAmount, widget.interestOutstanding, (value) {
-                  setState(() => _interestAmount = value);
-                }),
-                const SizedBox(height: 12),
-                _buildAmountField('Charges Amount', _chargesAmount, widget.chargesOutstanding, (value) {
-                  setState(() => _chargesAmount = value);
-                }),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildPaymentOption(
-    String title,
-    String value,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    final isSelected = _paymentType == value;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _paymentType = value;
-          _updateAmounts();
-        });
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.1) : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? color : Colors.grey.shade300,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSelected ? color : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              Icon(Icons.check_circle, color: color, size: 24)
-            else
-              Icon(Icons.circle_outlined, color: Colors.grey.shade400, size: 24),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAmountField(
-    String label,
-    double currentValue,
-    double maxValue,
-    Function(double) onChanged,
-  ) {
-    final controller = TextEditingController(text: currentValue.round().toString());
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
-              ),
-            ),
-            Text(
-              'Max: ${_currencyFormat.format(maxValue.round())}',
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            prefixText: 'UGX ',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            filled: true,
-            fillColor: Colors.white,
-          ),
-          onChanged: (value) {
-            final amount = double.tryParse(value) ?? 0;
-            if (amount <= maxValue) {
-              onChanged(amount);
-            }
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentSummary() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade50, Colors.green.shade50],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _header() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 12, 16),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(Icons.receipt, color: Colors.blue.shade700, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Payment Summary',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-            ],
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _C.brandSoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.payments_outlined,
+                color: _C.brand, size: 22),
           ),
-          const Divider(height: 16),
-          _buildSummaryRow('Principal Payment', _principalAmount),
-          const SizedBox(height: 8),
-          _buildSummaryRow('Interest Payment', _interestAmount),
-          const SizedBox(height: 8),
-          _buildSummaryRow('Charges Payment', _chargesAmount),
-          const Divider(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total Amount',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-              Text(
-                'UGX ${_currencyFormat.format(_totalAmount.round())}',
-                style: GoogleFonts.inter(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF059669),
-                ),
-              ),
-            ],
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Record cash payment',
+                    style: _t(17, weight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(widget.memberName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _t(13, color: _C.muted)),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Close',
+            icon: const Icon(Icons.close, color: _C.muted, size: 20),
+            onPressed: () => Navigator.pop(context),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryRow(String label, double amount) {
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(text, style: _t(14, weight: FontWeight.w600)),
+      );
+
+  // ----------------------------------------------------------- outstanding
+
+  Widget _outstandingCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _C.line),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _kv('Principal', _ugx(widget.principalOutstanding)),
+          const SizedBox(height: 10),
+          _kv('Interest', _ugx(widget.interestOutstanding)),
+          const SizedBox(height: 10),
+          _kv('Charges', _ugx(widget.chargesOutstanding)),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1, color: _C.line),
+          ),
+          _kv('Total outstanding', _ugx(_totalOutstanding), strong: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _kv(String label, String value, {bool strong = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: Colors.grey.shade700,
+        Text(label,
+            style: _t(strong ? 14 : 13,
+                weight: strong ? FontWeight.w600 : FontWeight.w400,
+                color: strong ? _C.ink : _C.muted)),
+        Text(value,
+            style: _t(strong ? 15 : 13,
+                weight: strong ? FontWeight.w700 : FontWeight.w500)),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------- payment type
+
+  Widget _paymentTypeList() {
+    final options = <_Option>[
+      _Option(_PaymentType.full, 'Pay full balance',
+          'Principal, interest and charges'),
+      _Option(_PaymentType.interestOnly, 'Interest and charges',
+          'Leave principal unpaid'),
+      _Option(_PaymentType.principalOnly, 'Principal only',
+          'Leave interest and charges unpaid'),
+      _Option(_PaymentType.partial, 'Custom amounts',
+          'Choose how much goes to each part'),
+    ];
+
+    return Column(
+      children: [
+        for (var i = 0; i < options.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _typeTile(options[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _typeTile(_Option o) {
+    final selected = _type == o.type;
+    return Material(
+      color: selected ? _C.brandSoft : Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _applyType(o.type),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? _C.brand : _C.line,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 20,
+                color: selected ? _C.brand : _C.muted,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(o.title, style: _t(14, weight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(o.subtitle, style: _t(12, color: _C.muted)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        Text(
-          'UGX ${_currencyFormat.format(amount.round())}',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey.shade800,
+      ),
+    );
+  }
+
+  // --------------------------------------------------------- custom amounts
+
+  Widget _customAmounts() {
+    return Column(
+      children: [
+        _amountField('Principal', _principalCtrl, widget.principalOutstanding,
+            (v) => setState(() => _principal = v)),
+        const SizedBox(height: 14),
+        _amountField('Interest', _interestCtrl, widget.interestOutstanding,
+            (v) => setState(() => _interest = v)),
+        const SizedBox(height: 14),
+        _amountField('Charges', _chargesCtrl, widget.chargesOutstanding,
+            (v) => setState(() => _charges = v)),
+      ],
+    );
+  }
+
+  Widget _amountField(String label, TextEditingController ctrl, double max,
+      ValueChanged<double> onChanged) {
+    final value = double.tryParse(ctrl.text) ?? 0;
+    final over = value > max;
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      style: _t(14, weight: FontWeight.w500),
+      onChanged: (v) => onChanged(double.tryParse(v) ?? 0),
+      decoration: _inputDecoration(
+        label: label,
+        prefixText: 'UGX ',
+        helper: 'Outstanding: ${_ugx(max)}',
+        error: over ? 'Cannot exceed ${_ugx(max)}' : null,
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------------ date
+
+  Widget _dateField() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: _paymentDate,
+          firstDate: DateTime(2020),
+          lastDate: DateTime.now(),
+        );
+        if (picked != null) setState(() => _paymentDate = picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _C.line),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_today_outlined,
+                size: 18, color: _C.muted),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                DateFormat('EEEE, d MMMM yyyy').format(_paymentDate),
+                style: _t(14, weight: FontWeight.w500),
+              ),
+            ),
+            const Icon(Icons.expand_more, size: 20, color: _C.muted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------- sms
+
+  Widget _smsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_hasMemberPhone)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _C.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _C.line),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, size: 18, color: _C.brand),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      style: _t(13, color: _C.muted),
+                      children: [
+                        const TextSpan(text: 'Receipt will be sent to '),
+                        TextSpan(
+                          text: widget.memberPhone!,
+                          style: _t(13, weight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_hasMemberPhone) const SizedBox(height: 12),
+        TextField(
+          controller: _altPhoneCtrl,
+          keyboardType: TextInputType.phone,
+          style: _t(14, weight: FontWeight.w500),
+          onChanged: (_) {
+            if (_phoneError != null) setState(() => _phoneError = null);
+          },
+          decoration: _inputDecoration(
+            label: _hasMemberPhone
+                ? 'Additional recipient (optional)'
+                : 'Phone number',
+            hint: '256XXXXXXXXX',
+            helper: _hasMemberPhone
+                ? 'For example a spouse or guarantor'
+                : 'No phone on file for this member',
+            error: _phoneError,
+            prefixIcon: Icons.phone_outlined,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildAlternativePhoneSection() {
-    final hasMemberPhone = widget.memberPhone != null && widget.memberPhone!.isNotEmpty;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.sms, size: 18, color: Colors.grey.shade700),
-            const SizedBox(width: 8),
-            Text(
-              'SMS Notification',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
+  // ---------------------------------------------------------------- summary
+
+  Widget _summaryCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _C.brandSoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          _kv('Principal', _ugx(_principal)),
+          const SizedBox(height: 10),
+          _kv('Interest', _ugx(_interest)),
+          const SizedBox(height: 10),
+          _kv('Charges', _ugx(_charges)),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1, color: Color(0xFFA7F3D0)),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('Amount received',
+                  style: _t(14, weight: FontWeight.w600)),
+              Text(_ugx(_total),
+                  style: _t(20, weight: FontWeight.w700, color: _C.brand)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ----------------------------------------------------------------- footer
+
+  Widget _footer() {
+    final canSubmit = _total > 0 && !_hasAmountError;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _C.ink,
+                side: const BorderSide(color: _C.line),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
+              child: Text('Cancel', style: _t(14, weight: FontWeight.w600)),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        
-        // Show member's phone if exists
-        if (hasMemberPhone) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green.shade300),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade600,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.check_circle, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'SMS will be sent to member\'s phone',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.memberPhone!,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton(
+              onPressed: canSubmit ? _recordPayment : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _C.brand,
+                disabledBackgroundColor: _C.line,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text(
+                'Record payment',
+                style: _t(14,
+                    weight: FontWeight.w600,
+                    color: canSubmit ? Colors.white : _C.muted),
+              ),
             ),
           ),
         ],
-        
-        // Alternative phone field (always show but with different helper text)
-        const SizedBox(height: 12),
-        TextField(
-          controller: _altPhoneController,
-          keyboardType: TextInputType.phone,
-          decoration: InputDecoration(
-            labelText: hasMemberPhone 
-                ? 'Additional SMS Recipient (Optional)' 
-                : 'Alternative Phone for SMS (Required)',
-            hintText: '256XXXXXXXXX',
-            helperText: hasMemberPhone
-                ? 'Send SMS to an additional number (e.g., spouse, guarantor)'
-                : 'Member has no phone. Provide a number to send SMS receipt',
-            helperMaxLines: 2,
-            prefixIcon: Icon(
-              hasMemberPhone ? Icons.person_add : Icons.warning,
-              color: hasMemberPhone ? Colors.blue : Colors.orange,
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            filled: true,
-            fillColor: hasMemberPhone ? Colors.blue.shade50 : Colors.orange.shade50,
-          ),
-        ),
-      ],
+      ),
     );
   }
+
+  // ---------------------------------------------------------------- helpers
+
+  InputDecoration _inputDecoration({
+    required String label,
+    String? hint,
+    String? helper,
+    String? error,
+    String? prefixText,
+    IconData? prefixIcon,
+  }) {
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: c, width: w),
+        );
+
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      helperMaxLines: 2,
+      errorText: error,
+      prefixText: prefixText,
+      prefixIcon:
+          prefixIcon == null ? null : Icon(prefixIcon, size: 18, color: _C.muted),
+      labelStyle: _t(13, color: _C.muted),
+      helperStyle: _t(12, color: _C.muted),
+      errorStyle: _t(12, color: _C.error),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      enabledBorder: border(_C.line),
+      focusedBorder: border(_C.brand, 1.5),
+      errorBorder: border(_C.error),
+      focusedErrorBorder: border(_C.error, 1.5),
+    );
+  }
+}
+
+class _Option {
+  final _PaymentType type;
+  final String title;
+  final String subtitle;
+  const _Option(this.type, this.title, this.subtitle);
 }

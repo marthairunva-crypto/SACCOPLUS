@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -35,14 +36,37 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   bool _isLoading = false;
   bool _autoApprove = true;
 
+  // Existing-loan guard: a member with an open loan cannot get a new one.
+  Map<String, dynamic>? _existingLoan;
+  bool _checkingLoan = false;
+
+  /// Loans with these statuses are finished and do NOT block a new loan.
+  /// Add/remove values here to match the statuses your app really uses.
+  static const _closedLoanStatuses = {
+    'rejected',
+    'declined',
+    'cancelled',
+    'canceled',
+    'paid',
+    'fully_paid',
+    'completed',
+    'closed',
+    'cleared',
+    'settled',
+  };
+
   final _currencyFormat = NumberFormat.currency(symbol: 'UGX ', decimalDigits: 0);
 
   // ── Responsive breakpoints (measured on the space the page actually gets,
   //    i.e. AFTER the sidebar, because we use LayoutBuilder) ──
+  static const double _compactBreakpoint = 600; // < this  -> phone
   static const double _wideBreakpoint = 900; // >= this -> two columns
-  static const double _maxWidthWide = 1100; // content cap on desktop / web
+  static const double _tripleBreakpoint = 1280; // >= this -> three columns
+  static const double _maxWidthWide = 2000; // only caps ultra-wide monitors
   static const double _maxWidthNarrow = 720; // content cap for single column
   static const double _columnGap = 20;
+
+  static const _radius = 14.0;
 
   @override
   void dispose() {
@@ -53,6 +77,8 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
     _notesController.dispose();
     super.dispose();
   }
+
+  // ───────────────────────── Build ─────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -81,8 +107,8 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             builder: (context, constraints) {
               final w = constraints.maxWidth;
               final wide = w >= _wideBreakpoint;
-              final hPad = w < 360 ? 12.0 : (wide ? 24.0 : 16.0);
-              final vPad = wide ? 24.0 : 16.0;
+              final hPad = w < 360 ? 12.0 : (w < _compactBreakpoint ? 16.0 : (wide ? 28.0 : 24.0));
+              final vPad = wide ? 28.0 : 16.0;
               final maxW = wide ? _maxWidthWide : _maxWidthNarrow;
 
               // Scroll view spans the full width so the scrollbar sits at the
@@ -93,10 +119,12 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxW),
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(hPad, vPad, hPad, vPad),
+                      padding: EdgeInsets.fromLTRB(hPad, vPad, hPad, vPad + 8),
                       child: Form(
                         key: _formKey,
-                        child: wide ? _buildWideBody() : _buildNarrowBody(),
+                        child: wide
+                            ? _buildWideBody(triple: w >= _tripleBreakpoint)
+                            : _buildNarrowBody(compact: w < _compactBreakpoint),
                       ),
                     ),
                   ),
@@ -111,42 +139,42 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
   // ───────────────────────── Layouts ─────────────────────────
 
-  /// Phones / small windows: everything in one column.
-  Widget _buildNarrowBody() {
+  /// Phones / small windows / portrait tablets: one column.
+  Widget _buildNarrowBody({required bool compact}) {
+    final gap = compact ? 14.0 : 18.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildInfoCard(),
-        const SizedBox(height: 16),
+        _buildHeader(compact: compact),
+        SizedBox(height: gap),
         _buildMemberSelector(),
-        const SizedBox(height: 16),
+        SizedBox(height: gap),
         _buildLoanDetails(),
-        const SizedBox(height: 16),
+        SizedBox(height: gap),
         _buildLoanTypeSection(),
-        if (_hasSummary) ...[
-          const SizedBox(height: 16),
-          _buildCalculatedDetails(),
-        ],
-        const SizedBox(height: 24),
+        SizedBox(height: gap),
+        _buildCalculatedDetails(),
+        SizedBox(height: gap + 6),
         _buildSubmitButton(),
-        const SizedBox(height: 8),
       ],
     );
   }
 
   /// Desktop / web / tablets landscape: two balanced columns.
   ///   Left : member + loan details
-  ///   Right: configuration + live summary
-  Widget _buildWideBody() {
+  ///   Right: configuration + live summary + submit
+  Widget _buildWideBody({required bool triple}) {
+    if (triple) return _buildTripleBody();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildInfoCard(),
+        _buildHeader(compact: false),
         const SizedBox(height: 20),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
+              flex: 11,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -158,52 +186,167 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             ),
             const SizedBox(width: _columnGap),
             Expanded(
+              flex: 9,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildLoanTypeSection(),
-                  if (_hasSummary) ...[
-                    const SizedBox(height: 20),
-                    _buildCalculatedDetails(),
-                  ],
+                  const SizedBox(height: 20),
+                  _buildCalculatedDetails(),
+                  const SizedBox(height: 20),
+                  _buildSubmitButton(),
                 ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 24),
-        _buildSubmitButton(),
-        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  /// Large desktop monitors: three columns so no space is wasted.
+  ///   Col 1: member + loan details
+  ///   Col 2: configuration
+  ///   Col 3: repayment summary + submit
+  Widget _buildTripleBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(compact: false),
+        const SizedBox(height: 20),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildMemberSelector(),
+                  const SizedBox(height: 20),
+                  _buildLoanDetails(),
+                ],
+              ),
+            ),
+            const SizedBox(width: _columnGap),
+            Expanded(
+              flex: 3,
+              child: _buildLoanTypeSection(),
+            ),
+            const SizedBox(width: _columnGap),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildCalculatedDetails(),
+                  const SizedBox(height: 20),
+                  _buildSubmitButton(),
+                ],
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
 
   // ───────────────────────── Shared helpers ─────────────────────────
 
-  Widget _card({required Widget child}) {
+  /// Consistent section card with an icon badge, title and optional subtitle.
+  Widget _card({
+    required String title,
+    required IconData icon,
+    String? subtitle,
+    required Widget child,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: child,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 20, color: AppTheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
     );
   }
 
-  Widget _sectionTitle(String text) {
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+  /// One input style for every field so the form feels uniform.
+  InputDecoration _dec({
+    String? label,
+    String? hint,
+    IconData? icon,
+    String? prefixText,
+    Widget? suffix,
+  }) {
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: c, width: w),
+        );
+
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon, size: 20),
+      prefixText: prefixText,
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: const Color(0xFFF8F9FB),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      labelStyle: GoogleFonts.poppins(fontSize: 13),
+      hintStyle: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textSecondary),
+      border: border(Colors.grey.shade300),
+      enabledBorder: border(Colors.grey.shade300),
+      focusedBorder: border(AppTheme.primary, 1.6),
+      errorBorder: border(AppTheme.error),
+      focusedErrorBorder: border(AppTheme.error, 1.6),
     );
   }
 
@@ -237,136 +380,432 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: GoogleFonts.poppins(),
+        style: GoogleFonts.poppins(fontSize: 14),
       ),
     );
   }
 
   // ───────────────────────── Sections ─────────────────────────
 
-  Widget _buildInfoCard() {
+  Widget _buildHeader({required bool compact}) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 22, vertical: compact ? 16 : 20),
       decoration: BoxDecoration(
-        color: AppTheme.primary.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.primary, AppTheme.primary.withOpacity(0.78)],
+        ),
+        borderRadius: BorderRadius.circular(_radius + 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withOpacity(0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: AppTheme.primary),
-          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 26),
+          ),
+          const SizedBox(width: 14),
           Expanded(
-            child: Text(
-              'Create and instantly disburse loans to members with custom interest rates',
-              style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textPrimary),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'New loan',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: compact ? 17 : 20,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Pick a member, set the terms and disburse instantly with a custom interest rate.',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: compact ? 12 : 13,
+                    height: 1.4,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+
+  // ── Member selector (searchable) ──
 
   Widget _buildMemberSelector() {
     return _card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle('Select Member'),
-          const SizedBox(height: 12),
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection(AppConstants.usersCol)
-                .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-                .where('role', isEqualTo: AppConstants.roleMember)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+      title: 'Select member',
+      subtitle: 'Search by name, phone or account number',
+      icon: Icons.person_search_rounded,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection(AppConstants.usersCol)
+            .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+            .where('role', isEqualTo: AppConstants.roleMember)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Text(
+              'Could not load members. Check your connection and try again.',
+              style: GoogleFonts.poppins(color: AppTheme.error, fontSize: 13),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
 
-              final members = snapshot.data!.docs;
+          final members = snapshot.data!.docs;
 
-              String labelFor(QueryDocumentSnapshot doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                final name = data['name'] ?? data['fullName'] ?? 'Unknown';
-                final phone = data['phone'] ?? data['phoneNumber'] ?? '';
-                return phone.toString().isEmpty ? '$name' : '$name ($phone)';
-              }
+          return FormField<String>(
+            key: ValueKey('member-field-$_selectedMemberId'),
+            initialValue: _selectedMemberId,
+            validator: (_) => _selectedMemberId == null ? 'Please select a member' : null,
+            builder: (state) {
+              final hasMember = _selectedMemberId != null;
+              final name = _selectedMemberName ?? '';
+              final sub = [
+                if ((_selectedMemberPhone ?? '').isNotEmpty) _selectedMemberPhone!,
+                if ((_selectedMemberAccount ?? '').isNotEmpty && _selectedMemberAccount != 'N/A')
+                  'Acc: $_selectedMemberAccount',
+              ].join('   |   ');
 
-              final validValue =
-                  members.any((d) => d.id == _selectedMemberId) ? _selectedMemberId : null;
-
-              return DropdownButtonFormField<String>(
-                value: validValue,
-                isExpanded: true,
-                menuMaxHeight: 360, // scrolls instead of covering the screen
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: 'Choose a member',
-                  prefixIcon: Icon(Icons.person),
-                ),
-                validator: (value) => value == null ? 'Please select a member' : null,
-                selectedItemBuilder: (context) => members
-                    .map((doc) => Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            labelFor(doc),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(),
-                          ),
-                        ))
-                    .toList(),
-                items: members
-                    .map((doc) => DropdownMenuItem<String>(
-                          value: doc.id,
-                          child: Text(
-                            labelFor(doc),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(),
-                          ),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  final memberDoc = members.firstWhere((doc) => doc.id == value);
-                  final data = memberDoc.data() as Map<String, dynamic>;
-                  setState(() {
-                    _selectedMemberId = value;
-                    _selectedMemberName = data['name'] ?? data['fullName'] ?? 'Unknown';
-                    _selectedMemberPhone = data['phone'] ?? data['phoneNumber'] ?? '';
-                    _selectedMemberAccount = data['accountNumber'] ?? 'N/A';
-                  });
-                },
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => _pickMember(members),
+                    child: InputDecorator(
+                      decoration: _dec(
+                        icon: hasMember ? null : Icons.search_rounded,
+                        hint: 'Tap to search members',
+                        suffix: Icon(
+                          hasMember ? Icons.swap_horiz_rounded : Icons.keyboard_arrow_down_rounded,
+                        ),
+                      ).copyWith(
+                        errorText: state.errorText,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: hasMember ? 10 : 15,
+                        ),
+                      ),
+                      isEmpty: !hasMember,
+                      child: hasMember
+                          ? Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: AppTheme.primary.withOpacity(0.12),
+                                  child: Text(
+                                    name.isEmpty ? '?' : name[0].toUpperCase(),
+                                    style: GoogleFonts.poppins(
+                                      color: AppTheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (sub.isNotEmpty)
+                                        Text(
+                                          sub,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            color: AppTheme.textSecondary,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                  _buildLoanBlockBanner(),
+                ],
               );
             },
+          );
+        },
+      ),
+    );
+  }
+
+  /// Bottom sheet on phones, centred dialog on larger screens.
+  Future<void> _pickMember(List<QueryDocumentSnapshot> members) async {
+    FocusScope.of(context).unfocus();
+    final compact = MediaQuery.of(context).size.width < _compactBreakpoint;
+
+    final QueryDocumentSnapshot? picked;
+    if (compact) {
+      picked = await showModalBottomSheet<QueryDocumentSnapshot>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: FractionallySizedBox(
+            heightFactor: 0.88,
+            child: _MemberPicker(members: members, asSheet: true),
+          ),
+        ),
+      );
+    } else {
+      picked = await showDialog<QueryDocumentSnapshot>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.all(24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 620),
+            child: _MemberPicker(members: members, asSheet: false),
+          ),
+        ),
+      );
+    }
+
+    if (picked == null || !mounted) return;
+    final data = picked.data() as Map<String, dynamic>;
+    setState(() {
+      _selectedMemberId = picked!.id;
+      _selectedMemberName = (data['name'] ?? data['fullName'] ?? 'Unknown').toString();
+      _selectedMemberPhone = (data['phone'] ?? data['phoneNumber'] ?? '').toString();
+      _selectedMemberAccount = (data['accountNumber'] ?? 'N/A').toString();
+      _existingLoan = null;
+    });
+    _checkExistingLoan(picked.id);
+  }
+
+  // ── Existing loan guard ──
+
+  /// Returns the member's open loan (with its doc id) or null if they have none.
+  /// Checks both `memberId` and `farmerId` so older records are caught too.
+  Future<Map<String, dynamic>?> _findOpenLoan(String memberId) async {
+    final col = FirebaseFirestore.instance.collection(AppConstants.loansCol);
+    final tenant = FirebaseService.sessionTenantId;
+
+    final results = await Future.wait([
+      col.where('tenantId', isEqualTo: tenant).where('memberId', isEqualTo: memberId).get(),
+      col.where('tenantId', isEqualTo: tenant).where('farmerId', isEqualTo: memberId).get(),
+    ]);
+
+    final seen = <String>{};
+    for (final snap in results) {
+      for (final doc in snap.docs) {
+        if (!seen.add(doc.id)) continue;
+        final d = doc.data();
+        final status = (d['status'] ?? '').toString().toLowerCase();
+        if (_closedLoanStatuses.contains(status)) continue;
+
+        final rawBalance = d['balance'] ?? d['totalAmount'];
+        final balance = rawBalance == null ? 1 : (num.tryParse('$rawBalance') ?? 1);
+        if (balance <= 0) continue; // fully repaid
+
+        return {...d, 'id': doc.id};
+      }
+    }
+    return null;
+  }
+
+  Future<void> _checkExistingLoan(String memberId) async {
+    setState(() {
+      _checkingLoan = true;
+      _existingLoan = null;
+    });
+    try {
+      final loan = await _findOpenLoan(memberId);
+      // Ignore the answer if the admin already picked someone else.
+      if (!mounted || _selectedMemberId != memberId) return;
+      setState(() {
+        _existingLoan = loan;
+        _checkingLoan = false;
+      });
+    } catch (e) {
+      debugPrint('Existing loan check failed: $e');
+      if (!mounted || _selectedMemberId != memberId) return;
+      setState(() => _checkingLoan = false);
+      // Not fatal here: _createLoan re-checks and refuses if it cannot verify.
+    }
+  }
+
+  Widget _buildLoanBlockBanner() {
+    if (_checkingLoan) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Checking for existing loans...',
+                style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final loan = _existingLoan;
+    if (loan == null) return const SizedBox.shrink();
+
+    final status = (loan['status'] ?? '').toString();
+    final balanceRaw = loan['balance'] ?? loan['totalAmount'] ?? 0;
+    final balance = num.tryParse('$balanceRaw') ?? 0;
+    final amountRaw = loan['amount'] ?? loan['loanAmount'] ?? 0;
+    final amount = num.tryParse('$amountRaw') ?? 0;
+
+    String? dateText;
+    final created = loan['createdAt'];
+    if (created is Timestamp) {
+      dateText = DateFormat('dd MMM yyyy').format(created.toDate());
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.error.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.error.withOpacity(0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.block_rounded, color: AppTheme.error, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Member already has a loan',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.error,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_selectedMemberName ?? 'This member'} must clear the current loan '
+                  'before a new one can be issued.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 4,
+                  children: [
+                    _loanFact('Amount', _currencyFormat.format(amount)),
+                    _loanFact('Balance', _currencyFormat.format(balance)),
+                    if (status.isNotEmpty) _loanFact('Status', status),
+                    if (dateText != null) _loanFact('Issued', dateText),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _loanFact(String label, String value) {
+    return RichText(
+      text: TextSpan(
+        style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+        children: [
+          TextSpan(text: '$label: '),
+          TextSpan(
+            text: value,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Loan details ──
+
   Widget _buildLoanDetails() {
     return _card(
+      title: 'Loan details',
+      subtitle: 'Amount, rate, duration and purpose',
+      icon: Icons.payments_rounded,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('Loan Details'),
-          const SizedBox(height: 16),
           TextFormField(
             controller: _amountController,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Loan Amount (UGX)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.money),
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w500),
+            decoration: _dec(
+              label: 'Loan amount',
+              icon: Icons.payments_outlined,
+              prefixText: 'UGX  ',
             ),
             validator: (value) {
               if (value == null || value.isEmpty) return 'Enter loan amount';
-              if (int.tryParse(value) == null) return 'Enter valid amount';
-              if (int.parse(value) < 10000) return 'Minimum loan is UGX 10,000';
+              final v = int.tryParse(value);
+              if (v == null) return 'Enter a valid amount';
+              if (v < 10000) return 'Minimum loan is UGX 10,000';
               return null;
             },
             onChanged: (_) => setState(() {}),
@@ -376,11 +815,8 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             TextFormField(
               controller: _interestRateController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Interest (%)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.percent),
-              ),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))],
+              decoration: _dec(label: 'Interest (% per month)', icon: Icons.percent_rounded),
               validator: (value) {
                 if (value == null || value.isEmpty) return 'Enter rate';
                 final rate = double.tryParse(value);
@@ -392,28 +828,40 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             TextFormField(
               controller: _durationController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Months',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.calendar_today),
-              ),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: _dec(label: 'Duration (months)', icon: Icons.calendar_month_rounded),
               validator: (value) {
                 if (value == null || value.isEmpty) return 'Enter duration';
                 final months = int.tryParse(value);
-                if (months == null || months < 1 || months > 60) return 'Invalid duration';
+                if (months == null || months < 1 || months > 60) return '1 to 60 months';
                 return null;
               },
               onChanged: (_) => setState(() {}),
             ),
           ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [3, 6, 12, 18, 24].map((m) {
+              final selected = _durationController.text == '$m';
+              return ChoiceChip(
+                label: Text('$m mo', style: GoogleFonts.poppins(fontSize: 12)),
+                selected: selected,
+                selectedColor: AppTheme.primary.withOpacity(0.15),
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => setState(() => _durationController.text = '$m'),
+              );
+            }).toList(),
+          ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _purposeController,
             maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Loan Purpose',
-              border: OutlineInputBorder(),
-              hintText: 'e.g., Business expansion, School fees',
+            textCapitalization: TextCapitalization.sentences,
+            decoration: _dec(
+              label: 'Loan purpose',
+              hint: 'e.g. Business expansion, school fees',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) return 'Enter loan purpose';
@@ -424,10 +872,10 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
           TextFormField(
             controller: _notesController,
             maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Admin Notes (Optional)',
-              border: OutlineInputBorder(),
-              hintText: 'Internal notes about this loan',
+            textCapitalization: TextCapitalization.sentences,
+            decoration: _dec(
+              label: 'Admin notes (optional)',
+              hint: 'Internal notes about this loan',
             ),
           ),
         ],
@@ -435,21 +883,20 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
     );
   }
 
+  // ── Configuration ──
+
   Widget _buildLoanTypeSection() {
     return _card(
+      title: 'Loan configuration',
+      subtitle: 'Type, repayment schedule and approval',
+      icon: Icons.tune_rounded,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('Loan Configuration'),
-          const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             value: _loanType,
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Loan Type',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.category),
-            ),
+            decoration: _dec(label: 'Loan type', icon: Icons.category_outlined),
             items: [
               _item('personal', 'Personal Loan'),
               _item('business', 'Business Loan'),
@@ -463,11 +910,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
           DropdownButtonFormField<String>(
             value: _paymentFrequency,
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Payment Frequency',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.schedule),
-            ),
+            decoration: _dec(label: 'Payment frequency', icon: Icons.schedule_rounded),
             items: [
               _item('daily', 'Daily (Emergency)'),
               _item('weekly', 'Weekly'),
@@ -480,33 +923,48 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
           DropdownButtonFormField<String>(
             value: _interestMethod,
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Interest Method',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.calculate),
-            ),
+            decoration: _dec(label: 'Interest method', icon: Icons.calculate_outlined),
             items: [
               _item('flat', 'Flat Rate (Simple Interest)'),
               _item('reducing', 'Reducing Balance (Amortized)'),
             ],
             onChanged: (value) => setState(() => _interestMethod = value!),
           ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('Auto-Approve & Disburse', style: GoogleFonts.poppins(fontSize: 14)),
-            subtitle: Text(
-              'Loan will be approved and disbursed immediately',
-              style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+          const SizedBox(height: 16),
+          Container(
+            decoration: BoxDecoration(
+              color: _autoApprove
+                  ? AppTheme.success.withOpacity(0.07)
+                  : const Color(0xFFF8F9FB),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _autoApprove ? AppTheme.success.withOpacity(0.35) : Colors.grey.shade300,
+              ),
             ),
-            value: _autoApprove,
-            onChanged: (value) => setState(() => _autoApprove = value),
-            activeColor: AppTheme.success,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Approve & disburse now',
+                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              subtitle: Text(
+                _autoApprove
+                    ? 'Posts to the till and notifies the member by SMS'
+                    : 'Saved as pending until someone approves it',
+                style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              value: _autoApprove,
+              onChanged: (value) => setState(() => _autoApprove = value),
+              activeColor: AppTheme.success,
+            ),
           ),
         ],
       ),
     );
   }
+
+  // ── Live summary ──
 
   /// True when the live summary has enough valid input to be shown.
   bool get _hasSummary {
@@ -520,71 +978,149 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
     return principal != 0 && months != 0;
   }
 
+  String get _paymentLabel {
+    switch (_paymentFrequency) {
+      case 'daily':
+        return 'Daily payment';
+      case 'weekly':
+        return 'Weekly payment';
+      case 'biweekly':
+        return 'Bi-weekly payment';
+      case 'monthly':
+      default:
+        return 'Monthly payment';
+    }
+  }
+
   Widget _buildCalculatedDetails() {
-    if (!_hasSummary) return const SizedBox.shrink();
+    if (!_hasSummary) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(_radius),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calculate_outlined, color: AppTheme.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Enter an amount and duration to see the repayment summary.',
+                style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     final principal = int.tryParse(_amountController.text) ?? 0;
     final rate = double.tryParse(_interestRateController.text) ?? 0;
     final months = int.tryParse(_durationController.text) ?? 0;
-
     final calc = _calculate(principal, rate, months);
 
-    String paymentLabel;
-    switch (_paymentFrequency) {
-      case 'daily':
-        paymentLabel = 'Daily Payment';
-        break;
-      case 'weekly':
-        paymentLabel = 'Weekly Payment';
-        break;
-      case 'biweekly':
-        paymentLabel = 'Bi-Weekly Payment';
-        break;
-      case 'monthly':
-      default:
-        paymentLabel = 'Monthly Payment';
-        break;
-    }
-
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppTheme.success.withOpacity(0.1), AppTheme.success.withOpacity(0.05)],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(color: AppTheme.success.withOpacity(0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.success.withOpacity(0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Icon(Icons.calculate, color: AppTheme.success),
-              const SizedBox(width: 8),
-              Expanded(child: _sectionTitle('Loan Summary')),
+              Icon(Icons.receipt_long_rounded, color: AppTheme.success),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Repayment summary',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
             ],
           ),
-          const Divider(height: 24),
-          _buildSummaryRow('Principal Amount', _currencyFormat.format(principal)),
+          const SizedBox(height: 14),
+          // Headline figure
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.success.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _paymentLabel,
+                  style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _currencyFormat.format(calc.periodic),
+                    maxLines: 1,
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.success,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${calc.installments} installment${calc.installments == 1 ? '' : 's'}',
+                  style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildSummaryRow('Principal', _currencyFormat.format(principal)),
           _buildSummaryRow(
-            'Interest (${_interestMethod == 'reducing' ? 'Reducing' : 'Flat'} $rate% for $months months)',
+            'Interest (${_interestMethod == 'reducing' ? 'reducing' : 'flat'}, '
+            '${_trimRate(rate)}% x $months mo)',
             _currencyFormat.format(calc.interest),
           ),
-          const Divider(height: 16),
-          _buildSummaryRow('Total Repayment', _currencyFormat.format(calc.total), isTotal: true),
-          _buildSummaryRow(paymentLabel, _currencyFormat.format(calc.periodic), isHighlight: true),
+          const Divider(height: 18),
+          _buildSummaryRow('Total repayment', _currencyFormat.format(calc.total), isTotal: true),
         ],
       ),
     );
   }
 
+  String _trimRate(double r) =>
+      r == r.roundToDouble() ? r.toStringAsFixed(0) : r.toString();
+
+  /// Number of installments for the chosen frequency.
+  int _installmentCount(int months) {
+    final n = switch (_paymentFrequency) {
+      'daily' => months * 30,
+      'weekly' => (months * 52 / 12).round(),
+      'biweekly' => (months * 26 / 12).round(),
+      _ => months,
+    };
+    return n < 1 ? 1 : n;
+  }
+
   /// Single place for loan maths (used by the summary AND by _createLoan)
-  ({double interest, double total, double periodic}) _calculate(
+  ({double interest, double total, double periodic, int installments}) _calculate(
       int principal, double rate, int months) {
     double interest;
     double total;
-    double periodic;
 
     if (_interestMethod == 'reducing') {
       final monthlyRate = rate / (100 * 12);
@@ -593,27 +1129,27 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         for (int i = 0; i < months; i++) {
           powN *= (1 + monthlyRate);
         }
-        periodic = (principal * monthlyRate * powN) / (powN - 1);
-        total = periodic * months;
+        final monthlyPayment = (principal * monthlyRate * powN) / (powN - 1);
+        total = monthlyPayment * months;
         interest = total - principal;
       } else {
         interest = 0;
         total = principal.toDouble();
-        periodic = principal / months;
       }
     } else {
       // Flat: rate is per month
       interest = (principal * rate / 100) * months;
       total = principal + interest;
-      periodic = total / months;
     }
-    return (interest: interest, total: total, periodic: periodic);
+
+    final installments = _installmentCount(months);
+    final periodic = total / installments;
+    return (interest: interest, total: total, periodic: periodic, installments: installments);
   }
 
-  Widget _buildSummaryRow(String label, String value,
-      {bool isTotal = false, bool isHighlight = false}) {
+  Widget _buildSummaryRow(String label, String value, {bool isTotal = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -622,9 +1158,9 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             child: Text(
               label,
               style: GoogleFonts.poppins(
-                fontSize: isTotal ? 15 : 14,
-                fontWeight: isTotal ? FontWeight.w600 : FontWeight.w500,
-                color: isHighlight ? AppTheme.success : AppTheme.textPrimary,
+                fontSize: isTotal ? 14 : 13,
+                fontWeight: isTotal ? FontWeight.w600 : FontWeight.w400,
+                color: isTotal ? AppTheme.textPrimary : AppTheme.textSecondary,
               ),
             ),
           ),
@@ -640,7 +1176,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
                 style: GoogleFonts.poppins(
                   fontSize: isTotal ? 16 : 14,
                   fontWeight: FontWeight.w600,
-                  color: isTotal || isHighlight ? AppTheme.success : AppTheme.textPrimary,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ),
@@ -652,26 +1188,38 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
   Widget _buildSubmitButton() {
     return ElevatedButton(
-      onPressed: _isLoading ? null : _createLoan,
+      onPressed: (_isLoading || _checkingLoan || _existingLoan != null) ? null : _createLoan,
       style: ElevatedButton.styleFrom(
         backgroundColor: AppTheme.primary,
-        minimumSize: const Size.fromHeight(52),
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        minimumSize: const Size.fromHeight(54),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       child: _isLoading
           ? const SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              height: 22,
+              width: 22,
+              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
             )
           : FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(
-                _autoApprove ? 'Create & Disburse Loan' : 'Create Loan (Pending Approval)',
-                maxLines: 1,
-                style: GoogleFonts.poppins(
-                    fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_autoApprove ? Icons.send_rounded : Icons.hourglass_top_rounded, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    _autoApprove ? 'Create & disburse loan' : 'Create loan (pending approval)',
+                    maxLines: 1,
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ),
     );
@@ -691,11 +1239,92 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       _selectedMemberName = null;
       _selectedMemberPhone = null;
       _selectedMemberAccount = null;
+      _existingLoan = null;
+      _checkingLoan = false;
       _loanType = 'personal';
       _paymentFrequency = 'monthly';
       _interestMethod = 'flat';
       _autoApprove = true;
     });
+  }
+
+  /// Last check before money moves.
+  Future<bool> _confirmCreate({
+    required int principal,
+    required double total,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          _autoApprove ? 'Disburse this loan?' : 'Create this loan?',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 18),
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _confirmRow('Member', _selectedMemberName ?? ''),
+              _confirmRow('Amount', _currencyFormat.format(principal)),
+              _confirmRow('Total repayment', _currencyFormat.format(total)),
+              const SizedBox(height: 10),
+              Text(
+                _autoApprove
+                    ? 'The loan will be approved now, cash will be deducted from the till and the member will be notified.'
+                    : 'The loan will be saved as pending approval.',
+                style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(
+              _autoApprove ? 'Disburse' : 'Create',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Widget _confirmRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textSecondary),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _createLoan() async {
@@ -704,6 +1333,44 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       _showError('Please select a member');
       return;
     }
+
+    // Authoritative re-check right before saving, in case a loan was created
+    // after the member was picked (e.g. by another admin). If we cannot verify,
+    // we refuse rather than risk a duplicate loan.
+    setState(() => _isLoading = true);
+    try {
+      final open = await _findOpenLoan(_selectedMemberId!);
+      if (!mounted) return;
+      if (open != null) {
+        setState(() {
+          _existingLoan = open;
+          _isLoading = false;
+        });
+        _showError(
+          '${_selectedMemberName ?? 'This member'} already has an open loan. '
+          'It must be cleared before a new one can be issued.',
+        );
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError('Could not verify existing loans. Check your connection and try again.');
+      return;
+    }
+    if (mounted) setState(() => _isLoading = false);
+
+    final principalPreview = int.parse(_amountController.text);
+    final previewCalc = _calculate(
+      principalPreview,
+      double.parse(_interestRateController.text),
+      int.parse(_durationController.text),
+    );
+    final confirmed = await _confirmCreate(
+      principal: principalPreview,
+      total: previewCalc.total,
+    );
+    if (!confirmed || !mounted) return;
 
     setState(() => _isLoading = true);
 
@@ -732,6 +1399,8 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         'purpose': _purposeController.text.trim(),
         'loanType': _loanType,
         'paymentFrequency': _paymentFrequency,
+        'installments': calc.installments,
+        'installmentAmount': calc.periodic.round(),
         'interestAmount': interest.round(),
         'interest': interest.round(),
         'totalAmount': totalAmount.round(),
@@ -762,12 +1431,13 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
           // Get current till session
           final tellerId = FirebaseService.sessionUid;
           final tillSession = await TillService.getOpenSession(tellerId);
-          
+
           if (tillSession != null) {
             // Post till entry for loan disbursement (reduces till balance)
             final profile = FirebaseService.sessionProfile;
-            final tellerName = (profile != null ? profile['name'] as String? : null) ?? 'Admin';
-            
+            final tellerName =
+                (profile != null ? profile['name'] as String? : null) ?? 'Admin';
+
             await TillService.postEntry(
               tillSessionId: tillSession.id,
               tellerId: tellerId,
@@ -785,9 +1455,9 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
               ),
             );
 
-            print('✅ Till entry posted for loan disbursement');
+            debugPrint('Till entry posted for loan disbursement');
           } else {
-            print('⚠️ No active till session - loan disbursement not posted to till');
+            debugPrint('No active till session - loan disbursement not posted to till');
           }
 
           // Send SMS notification to member
@@ -802,7 +1472,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
                 'Thank you.';
 
             await FirebaseService.sendSmsToPhone(_selectedMemberPhone!, smsMessage);
-            print('✅ SMS sent to member about loan disbursement');
+            debugPrint('SMS sent to member about loan disbursement');
           }
 
           // Send in-app notification
@@ -814,14 +1484,15 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             type: 'loan_approved',
           );
         } catch (e) {
-          print('⚠️ Failed to post till entry or send notifications: $e');
+          debugPrint('Failed to post till entry or send notifications: $e');
           // Non-critical - loan is already created
         }
       }
 
       if (!mounted) return;
-      final message =
-          _autoApprove ? 'Loan created and disbursed successfully!' : 'Loan created, pending approval';
+      final message = _autoApprove
+          ? 'Loan created and disbursed successfully!'
+          : 'Loan created, pending approval';
 
       // When opened as a tab (no back stack) don't pop the root route
       if (Navigator.of(context).canPop()) {
@@ -832,6 +1503,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          behavior: SnackBarBehavior.floating,
           content: Text(message, style: GoogleFonts.poppins()),
           backgroundColor: AppTheme.success,
         ),
@@ -847,6 +1519,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        behavior: SnackBarBehavior.floating,
         content: Text(message, style: GoogleFonts.poppins()),
         backgroundColor: AppTheme.error,
       ),
@@ -862,5 +1535,201 @@ extension StringExtension on String {
   String capitalize() {
     if (isEmpty) return this;
     return "${this[0].toUpperCase()}${substring(1)}";
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Searchable member picker (used as a bottom sheet on phones, dialog on
+// tablets / desktop / web)
+// ═════════════════════════════════════════════════════════════════════════
+
+class _MemberPicker extends StatefulWidget {
+  final List<QueryDocumentSnapshot> members;
+  final bool asSheet;
+
+  const _MemberPicker({required this.members, required this.asSheet});
+
+  @override
+  State<_MemberPicker> createState() => _MemberPickerState();
+}
+
+class _MemberPickerState extends State<_MemberPicker> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic> _data(QueryDocumentSnapshot d) => d.data() as Map<String, dynamic>;
+
+  String _name(QueryDocumentSnapshot d) =>
+      (_data(d)['name'] ?? _data(d)['fullName'] ?? 'Unknown').toString();
+
+  String _phone(QueryDocumentSnapshot d) =>
+      (_data(d)['phone'] ?? _data(d)['phoneNumber'] ?? '').toString();
+
+  String _account(QueryDocumentSnapshot d) => (_data(d)['accountNumber'] ?? '').toString();
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _query.trim().toLowerCase();
+
+    final filtered = widget.members.where((d) {
+      if (q.isEmpty) return true;
+      return _name(d).toLowerCase().contains(q) ||
+          _phone(d).toLowerCase().contains(q) ||
+          _account(d).toLowerCase().contains(q);
+    }).toList()
+      ..sort((a, b) => _name(a).toLowerCase().compareTo(_name(b).toLowerCase()));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        mainAxisSize: widget.asSheet ? MainAxisSize.max : MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.asSheet)
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Select member',
+                  style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Close',
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _searchController,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            style: GoogleFonts.poppins(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Search name, phone or account no.',
+              hintStyle: GoogleFonts.poppins(fontSize: 13, color: AppTheme.textSecondary),
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear_rounded),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                    ),
+              filled: true,
+              fillColor: const Color(0xFFF3F4F7),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.primary, width: 1.6),
+              ),
+            ),
+            onChanged: (v) => setState(() => _query = v),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${filtered.length} member${filtered.length == 1 ? '' : 's'}',
+            style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Flexible(
+            fit: widget.asSheet ? FlexFit.tight : FlexFit.loose,
+            child: filtered.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.person_off_outlined, size: 40, color: Colors.grey.shade400),
+                        const SizedBox(height: 10),
+                        Text(
+                          'No members match your search',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    shrinkWrap: !widget.asSheet,
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                    itemBuilder: (context, i) {
+                      final d = filtered[i];
+                      final name = _name(d);
+                      final phone = _phone(d);
+                      final acct = _account(d);
+                      final sub = [
+                        if (phone.isNotEmpty) phone,
+                        if (acct.isNotEmpty) 'Acc: $acct',
+                      ].join('   |   ');
+
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.primary.withOpacity(0.1),
+                          child: Text(
+                            name.isEmpty ? '?' : name[0].toUpperCase(),
+                            style: GoogleFonts.poppins(
+                              color: AppTheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+                        ),
+                        subtitle: sub.isEmpty
+                            ? null
+                            : Text(
+                                sub,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.pop(context, d),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
