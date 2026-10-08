@@ -138,6 +138,9 @@ class FirebaseService {
   /// Send a raw SMS via EgoSMS GET API.
   static Future<bool> _sendEgoSms(String number, String message) async {
     try {
+      debugPrint('📤 Sending SMS to: $number');
+      debugPrint('📝 Message: ${message.substring(0, message.length > 50 ? 50 : message.length)}...');
+      
       final uri = Uri.parse(
         'https://www.egosms.co/api/v1/plain/'
         '?number=${Uri.encodeComponent(number)}'
@@ -146,9 +149,20 @@ class FirebaseService {
         '&password=${Uri.encodeComponent(_egoPassword)}'
         '&sender=${Uri.encodeComponent(_egoSender)}',
       );
+      
+      debugPrint('🌐 SMS API URL: ${uri.toString().split('&password=')[0]}&password=***');
+      
       final res = await http.get(uri);
-      return res.statusCode == 200;
-    } catch (_) {
+      
+      if (res.statusCode == 200) {
+        debugPrint('✅ SMS API Response: ${res.statusCode} - ${res.body}');
+        return true;
+      } else {
+        debugPrint('❌ SMS API Error: ${res.statusCode} - ${res.body}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ SMS Exception: $e');
       return false;
     }
   }
