@@ -3221,6 +3221,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           interestOutstanding: interestOutstanding,
           chargesOutstanding: chargesOutstanding,
           memberName: _s('memberName', 'Member'),
+          memberPhone: _memberPhone, // Pass member's phone to show in dialog
           onPaymentComplete: (paymentData) async {
             // Get the open till session for the current user
             TillSession? openTill;
@@ -3342,9 +3343,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         try {
           final memberName = _loanData!['memberName'] ?? 'Member';
           final memberPhone = _memberPhone ?? ''; // Handle null
-          
-          // Use alternative phone if member has no phone number
-          final smsPhone = memberPhone.isNotEmpty ? memberPhone : (alternativePhone ?? '');
+          final altPhone = alternativePhone ?? '';
           
           // Get updated loan data for balances
           final updatedLoan = await db.collection(AppConstants.loansCol).doc(widget.loanId).get();
@@ -3354,17 +3353,27 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           final chargesOut = (updatedData?['chargesOutstanding'] ?? 0).toInt();
           final totalOut = principalOut + interestOut + chargesOut;
           
-          if (smsPhone.isNotEmpty) {
-            final smsMessage = 'MBADIFA SACCO\n'
-                'Dear $memberName, your loan payment of UGX ${_money(total)} has been received. '
-                'Principal: UGX ${_money(principalPaid)}, '
-                'Interest: UGX ${_money(interestPaid)}. '
-                'Outstanding balance: UGX ${_money(totalOut)}. '
-                'Thank you.';
-            
-            await FirebaseService.sendSmsToPhone(smsPhone, smsMessage);
-            debugPrint('✅ SMS sent to $smsPhone');
-          } else {
+          final smsMessage = 'MBADIFA SACCO\n'
+              'Dear $memberName, your loan payment of UGX ${_money(total)} has been received. '
+              'Principal: UGX ${_money(principalPaid)}, '
+              'Interest: UGX ${_money(interestPaid)}. '
+              'Outstanding balance: UGX ${_money(totalOut)}. '
+              'Thank you.';
+          
+          // Send to member's phone if exists
+          if (memberPhone.isNotEmpty) {
+            await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
+            debugPrint('✅ SMS sent to member phone: $memberPhone');
+          }
+          
+          // Send to alternative phone if provided (can be in addition to member phone)
+          if (altPhone.isNotEmpty) {
+            await FirebaseService.sendSmsToPhone(altPhone, smsMessage);
+            debugPrint('✅ SMS sent to alternative phone: $altPhone');
+          }
+          
+          // Warn if no phone numbers available
+          if (memberPhone.isEmpty && altPhone.isEmpty) {
             debugPrint('⚠️ No phone number available for SMS');
           }
         } catch (smsError) {

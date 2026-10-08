@@ -12,6 +12,7 @@ class LoanPaymentCashDialog extends StatefulWidget {
   final double interestOutstanding;
   final double chargesOutstanding;
   final String memberName;
+  final String? memberPhone; // Member's registered phone
   final Function(Map<String, dynamic> paymentData) onPaymentComplete;
 
   const LoanPaymentCashDialog({
@@ -20,6 +21,7 @@ class LoanPaymentCashDialog extends StatefulWidget {
     required this.interestOutstanding,
     required this.chargesOutstanding,
     required this.memberName,
+    this.memberPhone,
     required this.onPaymentComplete,
   }) : super(key: key);
 
@@ -91,7 +93,7 @@ class _LoanPaymentCashDialogState extends State<LoanPaymentCashDialog> {
       'paymentMethod': 'Cash',
       'paymentDate': _paymentDate,
       'paymentType': _paymentType,
-      'alternativePhone': _altPhoneController.text.trim(), // Add alt phone for SMS
+      'alternativePhone': _altPhoneController.text.trim(), // Additional SMS recipient
     };
 
     widget.onPaymentComplete(paymentData);
@@ -675,6 +677,8 @@ class _LoanPaymentCashDialogState extends State<LoanPaymentCashDialog> {
   }
 
   Widget _buildAlternativePhoneSection() {
+    final hasMemberPhone = widget.memberPhone != null && widget.memberPhone!.isNotEmpty;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -683,7 +687,7 @@ class _LoanPaymentCashDialogState extends State<LoanPaymentCashDialog> {
             Icon(Icons.sms, size: 18, color: Colors.grey.shade700),
             const SizedBox(width: 8),
             Text(
-              'Alternative Phone for SMS (Optional)',
+              'SMS Notification',
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -693,15 +697,78 @@ class _LoanPaymentCashDialogState extends State<LoanPaymentCashDialog> {
           ],
         ),
         const SizedBox(height: 12),
+        
+        // Show member's phone if exists
+        if (hasMemberPhone) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green.shade300),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade600,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'SMS will be sent to member\'s phone',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.memberPhone!,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        
+        // Alternative phone field (always show but with different helper text)
+        const SizedBox(height: 12),
         TextField(
           controller: _altPhoneController,
           keyboardType: TextInputType.phone,
           decoration: InputDecoration(
+            labelText: hasMemberPhone 
+                ? 'Additional SMS Recipient (Optional)' 
+                : 'Alternative Phone for SMS (Required)',
             hintText: '256XXXXXXXXX',
-            helperText: 'SMS receipt will be sent to this number if provided',
-            prefixIcon: const Icon(Icons.phone),
+            helperText: hasMemberPhone
+                ? 'Send SMS to an additional number (e.g., spouse, guarantor)'
+                : 'Member has no phone. Provide a number to send SMS receipt',
+            helperMaxLines: 2,
+            prefixIcon: Icon(
+              hasMemberPhone ? Icons.person_add : Icons.warning,
+              color: hasMemberPhone ? Colors.blue : Colors.orange,
+            ),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            filled: true,
+            fillColor: hasMemberPhone ? Colors.blue.shade50 : Colors.orange.shade50,
           ),
         ),
       ],
