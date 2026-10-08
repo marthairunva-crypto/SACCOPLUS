@@ -3241,6 +3241,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               paymentDate:
                   _toDate(paymentData['paymentDate']) ?? DateTime.now(),
               tillSession: openTill, // Pass the actual till session
+              alternativePhone: paymentData['alternativePhone']?.toString(), // Pass alternative phone for SMS
             );
           },
         ),
@@ -3258,6 +3259,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     String? provider,
     String? phoneNumber,
     TillSession? tillSession, // Optional till session for cash payments
+    String? alternativePhone, // Optional alternative phone for SMS
   }) async {
     try {
       final total = principalPaid + interestPaid + chargesPaid;
@@ -3341,6 +3343,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           final memberName = _loanData!['memberName'] ?? 'Member';
           final memberPhone = _memberPhone ?? ''; // Handle null
           
+          // Use alternative phone if member has no phone number
+          final smsPhone = memberPhone.isNotEmpty ? memberPhone : (alternativePhone ?? '');
+          
           // Get updated loan data for balances
           final updatedLoan = await db.collection(AppConstants.loansCol).doc(widget.loanId).get();
           final updatedData = updatedLoan.data();
@@ -3349,7 +3354,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           final chargesOut = (updatedData?['chargesOutstanding'] ?? 0).toInt();
           final totalOut = principalOut + interestOut + chargesOut;
           
-          if (memberPhone.isNotEmpty) {
+          if (smsPhone.isNotEmpty) {
             final smsMessage = 'MBADIFA SACCO\n'
                 'Dear $memberName, your loan payment of UGX ${_money(total)} has been received. '
                 'Principal: UGX ${_money(principalPaid)}, '
@@ -3357,8 +3362,10 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                 'Outstanding balance: UGX ${_money(totalOut)}. '
                 'Thank you.';
             
-            await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
-            debugPrint('✅ SMS sent to $memberPhone');
+            await FirebaseService.sendSmsToPhone(smsPhone, smsMessage);
+            debugPrint('✅ SMS sent to $smsPhone');
+          } else {
+            debugPrint('⚠️ No phone number available for SMS');
           }
         } catch (smsError) {
           debugPrint('⚠️ Failed to send SMS: $smsError');
