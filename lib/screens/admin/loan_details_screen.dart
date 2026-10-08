@@ -3307,6 +3307,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                 _memberDocId ??
                 '',
             memberName: _loanData!['memberName'] ?? 'Unknown',
+            memberPhone: _memberPhone, // Add member phone
             repaymentId: repaymentId,
             paymentMethod: 'Cash',
             notes:

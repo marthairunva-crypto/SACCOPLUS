@@ -216,6 +216,7 @@ class TillService {
           paymentMethod: input.paymentMethod,
           memberId: input.memberId,
           memberName: input.memberName,
+          memberPhone: input.memberPhone,
           businessRecordId: input.businessRecordId,
           businessRecordType: input.businessRecordType,
           reversesEntryId: input.reversesEntryId,

@@ -41,6 +41,9 @@ class TillEntry {
   /// Member name (if transaction involves a member)
   final String? memberName;
 
+  /// Member phone (if transaction involves a member)
+  final String? memberPhone;
+
   /// Related business transaction ID (deposit, loan, etc.)
   final String? businessRecordId;
 
@@ -71,6 +74,7 @@ class TillEntry {
     required this.paymentMethod,
     this.memberId,
     this.memberName,
+    this.memberPhone,
     this.businessRecordId,
     this.businessRecordType,
     this.reversesEntryId,
@@ -94,6 +98,7 @@ class TillEntry {
       paymentMethod: data['paymentMethod'] as String,
       memberId: data['memberId'] as String?,
       memberName: data['memberName'] as String?,
+      memberPhone: data['memberPhone'] as String?,
       businessRecordId: data['businessRecordId'] as String?,
       businessRecordType: data['businessRecordType'] as String?,
       reversesEntryId: data['reversesEntryId'] as String?,
@@ -116,6 +121,7 @@ class TillEntry {
       'paymentMethod': paymentMethod,
       if (memberId != null) 'memberId': memberId,
       if (memberName != null) 'memberName': memberName,
+      if (memberPhone != null) 'memberPhone': memberPhone,
       if (businessRecordId != null) 'businessRecordId': businessRecordId,
       if (businessRecordType != null) 'businessRecordType': businessRecordType,
       if (reversesEntryId != null) 'reversesEntryId': reversesEntryId,
@@ -191,6 +197,7 @@ class TillEntryInput {
   final String paymentMethod;
   final String? memberId;
   final String? memberName;
+  final String? memberPhone;
   final String? businessRecordId;
   final String? businessRecordType;
   final String? reversesEntryId;
@@ -203,6 +210,7 @@ class TillEntryInput {
     this.paymentMethod = 'Cash',
     this.memberId,
     this.memberName,
+    this.memberPhone,
     this.businessRecordId,
     this.businessRecordType,
     this.reversesEntryId,
@@ -280,6 +288,7 @@ class TillEntryInput {
     required int amount,
     required String memberId,
     required String memberName,
+    String? memberPhone,
     required String repaymentId,
     String paymentMethod = 'Cash',
     String notes = '',
@@ -291,6 +300,7 @@ class TillEntryInput {
       paymentMethod: paymentMethod,
       memberId: memberId,
       memberName: memberName,
+      memberPhone: memberPhone,
       businessRecordId: repaymentId,
       businessRecordType: 'repayment',
       notes: notes,
