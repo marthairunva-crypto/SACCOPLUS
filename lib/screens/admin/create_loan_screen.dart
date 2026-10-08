@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
+import '../../services/till_service.dart';
 import '../../widgets/app_widgets.dart';
 
 /// Admin screen to create and disburse loans to members
@@ -754,6 +755,70 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
       await FirebaseFirestore.instance.collection(AppConstants.loansCol).add(loanData);
 
+      // If auto-approved and disbursed, post to till and send SMS
+      if (_autoApprove) {
+        try {
+          // Get current till session
+          final tillSession = await TillService.getCurrentSession();
+          
+          if (tillSession != null) {
+            // Post till entry for loan disbursement (reduces till balance)
+            final tellerId = FirebaseService.sessionUid;
+            final tellerName = FirebaseService.sessionProfile['name'] as String? ?? 'Admin';
+            
+            final tillEntryInput = TillEntryInput(
+              entryType: 'loan_disbursement',
+              amount: principal,
+              affectsCash: true,
+              paymentMethod: 'Cash',
+              memberId: _selectedMemberId!,
+              memberName: _selectedMemberName!,
+              businessRecordType: 'loan',
+              notes: 'Loan disbursement - Amount: UGX ${_formatAmount(principal)} '
+                  'to ${_selectedMemberName}',
+            );
+
+            await TillService.postEntry(
+              tillSessionId: tillSession.id,
+              tellerId: tellerId,
+              tellerName: tellerName,
+              input: tillEntryInput,
+            );
+
+            print('✅ Till entry posted for loan disbursement');
+          } else {
+            print('⚠️ No active till session - loan disbursement not posted to till');
+          }
+
+          // Send SMS notification to member
+          if (_selectedMemberPhone != null && _selectedMemberPhone!.isNotEmpty) {
+            final smsMessage = 'MBADIFA SACCO\n'
+                'Dear ${_selectedMemberName}, your loan of UGX ${_formatAmount(principal)} '
+                'has been approved and disbursed. '
+                'Total amount: UGX ${_formatAmount(totalAmount.round())} '
+                '(Principal: UGX ${_formatAmount(principal)}, '
+                'Interest: UGX ${_formatAmount(interest.round())}). '
+                'Duration: $months months. '
+                'Thank you.';
+
+            await FirebaseService.sendSmsToPhone(_selectedMemberPhone!, smsMessage);
+            print('✅ SMS sent to member about loan disbursement');
+          }
+
+          // Send in-app notification
+          await FirebaseService.sendNotification(
+            _selectedMemberId!,
+            'Loan Approved & Disbursed',
+            'Your loan of UGX ${_formatAmount(principal)} has been approved and disbursed. '
+            'Total payable: UGX ${_formatAmount(totalAmount.round())} over $months months.',
+            type: 'loan_approved',
+          );
+        } catch (e) {
+          print('⚠️ Failed to post till entry or send notifications: $e');
+          // Non-critical - loan is already created
+        }
+      }
+
       if (!mounted) return;
       final message =
           _autoApprove ? 'Loan created and disbursed successfully!' : 'Loan created, pending approval';
@@ -786,6 +851,10 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         backgroundColor: AppTheme.error,
       ),
     );
+  }
+
+  String _formatAmount(int amount) {
+    return NumberFormat('#,###', 'en_US').format(amount);
   }
 }
 
