@@ -18,15 +18,11 @@ buildscript {
 rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-subprojects {
-    project.evaluationDependsOn(':app')
     
-    // Force all plugins to use compileSdk 36
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                if (project.android.hasProperty('compileSdkVersion')) {
+    afterEvaluate {
+        if (it.hasProperty('android')) {
+            android {
+                if (hasProperty('compileSdkVersion') && compileSdkVersion < 36) {
                     compileSdk = 36
                 }
             }
