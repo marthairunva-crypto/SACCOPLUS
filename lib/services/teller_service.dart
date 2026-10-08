@@ -1596,7 +1596,6 @@ class TellerService {
         'status': 'completed',
         'timestamp': timestamp,
         'receiptNumber': _generateReceiptNumber(timestamp),
-        'source': 'teller',
       };
 
       await transactionRef.set(transaction);

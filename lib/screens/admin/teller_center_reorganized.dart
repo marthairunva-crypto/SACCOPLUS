@@ -2011,7 +2011,11 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     final when = (stamp == null || stamp.millisecondsSinceEpoch == 0)
         ? ''
         : DateFormat('MMM d, y  •  h:mm a').format(stamp);
-    final name = (txn['memberName'] ?? txn['accountName'] ?? 'Unknown').toString();
+    
+    // For revenue/expense, use description as the name
+    final name = (type == 'revenue' || type == 'expense')
+        ? (txn['description'] ?? 'Unknown').toString()
+        : (txn['memberName'] ?? txn['accountName'] ?? 'Unknown').toString();
     final acct = _pretty((txn['accountType'] ?? type).toString());
     final amount = (txn['amount'] as num?) ?? 0;
     final receipt = (txn['receiptNumber'] ?? '').toString();
