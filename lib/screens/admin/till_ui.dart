@@ -111,6 +111,8 @@ EntryMeta entryMeta(String type, int amount) {
       return const EntryMeta('Member withdrawal', Icons.remove_circle_outline, TC.red);
     case 'loan_repayment':
       return const EntryMeta('Loan repayment', Icons.payments_outlined, TC.green);
+    case 'loan_disbursement':
+      return const EntryMeta('Loan disbursement', Icons.money_off_outlined, TC.red);
     case 'reversal':
       return const EntryMeta('Reversal', Icons.undo_rounded, TC.purple);
     default:
