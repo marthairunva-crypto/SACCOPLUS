@@ -688,6 +688,10 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
         return _typesPage(w, 'Till administration', _tillAdminTypes());
       case 'bulk':
         return _typesPage(w, 'Bulk transaction', _bulkTypes());
+      case 'income':
+        return _typesPage(w, 'Income', _incomeTypes());
+      case 'expense':
+        return _typesPage(w, 'Expense', _expenseTypes());
       default:
         return _categorySelection(w);
     }
@@ -716,6 +720,10 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
               Icons.point_of_sale_outlined, TC.amber),
           cat('bulk', 'Bulk transaction', 'Process many member transactions in one operation.',
               Icons.cloud_upload_outlined, TC.green),
+          cat('income', 'Income', 'Record income received that increases till balance.',
+              Icons.trending_up, TC.green),
+          cat('expense', 'Expense', 'Record expenses paid that decrease till balance.',
+              Icons.trending_down, TC.red),
         ],
         minTileWidth: 420,
         tileHeight: 104,
@@ -873,6 +881,26 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           color: TC.blue,
           soon: true,
           onTap: () => _comingSoon('Bulk dividends'),
+        ),
+      ];
+
+  List<Widget> _incomeTypes() => [
+        _tile(
+          title: 'Record income',
+          description: 'Record income received that increases till balance.',
+          icon: Icons.add_circle_outline,
+          color: TC.green,
+          onTap: _revenueEntry, // Reuse the existing revenue entry function
+        ),
+      ];
+
+  List<Widget> _expenseTypes() => [
+        _tile(
+          title: 'Record expense',
+          description: 'Record expense paid that decreases till balance.',
+          icon: Icons.remove_circle_outline,
+          color: TC.red,
+          onTap: _expensePayment, // Reuse the existing expense payment function
         ),
       ];
 
