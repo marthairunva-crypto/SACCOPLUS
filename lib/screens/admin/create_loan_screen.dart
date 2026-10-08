@@ -772,14 +772,9 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
               tillSessionId: tillSession.id,
               tellerId: tellerId,
               tellerName: tellerName,
-              input: TillEntry(
-                id: '',
-                tillSessionId: tillSession.id,
+              input: TillEntryInput(
                 entryType: 'loan_disbursement',
                 amount: -principal, // Negative because cash goes out
-                timestamp: DateTime.now(),
-                tellerId: tellerId,
-                tellerName: tellerName,
                 affectsCash: true,
                 paymentMethod: 'Cash',
                 memberId: _selectedMemberId!,
