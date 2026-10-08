@@ -438,7 +438,7 @@ class MemberStatementService {
                 _buildTableCell(loan['referenceNumber']?.toString() ?? 'N/A', regularFont),
                 _buildTableCell('UGX ${_money((loan['principalDisbursed'] ?? 0) as num)}', regularFont),
                 _buildTableCell(
-                  'UGX ${_money((loan['principalOutstanding'] ?? 0) as num + (loan['interestOutstanding'] ?? 0) as num)}',
+                  'UGX ${_money(((loan['principalOutstanding'] ?? 0) as num) + ((loan['interestOutstanding'] ?? 0) as num))}',
                   regularFont,
                 ),
                 _buildTableCell(loan['status']?.toString().toUpperCase() ?? 'N/A', regularFont),
