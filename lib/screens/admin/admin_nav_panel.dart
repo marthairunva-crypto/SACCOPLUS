@@ -48,6 +48,8 @@ const kAdminNavGroups = <NavGroup>[
     NavItem('Teller Operations', 'teller'),
     NavItem('Till Management', 'till_management'),
     NavItem('Till Reports', 'till_reports'),
+    NavItem('Income', 'income'),
+    NavItem('Expenses', 'expenses'),
     NavItem('Payment Hub', 'payment_hub'),
     NavItem('Mobile Money', 'mobile_money'),
     NavItem('Bank Transfers', 'bank_transfers'),
@@ -55,8 +57,6 @@ const kAdminNavGroups = <NavGroup>[
   ]),
   NavGroup('Finance', Icons.account_balance_outlined, [
     NavItem('Cash & Bank', 'cash_bank'),
-    NavItem('Income', 'income'),
-    NavItem('Expenses', 'expenses'),
     NavItem('General Ledger', 'ledger'),
     NavItem('Financial Reports', 'financial_reports'),
   ]),
