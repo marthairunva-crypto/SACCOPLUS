@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
@@ -11,14 +12,17 @@ import 'register_screen.dart';
 import 'first_login_setup_screen.dart';
 import 'otp_verification_screen.dart';
 
-/// Professional split-screen login (like dfcu QuickBanking)
+/// Professional login screen.
 ///
-/// Responsive layouts:
-///  • >= 900px  : split screen (branding left, form right)
-///  • < 900px   : full-bleed background with a centered form card
-///                (card is capped at 480px so tablets don't look stretched)
-/// Also handles: tiny phones (<360px), short/landscape screens, big system
-/// font sizes, and the on-screen keyboard (everything scrolls).
+/// Responsive layouts (measured with LayoutBuilder):
+///  • >= 900px : split screen. Brand panel on the left, sign-in card on the
+///               right. BOTH panels are centred horizontally and vertically.
+///  • <  900px : full-bleed branded background with a centred brand header,
+///               sign-in card and footer (card capped at 480px).
+/// Also handles tiny phones (<360px), short / landscape screens, large system
+/// font sizes and the on-screen keyboard (everything scrolls).
+///
+/// Sign-in is two steps: 1) phone or account number, 2) PIN.
 class ProfessionalLoginScreen extends StatefulWidget {
   const ProfessionalLoginScreen({super.key});
 
@@ -29,31 +33,89 @@ class ProfessionalLoginScreen extends StatefulWidget {
 class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
   final _usernameCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
+  final _usernameFocus = FocusNode();
+  final _pinFocus = FocusNode();
+
   bool _loading = false;
   bool _useAccountNumber = false;
   bool _obscurePin = true;
+  bool _pinStep = false; // false = step 1 (username), true = step 2 (PIN)
 
   static const double _desktopBreakpoint = 900;
+  static const String _supportPhone = '+256 778474686';
+  static const Color _brandDark = Color(0xFF0D2B6B);
+  static const Color _brandMid = Color(0xFF1565C0);
 
   @override
   void dispose() {
     _usernameCtrl.dispose();
     _pinCtrl.dispose();
+    _usernameFocus.dispose();
+    _pinFocus.dispose();
     super.dispose();
   }
+
+  // ───────────────────────── Helpers ─────────────────────────
+
+  TextStyle _t(
+    double size, {
+    FontWeight w = FontWeight.w400,
+    Color? c,
+    double? ls,
+    double? h,
+  }) =>
+      GoogleFonts.poppins(
+        fontSize: size,
+        fontWeight: w,
+        color: c ?? ModernTheme.textPrimary,
+        letterSpacing: ls,
+        height: h,
+      );
 
   // ───────────────────────── Logic ─────────────────────────
 
   void _onNext() {
-    // First step: validate username, then show PIN field
-    if (_usernameCtrl.text.trim().isEmpty) {
-      _showSnack('Please enter your username', ModernTheme.error);
-    } else {
-      setState(() {}); // Trigger rebuild to show PIN field
+    final value = _usernameCtrl.text.trim();
+    if (value.isEmpty) {
+      _showSnack(
+        _useAccountNumber ? 'Please enter your account number' : 'Please enter your phone number',
+        ModernTheme.error,
+      );
+      return;
     }
+    if (!_useAccountNumber && value.replaceAll(RegExp(r'\D'), '').length < 9) {
+      _showSnack('Please enter a valid phone number', ModernTheme.error);
+      return;
+    }
+    setState(() => _pinStep = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pinFocus.requestFocus();
+    });
+  }
+
+  void _backToUsername() {
+    setState(() {
+      _pinStep = false;
+      _pinCtrl.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _usernameFocus.requestFocus();
+    });
+  }
+
+  void _setLoginMethod(bool useAccountNumber) {
+    if (_useAccountNumber == useAccountNumber) return;
+    setState(() {
+      _useAccountNumber = useAccountNumber;
+      _pinStep = false;
+      _usernameCtrl.clear();
+      _pinCtrl.clear();
+    });
   }
 
   Future<void> _login() async {
+    if (_loading) return;
+
     final username = _usernameCtrl.text.trim();
     final pin = _pinCtrl.text.trim();
 
@@ -83,7 +145,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         final phone = FirebaseService.formatPhone(username);
         profile = await FirebaseService.getProfileByPhone(phone);
         if (profile == null) {
-          _showSnack('No account found for $phone. Contact +256 778474686 for help.', ModernTheme.error);
+          _showSnack('No account found for $phone. Contact $_supportPhone for help.', ModernTheme.error);
           return;
         }
         uid = profile['uid'] as String? ?? 'phone_$phone';
@@ -98,7 +160,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         _pinCtrl.clear();
         _showSnack(
           'Too many failed attempts. Try again in ${LoginAttemptService.formatRemaining(remainingLock)}, '
-          'or contact +256 778474686.',
+          'or contact $_supportPhone.',
           ModernTheme.error,
         );
         return;
@@ -111,7 +173,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         if (attemptsLeft == 0) {
           _showSnack(
             'Too many failed attempts. Account locked for '
-            '${LoginAttemptService.lockDuration.inMinutes} minutes. Contact +256 778474686 for help.',
+            '${LoginAttemptService.lockDuration.inMinutes} minutes. Contact $_supportPhone for help.',
             ModernTheme.error,
           );
         } else if (attemptsLeft < LoginAttemptService.maxAttempts) {
@@ -128,15 +190,6 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       // Correct PIN -> clear the failed-attempt counter
       await LoginAttemptService.reset(lockKey);
 
-      // 🔍 DEBUG: Log the profile data
-      print('🔍 LOGIN DEBUG:');
-      print('   UID: $uid');
-      print('   Name: ${profile['name']}');
-      print('   Phone: ${profile['phone']}');
-      print('   Role: ${profile['role']}');
-      print('   TenantID: ${profile['tenantId']}');
-      print('   Full Profile: $profile');
-
       // Store session
       FirebaseService.setSession(uid, profile);
 
@@ -146,7 +199,6 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       if (!mounted) return;
 
       if (needsSetup) {
-        // Redirect to first login setup screen
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -163,7 +215,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       final name = profile['name'] as String? ?? 'User';
       final phone = profile['phone'] as String? ?? username;
 
-      // ✅ ADMIN/TELLER: Require OTP verification
+      // ADMIN/TELLER: require OTP verification
       if (role == 'admin' || role == 'teller') {
         if (!mounted) return;
         Navigator.pushReplacement(
@@ -179,96 +231,10 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
         return;
       }
 
-      // ✅ MEMBER: Show welcome dialog and navigate to dashboard
-      if (mounted) {
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            content: SingleChildScrollView(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: ModernTheme.success.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.check_circle,
-                        size: 60,
-                        color: ModernTheme.success,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Welcome Back!',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: ModernTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: ModernTheme.primary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Poverty Must Go',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: ModernTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ModernTheme.success,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Continue',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
+      // MEMBER: welcome dialog, then dashboard
+      if (mounted) await _showWelcomeDialog(name);
 
-      // Small delay before navigation
       await Future.delayed(const Duration(milliseconds: 300));
-
       if (!mounted) return;
 
       if (role == 'admin' || role == 'super_admin') {
@@ -292,15 +258,15 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
   void _showSnack(String msg, Color color) {
     if (!mounted) return;
     final h = MediaQuery.of(context).size.height;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
-        content: Text(
-          msg,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-        ),
+        content: Text(msg, style: _t(14, w: FontWeight.w500, c: Colors.white)),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        // Clamped so it never goes negative on short screens (would crash)
+        // Shown near the top so the keyboard never hides it. Clamped so it
+        // never goes negative on short screens (that would crash).
         margin: EdgeInsets.only(
           bottom: math.max(0.0, h - 150),
           left: 20,
@@ -312,10 +278,70 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     );
   }
 
+  Future<void> _showWelcomeDialog(String name) {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: ModernTheme.success.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.check_rounded, size: 48, color: ModernTheme.success),
+                ),
+                const SizedBox(height: 20),
+                Text('Welcome back', textAlign: TextAlign.center, style: _t(24, w: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: _t(17, w: FontWeight.w600, c: ModernTheme.primary),
+                ),
+                const SizedBox(height: 6),
+                Text('Poverty Must Go', style: _t(13, c: ModernTheme.textSecondary)),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ModernTheme.success,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text('Continue', style: _t(16, w: FontWeight.w600, c: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showResetPINDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         title: Row(
@@ -324,90 +350,47 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: ModernTheme.primaryBlue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.lock_reset, color: ModernTheme.primaryBlue),
+              child: const Icon(Icons.lock_reset_rounded, color: ModernTheme.primaryBlue),
             ),
             const SizedBox(width: 12),
-            const Flexible(
+            Flexible(
               child: Text(
                 'Reset PIN',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: _t(18, w: FontWeight.w600),
               ),
             ),
           ],
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'To reset your PIN, please contact our support team:',
-                style: TextStyle(fontSize: 15),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F9FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE3F2FD)),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'To reset your PIN, please contact our support team.',
+                  style: _t(14, c: ModernTheme.textPrimary, h: 1.5),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: ModernTheme.primaryBlue,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.phone, color: Colors.white, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Support Line',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: ModernTheme.textSecondary,
-                            ),
-                          ),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              '+256 778474686',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: ModernTheme.primaryBlue,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 16),
+                _supportRow(),
+                const SizedBox(height: 12),
+                Text(
+                  'Our team will verify your identity and help you reset your PIN securely.',
+                  style: _t(12.5, c: ModernTheme.textHint, h: 1.5),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Our team will verify your identity and help you reset your PIN securely.',
-                style: TextStyle(fontSize: 13, color: ModernTheme.textHint),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text('Close', style: _t(14, w: FontWeight.w600, c: ModernTheme.primaryBlue)),
           ),
         ],
       ),
@@ -439,17 +422,212 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     );
   }
 
-  // Desktop / large tablet landscape: split screen
+  // ── Desktop / large tablet landscape: split screen ──
   Widget _buildDesktopLayout(double totalWidth) {
     return Row(
       children: [
-        Expanded(child: _buildImageSection()),
-        Expanded(child: _buildFormSection(totalWidth)),
+        Expanded(flex: 11, child: _buildBrandPanel()),
+        Expanded(flex: 10, child: _buildFormPanel(totalWidth)),
       ],
     );
   }
 
-  // Phones & portrait tablets: background image + centered form card
+  /// Brand panel: everything is centred as one block (logo lockup, headline,
+  /// copy, feature list) with the copyright pinned to the bottom.
+  Widget _buildBrandPanel() {
+    return Container(
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/login.JPG'),
+          fit: BoxFit.cover,
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _brandDark.withOpacity(0.92),
+              _brandMid.withOpacity(0.80),
+            ],
+          ),
+        ),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final w = c.maxWidth;
+            final pad = (w * 0.08).clamp(32.0, 64.0);
+            final headline = (w * 0.07).clamp(30.0, 48.0);
+
+            return Column(
+              children: [
+                // Centred content block (scrolls on very short windows)
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, inner) {
+                      return SingleChildScrollView(
+                        padding: EdgeInsets.symmetric(horizontal: pad, vertical: 24),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: math.max(0.0, inner.maxHeight - 48),
+                          ),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 460),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  _logo(96, radius: 24),
+                                  const SizedBox(height: 18),
+                                  Text(
+                                    'MBADIFA SACCO',
+                                    textAlign: TextAlign.center,
+                                    style: _t(18, w: FontWeight.w700, c: Colors.white, ls: 2),
+                                  ),
+                                  const SizedBox(height: 28),
+                                  Container(
+                                    width: 48,
+                                    height: 3,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.55),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 28),
+                                  Text(
+                                    'Poverty Must Go',
+                                    textAlign: TextAlign.center,
+                                    style: _t(headline, w: FontWeight.w700, c: Colors.white, h: 1.15),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Sign in to manage your savings, shares and loans in one secure place.',
+                                    textAlign: TextAlign.center,
+                                    style: _t(15.5, c: Colors.white.withOpacity(0.85), h: 1.6),
+                                  ),
+                                  const SizedBox(height: 36),
+                                  // Feature list: rows left-aligned to each other,
+                                  // the whole block centred under the copy
+                                  SizedBox(
+                                    width: 340,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _feature(Icons.savings_outlined, 'Savings and shares at a glance'),
+                                        const SizedBox(height: 14),
+                                        _feature(Icons.request_quote_outlined, 'Loan applications and repayments'),
+                                        const SizedBox(height: 14),
+                                        _feature(Icons.lock_outline_rounded, 'PIN-protected, secure access'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                // Footer
+                Padding(
+                  padding: EdgeInsets.fromLTRB(pad, 0, pad, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/images/logo2.png',
+                        height: 40,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'SACCO PLUS',
+                        textAlign: TextAlign.center,
+                        style: _t(14, w: FontWeight.w600, c: Colors.white.withOpacity(0.9)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '\u00A9 ${DateTime.now().year} MBADIFA SACCO. All rights reserved.',
+                        textAlign: TextAlign.center,
+                        style: _t(12, c: Colors.white.withOpacity(0.65)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _feature(IconData icon, String text) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 20, color: Colors.white),
+        ),
+        const SizedBox(width: 14),
+        Flexible(
+          child: Text(text, style: _t(14.5, c: Colors.white.withOpacity(0.92))),
+        ),
+      ],
+    );
+  }
+
+  /// Form panel: the card is centred horizontally AND vertically. The
+  /// ConstrainedBox(minHeight) is what makes vertical centring work inside a
+  /// scroll view (a bare Center would pin the card to the top).
+  Widget _buildFormPanel(double totalWidth) {
+    final hPad = totalWidth < 1100 ? 24.0 : 40.0;
+
+    return Container(
+      color: ModernTheme.bgLight,
+      child: LayoutBuilder(
+        builder: (context, c) {
+          return SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 32),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: math.max(0.0, c.maxHeight - 64)),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Container(
+                    padding: EdgeInsets.all(totalWidth < 1100 ? 28 : 40),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: ModernTheme.borderLight),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: _buildFormFields(),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Phones & portrait tablets: branded background + centred card ──
   Widget _buildMobileLayout() {
     return Container(
       decoration: const BoxDecoration(
@@ -464,8 +642,9 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              ModernTheme.primaryBlue.withOpacity(0.85),
-              ModernTheme.primaryBlue.withOpacity(0.75),
+              _brandDark.withOpacity(0.94),
+              _brandDark.withOpacity(0.88),
+              _brandMid.withOpacity(0.84),
             ],
           ),
         ),
@@ -478,108 +657,108 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
               final small = w < 360; // tiny phones
               final tablet = w >= 600; // portrait tablets
               final shortScreen = h < 560; // landscape phones / split-screen
+              final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+              final compact = shortScreen || keyboardOpen;
 
-              final logoSize = shortScreen ? 64.0 : (small ? 80.0 : (tablet ? 120.0 : 100.0));
-              final titleSize = small ? 28.0 : (tablet ? 48.0 : 38.0);
-              final hPad = small ? 12.0 : 20.0;
-              final cardPad = small ? 16.0 : (tablet ? 32.0 : 24.0);
+              final logoSize = compact ? 56.0 : (small ? 72.0 : (tablet ? 100.0 : 84.0));
+              final titleSize = small ? 20.0 : (tablet ? 28.0 : 23.0);
+              final hPad = small ? 14.0 : 20.0;
+              final cardPad = small ? 20.0 : (tablet ? 32.0 : 24.0);
 
               return SingleChildScrollView(
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 child: ConstrainedBox(
-                  // Fill the screen so content is vertically centred on tall
-                  // screens, and scrolls on short ones
+                  // Fill the screen so content is centred on tall screens and
+                  // scrolls on short ones
                   constraints: BoxConstraints(minHeight: h),
                   child: Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Logo and branding
+                        // Brand header
                         Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            24,
-                            shortScreen ? 12 : 28,
-                            24,
-                            shortScreen ? 8 : 16,
-                          ),
+                          padding: EdgeInsets.fromLTRB(24, compact ? 12 : 20, 24, compact ? 12 : 22),
                           child: Column(
                             children: [
-                              Container(
-                                width: logoSize,
-                                height: logoSize,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.15),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                padding: EdgeInsets.all(logoSize * 0.12),
-                                child: Image.asset(
-                                  'assets/images/mbadifa-logo.png',
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                              SizedBox(height: shortScreen ? 10 : 20),
+                              _logo(logoSize, radius: logoSize * 0.26),
+                              SizedBox(height: compact ? 10 : 16),
                               FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
                                   'MBADIFA SACCO',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: titleSize,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 2,
-                                    shadows: const [
-                                      Shadow(color: Colors.black38, blurRadius: 12),
-                                    ],
+                                  style: _t(titleSize, w: FontWeight.w700, c: Colors.white, ls: 2),
+                                ),
+                              ),
+                              if (!compact) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: Colors.white.withOpacity(0.18)),
+                                  ),
+                                  child: Text(
+                                    'Poverty Must Go',
+                                    textAlign: TextAlign.center,
+                                    style: _t(small ? 12 : 13, w: FontWeight.w500, c: Colors.white.withOpacity(0.92), ls: 0.4),
                                   ),
                                 ),
-                              ),
-                              SizedBox(height: shortScreen ? 4 : 12),
-                              Text(
-                                'Poverty Must Go',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: small ? 15 : 17,
-                                  fontWeight: FontWeight.w300,
-                                  shadows: const [
-                                    Shadow(color: Colors.black38, blurRadius: 12),
-                                  ],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
+                              ],
                             ],
                           ),
                         ),
 
-                        // Login form in white card (max 480px wide)
+                        // Sign-in card
                         Padding(
-                          padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 24),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 480),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 30,
-                                      spreadRadius: 5,
-                                    ),
-                                  ],
-                                ),
-                                padding: EdgeInsets.all(cardPad),
-                                child: _buildFormFields(),
+                          padding: EdgeInsets.symmetric(horizontal: hPad),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 480),
+                            child: Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.25),
+                                    blurRadius: 32,
+                                    offset: const Offset(0, 12),
+                                  ),
+                                ],
                               ),
+                              padding: EdgeInsets.all(cardPad),
+                              child: _buildFormFields(),
                             ),
+                          ),
+                        ),
+
+                        // Footer
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 20),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                'assets/images/logo2.png',
+                                height: 32,
+                                fit: BoxFit.contain,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'SACCO PLUS',
+                                textAlign: TextAlign.center,
+                                style: _t(12, w: FontWeight.w600, c: Colors.white.withOpacity(0.9)),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '\u00A9 ${DateTime.now().year} MBADIFA SACCO. All rights reserved.',
+                                textAlign: TextAlign.center,
+                                style: _t(11.5, c: Colors.white.withOpacity(0.6)),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -594,161 +773,27 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     );
   }
 
-  Widget _buildImageSection() {
+  Widget _logo(double size, {double radius = 16}) {
     return Container(
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/images/login.JPG'),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF0D2B6B).withOpacity(0.88),
-              const Color(0xFF1565C0).withOpacity(0.75),
-            ],
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size * 0.12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
           ),
-        ),
-        child: LayoutBuilder(
-          builder: (context, c) {
-            // Everything scales with the panel size (no more fixed 64px title)
-            final w = c.maxWidth;
-            final h = c.maxHeight;
-            final pad = (w * 0.08).clamp(24.0, 60.0);
-            final logo = (w * 0.28).clamp(110.0, 160.0);
-            final titleSize = (w * 0.1).clamp(32.0, 64.0);
-            final taglineSize = (w * 0.05).clamp(20.0, 28.0);
-            final tall = h > 650;
-
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: h),
-                child: Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(pad),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: logo,
-                          height: logo,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(30),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          padding: EdgeInsets.all(logo * 0.125),
-                          child: Image.asset(
-                            'assets/images/mbadifa-logo.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-
-                        SizedBox(height: tall ? 50 : 24),
-
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            'MBADIFA SACCO',
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: titleSize,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 3,
-                              shadows: const [
-                                Shadow(
-                                  color: Colors.black45,
-                                  blurRadius: 20,
-                                  offset: Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        Container(
-                          width: 100,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Colors.transparent, Colors.white, Colors.transparent],
-                            ),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-
-                        SizedBox(height: tall ? 24 : 14),
-
-                        Text(
-                          'Poverty Must Go',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: taglineSize,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                            height: 1.4,
-                            shadows: const [
-                              Shadow(color: Colors.black38, blurRadius: 15),
-                            ],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        const Text(
-                          'Empowering Communities • Building Futures',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w400,
-                            letterSpacing: 1,
-                            shadows: [
-                              Shadow(color: Colors.black38, blurRadius: 10),
-                            ],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildFormSection(double totalWidth) {
-    final hPad = totalWidth < 1100 ? 28.0 : 48.0;
-
-    return Container(
-      color: Colors.white,
-      child: Center(
-        child: SingleChildScrollView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 32),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: _buildFormFields(),
-          ),
-        ),
+      child: Image.asset(
+        'assets/images/mbadifa-logo.png',
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) =>
+            Icon(Icons.account_balance_rounded, color: ModernTheme.primaryBlue, size: size * 0.6),
       ),
     );
   }
@@ -758,383 +803,204 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
   InputDecoration _fieldDecoration({
     required String label,
     required String hint,
+    required IconData icon,
     TextStyle? hintStyle,
     Widget? suffixIcon,
     bool small = false,
   }) {
+    OutlineInputBorder border(Color c, double w) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: c, width: w),
+        );
+
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(fontSize: small ? 14 : 16),
+      labelStyle: _t(small ? 13 : 14, c: ModernTheme.textSecondary),
+      floatingLabelStyle: _t(13, w: FontWeight.w500, c: ModernTheme.primaryBlue),
       hintText: hint,
-      hintStyle: hintStyle ?? TextStyle(fontSize: small ? 14 : 16),
+      hintStyle: hintStyle ?? _t(small ? 13 : 14, c: ModernTheme.textHint),
       counterText: '',
-      contentPadding: EdgeInsets.symmetric(horizontal: small ? 14 : 20, vertical: 18),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: ModernTheme.borderLight, width: 1.5),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: ModernTheme.borderLight, width: 1.5),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: ModernTheme.primaryBlue, width: 2.5),
-      ),
+      prefixIcon: Icon(icon, size: 20, color: ModernTheme.textSecondary),
+      suffixIcon: suffixIcon,
+      contentPadding: EdgeInsets.symmetric(horizontal: small ? 12 : 16, vertical: 18),
       filled: true,
       fillColor: ModernTheme.bgLight,
-      suffixIcon: suffixIcon,
+      border: border(ModernTheme.borderLight, 1.2),
+      enabledBorder: border(ModernTheme.borderLight, 1.2),
+      focusedBorder: border(ModernTheme.primaryBlue, 2),
+    );
+  }
+
+  Widget _primaryButton({
+    required String label,
+    required VoidCallback? onPressed,
+    Color? color,
+    bool loading = false,
+  }) {
+    final bg = color ?? ModernTheme.primaryBlue;
+    return SizedBox(
+      height: 54,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: bg.withOpacity(0.6),
+          disabledForegroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        child: loading
+            ? const SizedBox(
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Text(label, style: _t(15.5, w: FontWeight.w600, c: Colors.white, ls: 0.3)),
+      ),
+    );
+  }
+
+  /// Small two-bar progress indicator for the two sign-in steps.
+  Widget _stepIndicator() {
+    Widget bar(bool active) => Expanded(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            height: 4,
+            decoration: BoxDecoration(
+              color: active ? ModernTheme.primaryBlue : ModernTheme.borderLight,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        );
+    return Row(
+      children: [
+        bar(true),
+        const SizedBox(width: 6),
+        bar(_pinStep),
+      ],
     );
   }
 
   Widget _buildFormFields() {
     final small = MediaQuery.of(context).size.width < 360;
-    final headingSize = small ? 24.0 : 28.0;
-    final fieldFont = small ? 16.0 : 18.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _stepIndicator(),
+        SizedBox(height: small ? 18 : 22),
+
         // Heading
-        Row(
-          children: [
-            Container(
-              width: 4,
-              height: 28,
-              decoration: BoxDecoration(
-                color: ModernTheme.primaryBlue,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                _useAccountNumber ? 'Account Login' : 'Sign In',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: headingSize,
-                  fontWeight: FontWeight.bold,
-                  color: ModernTheme.textPrimary,
-                ),
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 8),
-
         Text(
-          _useAccountNumber
-              ? 'Enter your account number to continue'
-              : 'Enter your phone number to continue',
-          style: TextStyle(
-            fontSize: small ? 14 : 15,
-            color: ModernTheme.textSecondary,
-            height: 1.4,
-          ),
+          _pinStep ? 'Enter your PIN' : 'Welcome back',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: _t(small ? 22 : 26, w: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _pinStep
+              ? 'Enter your 4-digit PIN to sign in.'
+              : (_useAccountNumber
+                  ? 'Sign in with your account number.'
+                  : 'Sign in with your phone number.'),
+          style: _t(small ? 13 : 14, c: ModernTheme.textSecondary, h: 1.5),
         ),
 
-        SizedBox(height: small ? 24 : 36),
+        SizedBox(height: small ? 20 : 24),
 
-        // Username / Account Number field
-        TextFormField(
-          controller: _usernameCtrl,
-          style: TextStyle(fontSize: fieldFont, fontWeight: FontWeight.w500),
-          decoration: _fieldDecoration(
-            label: _useAccountNumber ? 'Account Number' : 'Phone Number',
-            hint: _useAccountNumber ? '60000001' : '0700000000',
-            small: small,
-          ),
-          keyboardType: _useAccountNumber ? TextInputType.number : TextInputType.phone,
-          textInputAction: TextInputAction.next,
-          onFieldSubmitted: (_) => _onNext(),
-        ),
-
-        const SizedBox(height: 24),
-
-        // NEXT button
-        SizedBox(
-          height: 56,
-          child: ElevatedButton(
-            onPressed: _loading ? null : _onNext,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.primaryBlue,
-              foregroundColor: Colors.white,
-              elevation: 2,
-              shadowColor: ModernTheme.primaryBlue.withOpacity(0.4),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: _loading
-                ? const SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Text(
-                    'NEXT',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-          ),
-        ),
-
-        // PIN field after username entered
-        if (_usernameCtrl.text.trim().isNotEmpty) ...[
-          const SizedBox(height: 24),
-
-          TextFormField(
-            controller: _pinCtrl,
-            style: TextStyle(
-              fontSize: fieldFont,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 8,
-            ),
-            decoration: _fieldDecoration(
-              label: 'Password/PIN',
-              hint: '••••',
-              hintStyle: const TextStyle(fontSize: 20, letterSpacing: 8),
-              small: small,
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePin ? Icons.visibility_off : Icons.visibility,
-                  color: ModernTheme.textSecondary,
-                ),
-                onPressed: () => setState(() => _obscurePin = !_obscurePin),
-              ),
-            ),
-            obscureText: _obscurePin,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            onFieldSubmitted: (_) => _login(),
-          ),
-
-          const SizedBox(height: 24),
-
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _loading ? null : _login,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ModernTheme.success,
-                foregroundColor: Colors.white,
-                elevation: 2,
-                shadowColor: ModernTheme.success.withOpacity(0.4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text(
-                'LOG IN',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
-            ),
-          ),
+        // Login method switch (phone / account number), only on step 1
+        if (!_pinStep) ...[
+          _methodSwitch(small),
+          const SizedBox(height: 20),
         ],
 
-        const SizedBox(height: 16),
-
-        // Password reset link
-        TextButton(
-          onPressed: _showResetPINDialog,
-          child: const Text(
-            'Forgot PIN?',
-            style: TextStyle(
-              color: ModernTheme.primaryBlue,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: KeyedSubtree(
+              key: ValueKey(_pinStep),
+              child: _pinStep ? _buildPinStep(small) : _buildUsernameStep(small),
             ),
           ),
         ),
 
-        const SizedBox(height: 8),
+        SizedBox(height: small ? 20 : 24),
 
-        // Register section
-        Container(
-          padding: EdgeInsets.all(small ? 14 : 20),
-          decoration: BoxDecoration(
-            color: ModernTheme.bgLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ModernTheme.borderLight, width: 1.5),
-          ),
-          child: Column(
-            children: [
-              Text(
-                "Don't have an account?",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: ModernTheme.textSecondary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: OutlinedButton(
-                  onPressed: () {
+        // Register
+        Row(
+          children: [
+            const Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text('New to MBADIFA SACCO?', style: _t(12, c: ModernTheme.textHint)),
+            ),
+            const Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 50,
+          child: OutlinedButton(
+            onPressed: _loading
+                ? null
+                : () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const RegisterScreen()),
                     );
                   },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: ModernTheme.primaryBlue, width: 2),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      'Create New Account',
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: ModernTheme.primaryBlue,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        SizedBox(height: small ? 20 : 32),
-
-        // Toggle login method (scales down instead of overflowing)
-        Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  _useAccountNumber = !_useAccountNumber;
-                  _usernameCtrl.clear();
-                  _pinCtrl.clear();
-                });
-              },
-              icon: Icon(
-                _useAccountNumber ? Icons.phone : Icons.badge,
-                size: 18,
-                color: ModernTheme.primaryBlue,
-              ),
-              label: Text(
-                _useAccountNumber
-                    ? 'Login with phone instead'
-                    : 'Login with account number instead',
-                maxLines: 1,
-                style: const TextStyle(
-                  color: ModernTheme.primaryBlue,
-                  fontSize: 13,
-                ),
-              ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: ModernTheme.primaryBlue, width: 1.5),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
-          ),
-        ),
-
-        SizedBox(height: small ? 20 : 40),
-
-        // Divider
-        Row(
-          children: [
-            Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
               child: Text(
-                'SECURE & TRUSTED',
-                style: TextStyle(
-                  color: ModernTheme.textHint,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1,
-                ),
+                'Create new account',
+                maxLines: 1,
+                style: _t(14.5, w: FontWeight.w600, c: ModernTheme.primaryBlue),
               ),
             ),
-            Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
-          ],
+          ),
         ),
 
-        const SizedBox(height: 20),
+        SizedBox(height: small ? 20 : 24),
 
-        // Support card
+        // Support
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: const Color(0xFFF5F9FF),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE3F2FD), width: 1),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE3F2FD)),
           ),
           child: Column(
             children: [
+              _supportRow(),
+              const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: ModernTheme.primaryBlue,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.headset_mic,
-                      size: 20,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+                  Icon(Icons.lock_outline_rounded, size: 14, color: ModernTheme.textHint),
+                  const SizedBox(width: 6),
                   Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Need Help?',
-                          style: TextStyle(
-                            color: ModernTheme.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '+256 778474686',
-                            style: TextStyle(
-                              color: ModernTheme.primaryBlue,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      'Never share your PIN or password with anyone.',
+                      textAlign: TextAlign.center,
+                      style: _t(11.5, c: ModernTheme.textHint, h: 1.4),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Never share your PIN or password with anyone.',
-                style: TextStyle(
-                  color: ModernTheme.textHint,
-                  fontSize: 11,
-                  height: 1.4,
-                ),
-                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -1142,30 +1008,215 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       ],
     );
   }
-}
 
-// Professional grid pattern painter
-class _GridPatternPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-
-    const spacing = 40.0;
-
-    // Vertical lines
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+  Widget _methodSwitch(bool small) {
+    Widget item(String label, IconData icon, bool selected, VoidCallback onTap) {
+      return Expanded(
+        child: GestureDetector(
+          onTap: _loading ? null : onTap,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+            decoration: BoxDecoration(
+              color: selected ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.07),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon,
+                    size: 16,
+                    color: selected ? ModernTheme.primaryBlue : ModernTheme.textSecondary),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _t(
+                      small ? 12 : 13,
+                      w: selected ? FontWeight.w600 : FontWeight.w500,
+                      c: selected ? ModernTheme.primaryBlue : ModernTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
-    // Horizontal lines
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: ModernTheme.bgLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ModernTheme.borderLight),
+      ),
+      child: Row(
+        children: [
+          item('Phone number', Icons.phone_outlined, !_useAccountNumber, () => _setLoginMethod(false)),
+          item('Account number', Icons.badge_outlined, _useAccountNumber, () => _setLoginMethod(true)),
+        ],
+      ),
+    );
   }
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget _buildUsernameStep(bool small) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextFormField(
+          controller: _usernameCtrl,
+          focusNode: _usernameFocus,
+          style: _t(small ? 15 : 16, w: FontWeight.w500),
+          decoration: _fieldDecoration(
+            label: _useAccountNumber ? 'Account number' : 'Phone number',
+            hint: _useAccountNumber ? '60000001' : '0700000000',
+            icon: _useAccountNumber ? Icons.badge_outlined : Icons.phone_outlined,
+            small: small,
+          ),
+          keyboardType: _useAccountNumber ? TextInputType.number : TextInputType.phone,
+          inputFormatters: [
+            _useAccountNumber
+                ? FilteringTextInputFormatter.digitsOnly
+                : FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),
+          ],
+          textInputAction: TextInputAction.next,
+          onFieldSubmitted: (_) => _onNext(),
+        ),
+        const SizedBox(height: 20),
+        _primaryButton(label: 'Continue', onPressed: _loading ? null : _onNext),
+      ],
+    );
+  }
+
+  Widget _buildPinStep(bool small) {
+    final username = _usernameCtrl.text.trim();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Who is signing in, with a way to go back
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+          decoration: BoxDecoration(
+            color: ModernTheme.bgLight,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: ModernTheme.borderLight),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                _useAccountNumber ? Icons.badge_outlined : Icons.phone_outlined,
+                size: 18,
+                color: ModernTheme.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  username,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _t(14, w: FontWeight.w500),
+                ),
+              ),
+              TextButton(
+                onPressed: _loading ? null : _backToUsername,
+                child: Text('Change', style: _t(13, w: FontWeight.w600, c: ModernTheme.primaryBlue)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _pinCtrl,
+          focusNode: _pinFocus,
+          style: _t(small ? 17 : 18, w: FontWeight.w600, ls: 8),
+          decoration: _fieldDecoration(
+            label: 'PIN',
+            hint: '\u2022\u2022\u2022\u2022',
+            icon: Icons.lock_outline_rounded,
+            hintStyle: _t(18, c: ModernTheme.textHint, ls: 8),
+            small: small,
+            suffixIcon: IconButton(
+              tooltip: _obscurePin ? 'Show PIN' : 'Hide PIN',
+              icon: Icon(
+                _obscurePin ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                size: 20,
+                color: ModernTheme.textSecondary,
+              ),
+              onPressed: () => setState(() => _obscurePin = !_obscurePin),
+            ),
+          ),
+          obscureText: _obscurePin,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          maxLength: 4,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) => _login(),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _showResetPINDialog,
+            child: Text('Forgot PIN?', style: _t(13, w: FontWeight.w600, c: ModernTheme.primaryBlue)),
+          ),
+        ),
+        const SizedBox(height: 4),
+        _primaryButton(
+          label: 'Sign in',
+          color: ModernTheme.success,
+          loading: _loading,
+          onPressed: _loading ? null : _login,
+        ),
+      ],
+    );
+  }
+
+  Widget _supportRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: ModernTheme.primaryBlue,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.headset_mic_rounded, size: 18, color: Colors.white),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Need help?', style: _t(12, c: ModernTheme.textSecondary)),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _supportPhone,
+                  style: _t(16, w: FontWeight.w700, c: ModernTheme.primaryBlue, ls: 0.4),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
