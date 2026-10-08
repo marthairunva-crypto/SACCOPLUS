@@ -1447,6 +1447,8 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     final sourceCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     String? err;
+    String selectedSource = 'Buying shares';
+    bool showOtherField = false;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1472,10 +1474,33 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                     onChanged: (_) => setD(() => err = null),
                   ),
                   const SizedBox(height: 14),
-                  TextField(
-                    controller: sourceCtrl,
-                    decoration: fieldDeco('Source (e.g., Fees, Interest, Other Income)'),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedSource,
+                    decoration: fieldDeco('Source'),
+                    items: [
+                      'Buying shares',
+                      'Passbook',
+                      'Donation',
+                      'Opening account',
+                      'Others (Specify)',
+                    ].map((source) => DropdownMenuItem(value: source, child: Text(source))).toList(),
+                    onChanged: (value) {
+                      setD(() {
+                        selectedSource = value ?? 'Buying shares';
+                        showOtherField = selectedSource == 'Others (Specify)';
+                        if (!showOtherField) {
+                          sourceCtrl.clear();
+                        }
+                      });
+                    },
                   ),
+                  if (showOtherField) ...[
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: sourceCtrl,
+                      decoration: fieldDeco('Specify source'),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   TextField(
                     controller: amountCtrl,
@@ -1538,7 +1563,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     if (ok != true || !mounted) return;
 
     final description = descCtrl.text.trim();
-    final source = sourceCtrl.text.trim();
+    final source = showOtherField ? sourceCtrl.text.trim() : selectedSource;
     final amount = int.tryParse(amountCtrl.text.trim()) ?? 0;
     final notes = notesCtrl.text.trim();
 
