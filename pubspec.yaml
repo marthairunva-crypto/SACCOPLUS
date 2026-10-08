@@ -2,7 +2,7 @@ name: saccoplus_pro
 description: "MBADIFA SACCO — Modern SACCO & Cooperative Fintech Platform"
 publish_to: 'none'
 
-version: 2.0.0+1
+version: 2.0.1+2
 
 environment:
   sdk: '>=3.8.0 <4.0.0'

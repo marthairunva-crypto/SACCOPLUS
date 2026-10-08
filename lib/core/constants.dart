@@ -3,7 +3,7 @@ class AppConstants {
   static const String appName     = 'MBADIFA SACCO';
   static const String appSubtitle = 'Poverty Must Go';
   static const String appTagline  = 'Empowering Communities • Building Futures';
-  static const String appVersion  = '2.0.0';
+  static const String appVersion  = '2.0.1';
   static const String logoPath    = 'assets/images/mbadifa-logo.png';
 
   // ── Image Upload (ImgBB) ──────────────────────────────────────────────────
