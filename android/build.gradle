@@ -21,6 +21,17 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(':app')
+    
+    // Force all plugins to use compileSdk 36
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                if (project.android.hasProperty('compileSdkVersion')) {
+                    compileSdk = 36
+                }
+            }
+        }
+    }
 }
 
 tasks.register("clean", Delete) {
