@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
+import '../../core/constants.dart'; // Add this import
 
 const _kBorder = Color(0xFFE5E7EB);
 const _kContentMaxWidth = 720.0;
@@ -535,9 +536,10 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
   Widget _buildHistoryTab() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('notifications')
-          .orderBy('timestamp', descending: true)
-          .limit(20)
+          .collection(AppConstants.notificationsCol) // Use the actual notifications collection
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+          .orderBy('createdAt', descending: true)
+          .limit(100) // Show more history
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -550,7 +552,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
           return const _EmptyState(
             icon: Icons.notifications_none_rounded,
             title: 'No notifications yet',
-            subtitle: 'Messages you send will appear here.',
+            subtitle: 'All messages sent will appear here.',
           );
         }
 
@@ -583,12 +585,44 @@ class _HistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Handle both broadcast messages (title/message/timestamp) and transaction notifications (title/message/createdAt)
     final title = (data['title'] ?? 'No title').toString();
     final message = (data['message'] ?? '').toString();
-    final ts = data['timestamp'];
+    final recipientName = (data['recipientName'] ?? '').toString();
+    final type = (data['type'] ?? 'message').toString();
+    
+    // Try both timestamp fields (createdAt for transactions, timestamp for broadcasts)
+    final ts = data['createdAt'] ?? data['timestamp'];
     final date = ts is Timestamp
         ? DateFormat('d MMM yyyy, HH:mm').format(ts.toDate())
         : 'Unknown date';
+
+    // Show recipient for transaction messages, type badge for different message types
+    String? badge;
+    Color? badgeColor;
+    if (type != 'message') {
+      switch (type) {
+        case 'deposit':
+          badge = 'Deposit';
+          badgeColor = AppTheme.success;
+          break;
+        case 'withdrawal':
+          badge = 'Withdrawal';
+          badgeColor = AppTheme.warning;
+          break;
+        case 'loan_payment':
+          badge = 'Loan Payment';
+          badgeColor = AppTheme.primary;
+          break;
+        case 'loan_disbursement':
+          badge = 'Loan Disbursed';
+          badgeColor = AppTheme.info;
+          break;
+        default:
+          badge = type.toUpperCase();
+          badgeColor = AppTheme.textSecondary;
+      }
+    }
 
     return Container(
       width: double.infinity,
@@ -601,14 +635,49 @@ class _HistoryTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: _text(14, weight: FontWeight.w600),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: _text(14, weight: FontWeight.w600),
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: badgeColor!.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    badge,
+                    style: _text(11, weight: FontWeight.w600, color: badgeColor),
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 2),
-          Text(date, style: _text(12, color: AppTheme.textSecondary)),
+          Row(
+            children: [
+              Text(date, style: _text(12, color: AppTheme.textSecondary)),
+              if (recipientName.isNotEmpty) ...[
+                Text(' • ', style: _text(12, color: AppTheme.textSecondary)),
+                Expanded(
+                  child: Text(
+                    recipientName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _text(12, color: AppTheme.textSecondary),
+                  ),
+                ),
+              ],
+            ],
+          ),
           if (message.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(

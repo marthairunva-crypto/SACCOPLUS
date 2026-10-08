@@ -2744,6 +2744,20 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         final ref = referenceCtrl.text.trim();
         final cheque = chequeCtrl.text.trim();
         final narration = narrationCtrl.text.trim();
+        
+        // Get the open till session if disbursing cash
+        TillSession? openTill;
+        if (dest == 'cash') {
+          try {
+            openTill = await TillService.getOpenSession(_uid);
+            if (openTill == null) {
+              _toast('No open till session. Cash disbursement will be recorded but not posted to till.', false);
+            }
+          } catch (e) {
+            debugPrint('Error getting till session: $e');
+          }
+        }
+        
         await _runAction(
           action: () => LoanDisbursementService.disburseLoan(
             loanId: widget.loanId,
@@ -2753,8 +2767,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             referenceNumber: ref,
             chequeNumber: cheque,
             narration: narration,
-            tillSession:
-                null, // TODO: Pass actual till session in Phase 3 for cash
+            tillSession: openTill, // Pass actual till session for cash
           ),
           successMessage: 'Loan disbursed',
         );
@@ -3209,6 +3222,17 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           chargesOutstanding: chargesOutstanding,
           memberName: _s('memberName', 'Member'),
           onPaymentComplete: (paymentData) async {
+            // Get the open till session for the current user
+            TillSession? openTill;
+            try {
+              openTill = await TillService.getOpenSession(FirebaseService.sessionUid);
+              if (openTill == null) {
+                _toast('No open till session. Cash payment will be recorded but not posted to till.', false);
+              }
+            } catch (e) {
+              debugPrint('Error getting till session: $e');
+            }
+
             await _recordPayment(
               principalPaid: _toD(paymentData['principalPaid']),
               interestPaid: _toD(paymentData['interestPaid']),
@@ -3216,7 +3240,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               paymentMethod: 'Cash',
               paymentDate:
                   _toDate(paymentData['paymentDate']) ?? DateTime.now(),
-              tillSession: null, // TODO: Pass actual till session in Phase 3
+              tillSession: openTill, // Pass the actual till session
             );
           },
         ),
@@ -3310,6 +3334,36 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         'chargesOutstanding': FieldValue.increment(-chargesPaid),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Send SMS notification (non-critical)
+      if (paymentMethod == 'Cash') {
+        try {
+          final memberName = _loanData!['memberName'] ?? 'Member';
+          final memberPhone = _memberPhone ?? ''; // Handle null
+          
+          // Get updated loan data for balances
+          final updatedLoan = await db.collection(AppConstants.loansCol).doc(widget.loanId).get();
+          final updatedData = updatedLoan.data();
+          final principalOut = (updatedData?['principalOutstanding'] ?? 0).toInt();
+          final interestOut = (updatedData?['interestOutstanding'] ?? 0).toInt();
+          final chargesOut = (updatedData?['chargesOutstanding'] ?? 0).toInt();
+          final totalOut = principalOut + interestOut + chargesOut;
+          
+          if (memberPhone.isNotEmpty) {
+            final smsMessage = 'MBADIFA SACCO\n'
+                'Dear $memberName, your loan payment of UGX ${_money(total)} has been received. '
+                'Principal: UGX ${_money(principalPaid)}, '
+                'Interest: UGX ${_money(interestPaid)}. '
+                'Outstanding balance: UGX ${_money(totalOut)}. '
+                'Thank you.';
+            
+            await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
+            debugPrint('✅ SMS sent to $memberPhone');
+          }
+        } catch (smsError) {
+          debugPrint('⚠️ Failed to send SMS: $smsError');
+        }
+      }
 
       try {
         await ArrearsService.updateLoanArrears(widget.loanId);
