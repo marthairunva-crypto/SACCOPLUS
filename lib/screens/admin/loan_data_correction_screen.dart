@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../services/audit_service.dart';
+import '../../services/till_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens
@@ -881,27 +882,28 @@ class _LoanEditFormState extends State<_LoanEditForm> {
         // Find till entries for this loan disbursement
         final tillEntries = await _db
             .collection(AppConstants.tillEntriesCol)
-            .where('loanId', isEqualTo: loanId)
+            .where('businessRecordId', isEqualTo: loanId)
             .where('entryType', isEqualTo: 'loan_disbursement')
             .get();
 
         if (tillEntries.docs.isNotEmpty) {
-          // Delete the disbursement entries and update till balance
+          // Delete the disbursement entries using TillService (this will automatically rollback the balance)
           for (final doc in tillEntries.docs) {
-            final entry = doc.data();
-            final tillSessionId = entry['tillSessionId'];
-            final amount = entry['amount'] ?? 0;
-
-            // Delete the till entry
-            await doc.reference.delete();
-
-            // Update till session balance (add back the disbursed amount)
-            if (tillSessionId != null) {
-              await _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId).update({
-                'currentBalance': FieldValue.increment(amount),
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-              debugPrint('✅ Reversed till disbursement entry: ${_money(amount)}');
+            try {
+              final entry = doc.data();
+              final tillSessionId = entry['tillSessionId'];
+              
+              if (tillSessionId != null) {
+                await TillService.deleteTransaction(
+                  tillSessionId: tillSessionId,
+                  entryId: doc.id,
+                  deletedBy: FirebaseService.sessionUid,
+                  reason: 'Loan deleted by admin',
+                );
+                debugPrint('✅ Reversed till disbursement entry using TillService');
+              }
+            } catch (e) {
+              debugPrint('⚠️ Could not delete till disbursement entry: $e');
             }
           }
         }
@@ -909,26 +911,27 @@ class _LoanEditFormState extends State<_LoanEditForm> {
         // Also reverse any loan repayment entries in the till
         final repaymentEntries = await _db
             .collection(AppConstants.tillEntriesCol)
-            .where('loanId', isEqualTo: loanId)
+            .where('businessRecordId', isEqualTo: loanId)
             .where('entryType', isEqualTo: 'loan_repayment')
             .get();
 
         if (repaymentEntries.docs.isNotEmpty) {
           for (final doc in repaymentEntries.docs) {
-            final entry = doc.data();
-            final tillSessionId = entry['tillSessionId'];
-            final amount = entry['amount'] ?? 0;
-
-            // Delete the till entry
-            await doc.reference.delete();
-
-            // Update till session balance (subtract the repayment amount)
-            if (tillSessionId != null) {
-              await _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId).update({
-                'currentBalance': FieldValue.increment(-amount),
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-              debugPrint('✅ Reversed till repayment entry: ${_money(amount)}');
+            try {
+              final entry = doc.data();
+              final tillSessionId = entry['tillSessionId'];
+              
+              if (tillSessionId != null) {
+                await TillService.deleteTransaction(
+                  tillSessionId: tillSessionId,
+                  entryId: doc.id,
+                  deletedBy: FirebaseService.sessionUid,
+                  reason: 'Loan deleted by admin',
+                );
+                debugPrint('✅ Reversed till repayment entry using TillService');
+              }
+            } catch (e) {
+              debugPrint('⚠️ Could not delete till repayment entry: $e');
             }
           }
         }
