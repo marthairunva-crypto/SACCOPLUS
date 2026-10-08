@@ -1625,6 +1625,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     int maxLines = 1,
     bool readOnly = false,
     bool enabled = true,
+    bool autofocus = false,
     Color? fill,
     TextInputType? keyboard,
     List<TextInputFormatter>? formatters,
@@ -1643,6 +1644,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             maxLines: maxLines,
             readOnly: readOnly,
             enabled: enabled,
+            autofocus: autofocus,
             onChanged: onChanged,
             style: style ?? _t(14, c: _C.ink),
             keyboardType: keyboard ?? (number ? TextInputType.number : null),
@@ -2153,9 +2155,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       amountCtrl.text = (p + i + c).round().toString();
     }
 
-    Widget amountField(String label, TextEditingController ctrl) => Expanded(
+    Widget amountField(String label, TextEditingController ctrl, {bool autofocus = false}) => Expanded(
           child: _field(label, ctrl,
-              number: true, hint: '0', onChanged: (_) => updateTotal()),
+              number: true, hint: '0', autofocus: autofocus, onChanged: (_) => updateTotal()),
         );
 
     await _showFormDialog(
@@ -2360,7 +2362,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                amountField('Principal Amount', principalCtrl),
+                amountField('Principal Amount', principalCtrl, autofocus: true),
                 const SizedBox(width: 12),
                 amountField('Interest Amount', interestCtrl),
               ],
