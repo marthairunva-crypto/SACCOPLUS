@@ -316,11 +316,20 @@ class _SplashScreenState extends State<SplashScreen>
                 Column(
                   children: [
                     Image.asset(
-                      AppConstants.logoPath,
-                      width: 28,
-                      height: 28,
+                      'assets/images/logo2.png',
+                      width: 32,
+                      height: 32,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
+                    Text(
+                      'SACCO PLUS',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white.withOpacity(0.95),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1),
+                    ),
+                    const SizedBox(height: 4),
                     Text(
                       'SACCO PLUS is a product of',
                       style: GoogleFonts.poppins(
