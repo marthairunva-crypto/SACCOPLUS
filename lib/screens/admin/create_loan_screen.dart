@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../services/till_service.dart';
+import '../../models/till_entry.dart';
 import '../../widgets/app_widgets.dart';
 
 /// Admin screen to create and disburse loans to members
@@ -759,30 +760,34 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       if (_autoApprove) {
         try {
           // Get current till session
-          final tillSession = await TillService.getCurrentSession();
+          final tellerId = FirebaseService.sessionUid;
+          final tillSession = await TillService.getOpenSession(tellerId);
           
           if (tillSession != null) {
             // Post till entry for loan disbursement (reduces till balance)
-            final tellerId = FirebaseService.sessionUid;
-            final tellerName = FirebaseService.sessionProfile['name'] as String? ?? 'Admin';
+            final profile = FirebaseService.sessionProfile;
+            final tellerName = (profile != null ? profile['name'] as String? : null) ?? 'Admin';
             
-            final tillEntryInput = TillEntryInput(
-              entryType: 'loan_disbursement',
-              amount: principal,
-              affectsCash: true,
-              paymentMethod: 'Cash',
-              memberId: _selectedMemberId!,
-              memberName: _selectedMemberName!,
-              businessRecordType: 'loan',
-              notes: 'Loan disbursement - Amount: UGX ${_formatAmount(principal)} '
-                  'to ${_selectedMemberName}',
-            );
-
             await TillService.postEntry(
               tillSessionId: tillSession.id,
               tellerId: tellerId,
               tellerName: tellerName,
-              input: tillEntryInput,
+              input: TillEntry(
+                id: '',
+                tillSessionId: tillSession.id,
+                entryType: 'loan_disbursement',
+                amount: -principal, // Negative because cash goes out
+                timestamp: DateTime.now(),
+                tellerId: tellerId,
+                tellerName: tellerName,
+                affectsCash: true,
+                paymentMethod: 'Cash',
+                memberId: _selectedMemberId!,
+                memberName: _selectedMemberName!,
+                businessRecordType: 'loan',
+                notes: 'Loan disbursement - Amount: UGX ${_formatAmount(principal)} '
+                    'to ${_selectedMemberName}',
+              ),
             );
 
             print('✅ Till entry posted for loan disbursement');
