@@ -501,16 +501,19 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                                     style: _t(headline, w: FontWeight.w700, c: Colors.white, h: 1.15),
                                   ),
                                   const SizedBox(height: 16),
-                                  Text(
-                                    'Sign in to manage your savings, shares and loans in one secure place.',
-                                    textAlign: TextAlign.center,
-                                    style: _t(15.5, c: Colors.white.withOpacity(0.85), h: 1.6),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 380),
+                                    child: Text(
+                                      'Sign in to manage your savings, shares and loans in one secure place.',
+                                      textAlign: TextAlign.center,
+                                      style: _t(15.5, c: Colors.white.withOpacity(0.85), h: 1.6),
+                                    ),
                                   ),
                                   const SizedBox(height: 36),
-                                  // Feature list: rows left-aligned to each other,
-                                  // the whole block centred under the copy
-                                  SizedBox(
-                                    width: 340,
+                                  // Feature list: the block hugs its widest row, so it
+                                  // is truly centred under the copy; icons and text
+                                  // line up with each other inside it
+                                  IntrinsicWidth(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
@@ -567,6 +570,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
 
   Widget _feature(IconData icon, String text) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: const EdgeInsets.all(9),
@@ -730,14 +734,16 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                                 ],
                               ),
                               padding: EdgeInsets.all(cardPad),
-                              child: _buildFormFields(),
+                              child: _buildFormFields(compact: true),
                             ),
                           ),
                         ),
 
+                        _mobileLinks(),
+
                         // Footer
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 20),
+                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -885,19 +891,12 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     );
   }
 
-  Widget _buildFormFields() {
-    final small = MediaQuery.of(context).size.width < 360;
-
+  Widget _stepHeader(bool small) {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _stepIndicator(),
-        SizedBox(height: small ? 18 : 22),
-
-        // Heading
         Text(
-          _pinStep ? 'Enter your PIN' : 'Welcome back',
+          _pinStep ? 'One more step' : 'Welcome back',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: _t(small ? 22 : 26, w: FontWeight.w700),
@@ -911,101 +910,202 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
                   : 'Sign in with your phone number.'),
           style: _t(small ? 13 : 14, c: ModernTheme.textSecondary, h: 1.5),
         ),
+      ],
+    );
+  }
 
-        SizedBox(height: small ? 20 : 24),
+  /// [compact] = mobile: only the current step is shown in the card (register
+  /// and support move below the card). Steps slide left/right and can be
+  /// swiped: swipe left = next, swipe right = back.
+  Widget _buildFormFields({bool compact = false}) {
+    final small = MediaQuery.of(context).size.width < 360;
 
-        // Login method switch (phone / account number), only on step 1
-        if (!_pinStep) ...[
-          _methodSwitch(small),
-          const SizedBox(height: 20),
-        ],
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _stepIndicator(),
+        SizedBox(height: small ? 18 : 22),
 
         AnimatedSize(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topCenter,
+              children: [...previous, if (current != null) current],
+            ),
+            transitionBuilder: (child, anim) {
+              final incoming = child.key == ValueKey(_pinStep);
+              final begin = incoming
+                  ? Offset(_pinStep ? 0.3 : -0.3, 0)
+                  : Offset(_pinStep ? -0.3 : 0.3, 0);
+              return FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(begin: begin, end: Offset.zero).animate(anim),
+                  child: child,
+                ),
+              );
+            },
             child: KeyedSubtree(
               key: ValueKey(_pinStep),
-              child: _pinStep ? _buildPinStep(small) : _buildUsernameStep(small),
-            ),
-          ),
-        ),
-
-        SizedBox(height: small ? 20 : 24),
-
-        // Register
-        Row(
-          children: [
-            const Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text('New to MBADIFA SACCO?', style: _t(12, c: ModernTheme.textHint)),
-            ),
-            const Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
-          ],
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 50,
-          child: OutlinedButton(
-            onPressed: _loading
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                    );
-                  },
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: ModernTheme.primaryBlue, width: 1.5),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                'Create new account',
-                maxLines: 1,
-                style: _t(14.5, w: FontWeight.w600, c: ModernTheme.primaryBlue),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _stepHeader(small),
+                  SizedBox(height: small ? 20 : 24),
+                  if (!_pinStep) ...[
+                    _methodSwitch(small),
+                    const SizedBox(height: 20),
+                  ],
+                  _pinStep ? _buildPinStep(small) : _buildUsernameStep(small),
+                ],
               ),
             ),
           ),
         ),
 
-        SizedBox(height: small ? 20 : 24),
+        if (!compact) ...[
+          SizedBox(height: small ? 20 : 24),
 
-        // Support
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F9FF),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE3F2FD)),
-          ),
-          child: Column(
+          // Register
+          Row(
             children: [
-              _supportRow(),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.lock_outline_rounded, size: 14, color: ModernTheme.textHint),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'Never share your PIN or password with anyone.',
-                      textAlign: TextAlign.center,
-                      style: _t(11.5, c: ModernTheme.textHint, h: 1.4),
+              const Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text('New to MBADIFA SACCO?', style: _t(12, c: ModernTheme.textHint)),
+              ),
+              const Expanded(child: Divider(color: ModernTheme.borderLight, thickness: 1)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 50,
+            child: OutlinedButton(
+              onPressed: _loading ? null : _openRegister,
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: ModernTheme.primaryBlue, width: 1.5),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Create new account',
+                  maxLines: 1,
+                  style: _t(14.5, w: FontWeight.w600, c: ModernTheme.primaryBlue),
+                ),
+              ),
+            ),
+          ),
+
+          SizedBox(height: small ? 20 : 24),
+
+          // Support
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F9FF),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE3F2FD)),
+            ),
+            child: Column(
+              children: [
+                _supportRow(),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.lock_outline_rounded, size: 14, color: ModernTheme.textHint),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Never share your PIN or password with anyone.',
+                        textAlign: TextAlign.center,
+                        style: _t(11.5, c: ModernTheme.textHint, h: 1.4),
+                      ),
                     ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (!compact) return body;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: (d) {
+        final v = d.primaryVelocity ?? 0;
+        if (_loading) return;
+        if (v < -300 && !_pinStep) {
+          _onNext();
+        } else if (v > 300 && _pinStep) {
+          _backToUsername();
+        }
+      },
+      child: body,
+    );
+  }
+
+  void _openRegister() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+  }
+
+  /// Mobile only: register + help live below the card on the blue
+  /// background, so the card itself stays clean and uncluttered.
+  Widget _mobileLinks() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
+      child: Column(
+        children: [
+          if (!_pinStep)
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('New to MBADIFA SACCO?', style: _t(13, c: Colors.white.withOpacity(0.8))),
+                TextButton(
+                  onPressed: _loading ? null : _openRegister,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 40),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                ],
+                  child: Text('Create account', style: _t(13, w: FontWeight.w700, c: Colors.white)),
+                ),
+              ],
+            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.headset_mic_rounded, size: 15, color: Colors.white.withOpacity(0.75)),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Need help? $_supportPhone',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _t(12.5, c: Colors.white.withOpacity(0.8)),
+                ),
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1066,8 +1166,8 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       ),
       child: Row(
         children: [
-          item('Phone number', Icons.phone_outlined, !_useAccountNumber, () => _setLoginMethod(false)),
-          item('Account number', Icons.badge_outlined, _useAccountNumber, () => _setLoginMethod(true)),
+          item('Phone', Icons.phone_outlined, !_useAccountNumber, () => _setLoginMethod(false)),
+          item('Account no.', Icons.badge_outlined, _useAccountNumber, () => _setLoginMethod(true)),
         ],
       ),
     );
