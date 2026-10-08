@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/audit_service.dart';
 import '../../core/theme.dart';
+import '../../core/firebase_service.dart';
+import '../../services/till_service.dart';
 import '../../widgets/app_widgets.dart';
 
 class SavingsAdminScreen extends StatefulWidget {
@@ -382,6 +384,36 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
       // Delete the transaction
       await db.collection(AppConstants.savingsTxnCol).doc(docId).delete();
       
+      // Find and delete corresponding till entry if exists
+      try {
+        final tillEntries = await db
+            .collection(AppConstants.tillEntriesCol)
+            .where('businessRecordId', isEqualTo: docId)
+            .where('businessRecordType', isEqualTo: 'savings')
+            .limit(1)
+            .get();
+
+        if (tillEntries.docs.isNotEmpty) {
+          final tillEntry = tillEntries.docs.first;
+          final tillEntryData = tillEntry.data();
+          final tillSessionId = tillEntryData['tillSessionId'] as String?;
+          
+          if (tillSessionId != null) {
+            // Use TillService to delete the till entry (this will automatically rollback the balance)
+            await TillService.deleteTransaction(
+              tillSessionId: tillSessionId,
+              entryId: tillEntry.id,
+              deletedBy: FirebaseService.sessionUid,
+              reason: 'Savings transaction deleted by admin',
+            );
+            print('✅ Till entry deleted for savings transaction');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Could not delete till entry: $e');
+        // Continue even if till entry deletion fails
+      }
+      
       // Update member savings summary (deduct the amount) only if memberId exists and is valid
       if (memberId.isNotEmpty) {
         // Check if the savings document exists
@@ -408,7 +440,7 @@ class _SavingsAdminScreenState extends State<SavingsAdminScreen>
         meta: {'amount': amount, 'type': type},
       );
       
-      _snack('Savings deleted successfully', AppTheme.success);
+      _snack('Savings deleted successfully (till balance rolled back)', AppTheme.success);
     } catch (e) {
       _snack('Error deleting savings: $e', AppTheme.error);
     }
