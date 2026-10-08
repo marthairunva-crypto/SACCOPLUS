@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
+import '../../services/member_statement_service.dart';
 
 class Member360Screen extends StatefulWidget {
   final String? memberId;
@@ -101,6 +102,61 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading member: $e')),
       );
+    }
+  }
+
+  Future<void> _printMemberStatement() async {
+    if (_memberData == null || _selectedMemberId == null) return;
+
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Generating statement...',
+                  style: GoogleFonts.poppins(fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      // Generate and show statement
+      await MemberStatementService.generateMemberStatement(
+        memberId: _selectedMemberId!,
+        memberData: _memberData!,
+        printDirectly: false, // Will show share dialog
+      );
+
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+      
+      // Show error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating statement: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
     }
   }
 
@@ -355,11 +411,18 @@ class _Member360ScreenState extends State<Member360Screen> with SingleTickerProv
           onPressed: () => Navigator.pop(context),
         ) : null,
         actions: [
-          if (_memberData != null)
+          if (_memberData != null) ...[
+            // Print Statement button
+            IconButton(
+              icon: const Icon(Icons.print_rounded),
+              tooltip: 'Print Statement',
+              onPressed: () => _printMemberStatement(),
+            ),
             IconButton(
               icon: const Icon(Icons.refresh_rounded),
               onPressed: _loadMemberData,
             ),
+          ],
         ],
       ),
       body: Column(
