@@ -76,7 +76,7 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
     }
   }
 
-  Future<double> _calculateMemberLoanBalance(String memberId) async {
+  Future<double> _calculateMemberLoanBalance(String memberId, String accountNumber) async {
     try {
       // Query by both farmerId and memberId to catch all loans
       final loansSnapshot = await FirebaseFirestore.instance
@@ -88,9 +88,11 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
       for (final doc in loansSnapshot.docs) {
         final data = doc.data();
         final loanMemberId = data['memberId'] ?? data['farmerId'];
+        final loanAccountNumber = data['accountNumber'] ?? '';
         
-        // Check if this loan belongs to the member
-        if (loanMemberId == memberId) {
+        // Check if this loan belongs to the member by ID or account number
+        if (loanMemberId == memberId || 
+            (accountNumber.isNotEmpty && loanAccountNumber == accountNumber)) {
           final principalOut = (data['principalOutstanding'] ?? 0).toDouble();
           final status = (data['status'] ?? '').toString().toLowerCase();
           
@@ -133,9 +135,10 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
               
               final members = await Future.wait(snapshot.docs.map((doc) async {
                 final data = doc.data();
-                final loanBalance = await _calculateMemberLoanBalance(doc.id);
+                final accountNumber = data['accountNumber'] ?? data['memberNumber'] ?? '';
+                final loanBalance = await _calculateMemberLoanBalance(doc.id, accountNumber);
                 return {
-                  'accountNumber': data['accountNumber'] ?? data['memberNumber'] ?? '',
+                  'accountNumber': accountNumber,
                   'fullName': data['name'] ?? data['fullName'] ?? '',
                   'phone': data['phone'] ?? '',
                   'savingsBalance': (data['savingsBalance'] ?? 0).toDouble(),
@@ -170,12 +173,14 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
               final data = doc.data() as Map<String, dynamic>;
               
               // Calculate actual loan balance from active loans
-              final loanBalance = await _calculateMemberLoanBalance(doc.id);
+              // Pass both doc.id and accountNumber to increase chances of finding loans
+              final accountNumber = data['accountNumber'] ?? data['memberNumber'] ?? '';
+              final loanBalance = await _calculateMemberLoanBalance(doc.id, accountNumber);
 
               return {
                 'id': doc.id,
                 'memberId': data['memberId'] ?? doc.id.substring(0, 13),
-                'accountNumber': data['accountNumber'] ?? data['memberNumber'] ?? '',
+                'accountNumber': accountNumber,
                 'fullName': data['name'] ?? data['fullName'] ?? '',
                 'phone': data['phone'] ?? '',
                 'photoUrl': data['photoUrl'],
