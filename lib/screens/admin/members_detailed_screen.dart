@@ -78,18 +78,29 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
 
   Future<double> _calculateMemberLoanBalance(String memberId) async {
     try {
+      // Query by both farmerId and memberId to catch all loans
       final loansSnapshot = await FirebaseFirestore.instance
           .collection('saccoplus-loans')
-          .where('memberId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
           .get();
 
       double totalOutstanding = 0;
       for (final doc in loansSnapshot.docs) {
         final data = doc.data();
-        final principalOut = (data['principalOutstanding'] ?? 0).toDouble();
-        // Only count loans with outstanding balance
-        if (principalOut > 0) {
-          totalOutstanding += principalOut;
+        final loanMemberId = data['memberId'] ?? data['farmerId'];
+        
+        // Check if this loan belongs to the member
+        if (loanMemberId == memberId) {
+          final principalOut = (data['principalOutstanding'] ?? 0).toDouble();
+          final status = (data['status'] ?? '').toString().toLowerCase();
+          
+          // Only count loans with outstanding balance and not cleared/rejected
+          if (principalOut > 0 && 
+              status != 'cleared' && 
+              status != 'rejected' &&
+              status != 'cancelled') {
+            totalOutstanding += principalOut;
+          }
         }
       }
 
