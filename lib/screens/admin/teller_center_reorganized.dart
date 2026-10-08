@@ -1646,6 +1646,43 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
   // ═══════════════════════════════════════════════════════════════════════════
   // LOANS
   // ═══════════════════════════════════════════════════════════════════════════
+  
+  /// Check if member has any active loans (with outstanding balance > 0)
+  Future<int> _getActiveLoanCount(String memberId) async {
+    try {
+      final col = FirebaseFirestore.instance.collection(AppConstants.loansCol);
+      final tenant = FirebaseService.sessionTenantId;
+
+      // Query loans by farmerId/memberId
+      final snap = await col
+          .where('farmerId', isEqualTo: memberId)
+          .where('tenantId', isEqualTo: tenant)
+          .get();
+
+      // Count loans with outstanding balance > 0 and status not 'cleared' or 'rejected'
+      int activeCount = 0;
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final status = (data['status'] ?? '').toString().toLowerCase();
+        final balance = ((data['balance'] ?? 0) as num).toDouble();
+        final principalOut = ((data['principalOutstanding'] ?? 0) as num).toDouble();
+
+        // Consider a loan active if it has balance > 0 and is not cleared/rejected
+        if ((balance > 0 || principalOut > 0) && 
+            status != 'cleared' && 
+            status != 'rejected' &&
+            status != 'cancelled') {
+          activeCount++;
+        }
+      }
+
+      return activeCount;
+    } catch (e) {
+      debugPrint('Error checking active loans: $e');
+      rethrow;
+    }
+  }
+
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loansFor(
     Map<String, dynamic> member, {
     String? status,
@@ -1702,6 +1739,25 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           : 'Search for the member to view their approved loans.',
     );
     if (member == null || !mounted) return;
+
+    // For disbursement, check if member already has active loans
+    if (!repayment) {
+      final activeLoans = await _withLoading(
+        'Checking active loans...',
+        () => _getActiveLoanCount(member['id']),
+      );
+      if (activeLoans == null || !mounted) return;
+
+      if (activeLoans > 0) {
+        tillToast(
+          context,
+          '${member['name']} already has $activeLoans active loan(s). '
+          'Existing loans must be cleared before disbursing a new loan.',
+          error: true,
+        );
+        return;
+      }
+    }
 
     final docs = await _withLoading('Loading loans...',
         () => _loansFor(member, status: repayment ? null : 'approved'));
