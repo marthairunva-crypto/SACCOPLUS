@@ -47,9 +47,8 @@ const kAdminNavGroups = <NavGroup>[
   NavGroup('Teller Center', Icons.point_of_sale_outlined, [
     NavItem('Teller Operations', 'teller'),
     NavItem('Till Management', 'till_management'),
+    NavItem('Income & Expenses', 'income_expenses'),
     NavItem('Till Reports', 'till_reports'),
-    NavItem('Income', 'income'),
-    NavItem('Expenses', 'expenses'),
     NavItem('Payment Hub', 'payment_hub'),
     NavItem('Mobile Money', 'mobile_money'),
     NavItem('Bank Transfers', 'bank_transfers'),

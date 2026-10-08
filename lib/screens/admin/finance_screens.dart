@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
+import '../../services/till_service.dart';
+import '../../models/till_entry.dart';
 
 // Cash & Bank Screen
 class CashBankScreen extends StatefulWidget {
@@ -621,7 +623,8 @@ class IncomeScreen extends StatelessWidget {
                 return;
               }
 
-              await FirebaseFirestore.instance.collection('income').add({
+              // Save income record
+              final incomeDoc = await FirebaseFirestore.instance.collection('income').add({
                 'tenantId': FirebaseService.sessionTenantId,
                 'category': categoryController.text,
                 'amount': amount,
@@ -629,6 +632,35 @@ class IncomeScreen extends StatelessWidget {
                 'createdAt': FieldValue.serverTimestamp(),
                 'createdBy': FirebaseService.sessionUid,
               });
+
+              // Post to till (increases till balance)
+              try {
+                final tellerId = FirebaseService.sessionUid;
+                final tillSession = await TillService.getOpenSession(tellerId);
+                
+                if (tillSession != null) {
+                  final profile = FirebaseService.sessionProfile;
+                  final tellerName = (profile != null ? profile['name'] as String? : null) ?? 'User';
+                  
+                  await TillService.postEntry(
+                    tillSessionId: tillSession.id,
+                    tellerId: tellerId,
+                    tellerName: tellerName,
+                    input: TillEntryInput(
+                      entryType: 'income',
+                      amount: amount.toInt(), // Positive = cash in
+                      affectsCash: true,
+                      paymentMethod: 'Cash',
+                      businessRecordId: incomeDoc.id,
+                      businessRecordType: 'income',
+                      notes: 'Income: ${categoryController.text} - ${descriptionController.text}',
+                    ),
+                  );
+                  print('✅ Till entry posted for income');
+                }
+              } catch (e) {
+                print('⚠️ Failed to post till entry for income: $e');
+              }
 
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -892,7 +924,8 @@ class ExpensesScreen extends StatelessWidget {
                 return;
               }
 
-              await FirebaseFirestore.instance.collection('expenses').add({
+              // Save expense record
+              final expenseDoc = await FirebaseFirestore.instance.collection('expenses').add({
                 'tenantId': FirebaseService.sessionTenantId,
                 'category': categoryController.text,
                 'amount': amount,
@@ -900,6 +933,35 @@ class ExpensesScreen extends StatelessWidget {
                 'createdAt': FieldValue.serverTimestamp(),
                 'createdBy': FirebaseService.sessionUid,
               });
+
+              // Post to till (decreases till balance)
+              try {
+                final tellerId = FirebaseService.sessionUid;
+                final tillSession = await TillService.getOpenSession(tellerId);
+                
+                if (tillSession != null) {
+                  final profile = FirebaseService.sessionProfile;
+                  final tellerName = (profile != null ? profile['name'] as String? : null) ?? 'User';
+                  
+                  await TillService.postEntry(
+                    tillSessionId: tillSession.id,
+                    tellerId: tellerId,
+                    tellerName: tellerName,
+                    input: TillEntryInput(
+                      entryType: 'expense',
+                      amount: -amount.toInt(), // Negative = cash out
+                      affectsCash: true,
+                      paymentMethod: 'Cash',
+                      businessRecordId: expenseDoc.id,
+                      businessRecordType: 'expense',
+                      notes: 'Expense: ${categoryController.text} - ${descriptionController.text}',
+                    ),
+                  );
+                  print('✅ Till entry posted for expense');
+                }
+              } catch (e) {
+                print('⚠️ Failed to post till entry for expense: $e');
+              }
 
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
