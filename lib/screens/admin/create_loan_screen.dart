@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../services/till_service.dart';
+import '../../services/loan_disbursement_service.dart';
 import '../../models/till_entry.dart';
 import '../../widgets/app_widgets.dart';
 
@@ -1425,66 +1426,35 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
       await FirebaseFirestore.instance.collection(AppConstants.loansCol).add(loanData);
 
-      // If auto-approved and disbursed, post to till and send SMS
+      // If auto-approved and disbursed, credit to savings and send SMS
       if (_autoApprove) {
         try {
-          // Get current till session
-          final tellerId = FirebaseService.sessionUid;
-          final tillSession = await TillService.getOpenSession(tellerId);
+          // Use LoanDisbursementService to credit savings account
+          final disbursementResult = await LoanDisbursementService.disburseLoan(
+            loanId: loanData['id'] ?? 'TEMP_ID', // Will be updated after Firestore generates ID
+            disbursedBy: FirebaseService.sessionUid,
+            amount: principal.toDouble(),
+            narration: 'Loan auto-disbursed on creation',
+          );
 
-          if (tillSession != null) {
-            // Post till entry for loan disbursement (reduces till balance)
-            final profile = FirebaseService.sessionProfile;
-            final tellerName =
-                (profile != null ? profile['name'] as String? : null) ?? 'Admin';
-
-            await TillService.postEntry(
-              tillSessionId: tillSession.id,
-              tellerId: tellerId,
-              tellerName: tellerName,
-              input: TillEntryInput(
-                entryType: 'loan_disbursement',
-                amount: -principal, // Negative because cash goes out
-                affectsCash: true,
-                paymentMethod: 'Cash',
-                memberId: _selectedMemberId!,
-                memberName: _selectedMemberName!,
-                businessRecordType: 'loan',
-                notes: 'Loan disbursement - Amount: UGX ${_formatAmount(principal)} '
-                    'to ${_selectedMemberName}',
-              ),
-            );
-
-            debugPrint('Till entry posted for loan disbursement');
+          if (disbursementResult['success'] == true) {
+            debugPrint('✅ Loan disbursed and credited to member savings');
+            debugPrint('✅ SMS notification sent to member');
           } else {
-            debugPrint('No active till session - loan disbursement not posted to till');
-          }
-
-          // Send SMS notification to member
-          if (_selectedMemberPhone != null && _selectedMemberPhone!.isNotEmpty) {
-            final smsMessage = 'MBADIFA SACCO\n'
-                'Dear ${_selectedMemberName}, your loan of UGX ${_formatAmount(principal)} '
-                'has been approved and disbursed. '
-                'Total amount: UGX ${_formatAmount(totalAmount.round())} '
-                '(Principal: UGX ${_formatAmount(principal)}, '
-                'Interest: UGX ${_formatAmount(interest.round())}). '
-                'Duration: $months months. '
-                'Thank you.';
-
-            await FirebaseService.sendSmsToPhone(_selectedMemberPhone!, smsMessage);
-            debugPrint('SMS sent to member about loan disbursement');
+            debugPrint('⚠️ Loan disbursement failed: ${disbursementResult['message']}');
           }
 
           // Send in-app notification
           await FirebaseService.sendNotification(
             _selectedMemberId!,
             'Loan Approved & Disbursed',
-            'Your loan of UGX ${_formatAmount(principal)} has been approved and disbursed. '
-            'Total payable: UGX ${_formatAmount(totalAmount.round())} over $months months.',
+            'Your loan of UGX ${_formatAmount(principal)} has been approved and credited to your savings account. '
+            'Total payable: UGX ${_formatAmount(totalAmount.round())} over $months months. '
+            'Visit any branch to withdraw.',
             type: 'loan_approved',
           );
         } catch (e) {
-          debugPrint('Failed to post till entry or send notifications: $e');
+          debugPrint('Failed to disburse loan or send notifications: $e');
           // Non-critical - loan is already created
         }
       }
