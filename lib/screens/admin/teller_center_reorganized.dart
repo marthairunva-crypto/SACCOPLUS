@@ -2075,13 +2075,13 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                             value: null,
                             child: Row(
                               children: [
-                                Container(
+                                  Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: TC.successBg,
+                                    color: TC.green.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: Text('CURRENT', style: ts(10, w: FontWeight.w700, c: TC.success)),
+                                  child: Text('CURRENT', style: ts(10, w: FontWeight.w700, c: TC.green)),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(_till != null 
@@ -2100,7 +2100,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                               ? DateFormat('h:mm a').format(session.closedAt!)
                               : 'Open';
                             final openingBal = ugx(session.openingFloat);
-                            final closingBal = session.closedAt != null ? ugx(session.currentBalance) : '---';
+                            final closingBal = session.closedAt != null ? ugx(session.expectedCash) : '---';
                             
                             return DropdownMenuItem<String?>(
                               value: session.id,
