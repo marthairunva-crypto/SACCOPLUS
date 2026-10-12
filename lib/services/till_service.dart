@@ -142,17 +142,29 @@ class TillService {
   /// Get the teller's most recent closed session
   static Future<TillSession?> _getLastClosedSession(String tellerId) async {
     try {
+      // Fetch all closed sessions for this teller (no index needed)
       final query = await _db
           .collection(AppConstants.tillSessionsCol)
           .where('tenantId', isEqualTo: _tenantId)
           .where('tellerId', isEqualTo: tellerId)
           .where('status', isEqualTo: 'closed')
-          .orderBy('closedAt', descending: true)
-          .limit(1)
           .get();
 
       if (query.docs.isEmpty) return null;
-      return TillSession.fromFirestore(query.docs.first);
+
+      // Sort in memory to find the most recent
+      final sessions = query.docs
+          .map((doc) => TillSession.fromFirestore(doc))
+          .toList();
+      
+      sessions.sort((a, b) {
+        if (a.closedAt == null && b.closedAt == null) return 0;
+        if (a.closedAt == null) return 1;
+        if (b.closedAt == null) return -1;
+        return b.closedAt!.compareTo(a.closedAt!);
+      });
+
+      return sessions.first;
     } catch (e) {
       print('⚠️ Could not fetch last closed session: $e');
       return null;
