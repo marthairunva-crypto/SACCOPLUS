@@ -971,6 +971,27 @@ class TellerService {
       print('🔍   - tillSessionId: $tillSessionId');
       print('🔍   - includeAllSources: $includeAllSources');
 
+      // If filtering by till session, get the session's time range
+      DateTime? sessionStart;
+      DateTime? sessionEnd;
+      if (tillSessionId != null) {
+        final sessionDoc = await _db
+            .collection(AppConstants.tillSessionsCol)
+            .doc(tillSessionId)
+            .get();
+        
+        if (sessionDoc.exists) {
+          final sessionData = sessionDoc.data()!;
+          sessionStart = (sessionData['openedAt'] as Timestamp?)?.toDate();
+          sessionEnd = (sessionData['closedAt'] as Timestamp?)?.toDate();
+          print('🔍   - Till session time range: $sessionStart to ${sessionEnd ?? "NOW (still open)"}');
+          
+          // Override startDate/endDate with session range
+          startDate = sessionStart;
+          endDate = sessionEnd; // null if still open
+        }
+      }
+
       // Query 1: Get teller transactions (deposits, withdrawals, etc.)
       Query query1 = _db
           .collection(AppConstants.tellerTxnCol)
