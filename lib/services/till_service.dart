@@ -78,6 +78,21 @@ class TillService {
         throw Exception('You already have an open till session');
       }
 
+      // ── VALIDATION: Opening float must match last closing balance ──────────
+      final lastClosedSession = await _getLastClosedSession(tellerId);
+      if (lastClosedSession != null) {
+        final expectedOpening = lastClosedSession.closingBalance ?? 0;
+        
+        if (openingFloat != expectedOpening) {
+          throw Exception(
+            'Opening balance mismatch!\n\n'
+            'Your last till closed with UGX ${_fmt(expectedOpening)}.\n'
+            'You must open with exactly UGX ${_fmt(expectedOpening)}, not UGX ${_fmt(openingFloat)}.\n\n'
+            'This ensures accountability and prevents cash discrepancies.'
+          );
+        }
+      }
+
       final now = DateTime.now();
       final sessionRef = _db.collection(AppConstants.tillSessionsCol).doc();
 
@@ -119,6 +134,45 @@ class TillService {
       print('❌ Error opening till session: $e');
       rethrow;
     }
+  }
+
+  /// Get the teller's most recent closed session
+  static Future<TillSession?> _getLastClosedSession(String tellerId) async {
+    try {
+      final query = await _db
+          .collection(AppConstants.tillSessionsCol)
+          .where('tenantId', isEqualTo: _tenantId)
+          .where('tellerId', isEqualTo: tellerId)
+          .where('status', isEqualTo: 'closed')
+          .orderBy('closedAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) return null;
+      return TillSession.fromFirestore(query.docs.first);
+    } catch (e) {
+      print('⚠️ Could not fetch last closed session: $e');
+      return null;
+    }
+  }
+
+  /// PUBLIC: Get the last closed session balance for UI display
+  static Future<Map<String, dynamic>?> getLastClosedSessionBalance(String tellerId) async {
+    final session = await _getLastClosedSession(tellerId);
+    if (session == null) return null;
+    
+    return {
+      'sessionId': session.id,
+      'closedAt': session.closedAt,
+      'closingBalance': session.closingBalance ?? 0,
+      'businessDate': session.businessDate,
+    };
+  }
+
+  /// Format currency
+  static String _fmt(int amount) {
+    final formatter = NumberFormat('#,###', 'en_US');
+    return formatter.format(amount);
   }
 
   // ─── Watch / Get Open Session ─────────────────────────────────────────────

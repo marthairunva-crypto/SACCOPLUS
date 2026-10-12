@@ -1054,7 +1054,11 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
   // OPEN TILL
   // ═══════════════════════════════════════════════════════════════════════════
   Future<void> _openTill() async {
-    final floatCtrl = TextEditingController(text: '100000');
+    // Get last closed session to pre-fill the expected opening balance
+    final lastSession = await TillService.getLastClosedSessionBalance(FirebaseService.sessionUid);
+    final expectedOpening = lastSession?['closingBalance'] as int? ?? 100000;
+    
+    final floatCtrl = TextEditingController(text: '$expectedOpening');
     final notesCtrl = TextEditingController();
     String? err;
 
@@ -1074,6 +1078,30 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (lastSession != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: TC.blue.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: TC.blue.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 18, color: TC.blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Your last till closed with ${ugx(expectedOpening)}.\nYou must open with this exact amount.',
+                              style: ts(12.5, c: TC.text, h: 1.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Text('Enter the cash you are starting your shift with.', style: ts(13, c: TC.muted)),
                   const SizedBox(height: 16),
                   TextField(
@@ -1084,23 +1112,25 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                     decoration: fieldDeco('Opening float', prefix: 'UGX ', error: err),
                     onChanged: (_) => setD(() => err = null),
                   ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      for (final v in [50000, 100000, 200000, 500000])
-                        ActionChip(
-                          label: Text(money(v), style: ts(12, w: FontWeight.w600, c: TC.navy)),
-                          backgroundColor: const Color(0xFFF1F5F9),
-                          side: BorderSide.none,
-                          onPressed: () => setD(() {
-                            floatCtrl.text = '$v';
-                            err = null;
-                          }),
-                        ),
-                    ],
-                  ),
+                  if (lastSession == null) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final v in [50000, 100000, 200000, 500000])
+                          ActionChip(
+                            label: Text(money(v), style: ts(12, w: FontWeight.w600, c: TC.navy)),
+                            backgroundColor: const Color(0xFFF1F5F9),
+                            side: BorderSide.none,
+                            onPressed: () => setD(() {
+                              floatCtrl.text = '$v';
+                              err = null;
+                            }),
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   TextField(
                     controller: notesCtrl,
