@@ -149,6 +149,22 @@ class TillService {
     return TillSession.fromFirestore(query.docs.first);
   }
 
+  // ─── Get Teller's Sessions (for history browsing) ──────────────────────────
+  static Future<List<TillSession>> getTellerSessions(
+    String tellerId, {
+    int limit = 50,
+  }) async {
+    final query = await _db
+        .collection(AppConstants.tillSessionsCol)
+        .where('tenantId', isEqualTo: _tenantId)
+        .where('tellerId', isEqualTo: tellerId)
+        .orderBy('openedAt', descending: true)
+        .limit(limit)
+        .get();
+
+    return query.docs.map((doc) => TillSession.fromFirestore(doc)).toList();
+  }
+
   // ─── All sessions for this SACCO (reports) ────────────────────────────────
   /// Newest first. Date / status / teller filtering is done by the caller in
   /// memory, so no composite index is required.

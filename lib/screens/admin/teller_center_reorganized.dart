@@ -74,12 +74,17 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
   StreamSubscription<TillSession?>? _tillSub;
 
   late Future<List<Map<String, dynamic>>> _historyFuture;
+  
+  // Session selector for history
+  List<TillSession> _allSessions = [];
+  TillSession? _selectedHistorySession; // null = current session
 
   @override
   void initState() {
     super.initState();
     _historyFuture = _loadHistory();
     _listenTill();
+    _loadAllSessions();
   }
 
   @override
@@ -102,6 +107,8 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           _tillLoaded = true;
           _tillError = null;
         });
+        // Reload sessions when till changes
+        _loadAllSessions();
       },
       onError: (e) {
         if (!mounted) return;
@@ -113,15 +120,30 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     );
   }
 
+  Future<void> _loadAllSessions() async {
+    try {
+      final sessions = await TillService.getTellerSessions(
+        FirebaseService.sessionUid,
+        limit: 50, // Last 50 sessions
+      );
+      if (!mounted) return;
+      setState(() {
+        _allSessions = sessions;
+      });
+    } catch (e) {
+      print('Error loading sessions: $e');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _loadHistory() async {
-    // Only load history for the current open till session
-    final till = _till;
-    if (till == null) {
+    // Load history for selected session (or current if none selected)
+    final sessionToLoad = _selectedHistorySession ?? _till;
+    if (sessionToLoad == null) {
       return [];
     }
     return TellerService.getTransactionHistory(
       limit: 100,
-      tillSessionId: till.id, // Only show transactions from current session
+      tillSessionId: sessionToLoad.id, // Show transactions from selected or current session
     );
   }
 
@@ -2007,11 +2029,20 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           }
         }
 
+        // Build session selector
+        final currentSession = _selectedHistorySession ?? _till;
+        final sessionInfo = currentSession != null
+            ? '${DateFormat('MMM d, yyyy • h:mm a').format(currentSession.openedAt)}${currentSession.closedAt != null ? ' - ${DateFormat('h:mm a').format(currentSession.closedAt!)}' : ' (Open)'}'
+            : 'No session';
+
         return _page(w, [
           Row(
             children: [
               Expanded(
-                child: _sectionHeader('Transaction history', 'Latest 100 transactions - teller and mobile app'),
+                child: _sectionHeader('Transaction history', 
+                  _selectedHistorySession != null 
+                    ? 'Viewing session: $sessionInfo'
+                    : 'Latest 100 transactions - teller and mobile app'),
               ),
               IconButton(
                 tooltip: 'Refresh',
@@ -2021,6 +2052,103 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
             ],
           ),
           const SizedBox(height: 12),
+          
+          // Session selector dropdown
+          if (_allSessions.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: cardDeco(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today, size: 18, color: TC.navy),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String?>(
+                        value: _selectedHistorySession?.id,
+                        isExpanded: true,
+                        hint: Text('Select till session', style: ts(14, c: TC.muted)),
+                        style: ts(14, c: TC.navy),
+                        items: [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: TC.successBg,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text('CURRENT', style: ts(10, w: FontWeight.w700, c: TC.success)),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(_till != null 
+                                  ? 'Current Session - ${DateFormat('MMM d, h:mm a').format(_till!.openedAt)}'
+                                  : 'No open session', 
+                                  style: ts(14, c: TC.navy)),
+                              ],
+                            ),
+                          ),
+                          ..._allSessions.map((session) {
+                            final isCurrent = session.id == _till?.id;
+                            if (isCurrent) return null; // Skip current session as it's already in the list
+                            
+                            final openedAt = DateFormat('MMM d, yyyy • h:mm a').format(session.openedAt);
+                            final closedAt = session.closedAt != null 
+                              ? DateFormat('h:mm a').format(session.closedAt!)
+                              : 'Open';
+                            final openingBal = ugx(session.openingFloat);
+                            final closingBal = session.closedAt != null ? ugx(session.currentBalance) : '---';
+                            
+                            return DropdownMenuItem<String?>(
+                              value: session.id,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        session.closedAt != null ? Icons.lock : Icons.lock_open,
+                                        size: 14,
+                                        color: session.closedAt != null ? TC.muted : TC.green,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text('$openedAt - $closedAt', 
+                                          style: ts(13, w: FontWeight.w600)),
+                                      ),
+                                    ],
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 20, top: 2),
+                                    child: Text('Open: $openingBal • Close: $closingBal', 
+                                      style: ts(11, c: TC.muted)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).whereType<DropdownMenuItem<String?>>(),
+                        ],
+                        onChanged: (sessionId) {
+                          setState(() {
+                            if (sessionId == null) {
+                              _selectedHistorySession = null;
+                            } else {
+                              _selectedHistorySession = _allSessions.firstWhere((s) => s.id == sessionId);
+                            }
+                            _historyFuture = _loadHistory();
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
           body,
         ]);
       },
