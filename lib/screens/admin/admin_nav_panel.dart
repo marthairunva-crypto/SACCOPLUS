@@ -48,7 +48,6 @@ const kAdminNavGroups = <NavGroup>[
     NavItem('Teller Operations', 'teller'),
     NavItem('Till Management', 'till_management'),
     NavItem('Till Reports', 'till_reports'),
-    NavItem('Payment Hub', 'payment_hub'),
     NavItem('Mobile Money', 'mobile_money'),
     NavItem('Bank Transfers', 'bank_transfers'),
     NavItem('Reconciliation', 'reconciliation'),

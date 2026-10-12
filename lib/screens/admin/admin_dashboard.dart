@@ -153,8 +153,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return const TillManagementScreen(embedded: true);
       case 'till_reports':
         return const TillReportsScreen(embedded: true);
-      case 'payment_hub':
-        return const PaymentHubScreen();
       case 'mobile_money':
         return const MobileMoneyScreen();
       case 'bank_transfers':
