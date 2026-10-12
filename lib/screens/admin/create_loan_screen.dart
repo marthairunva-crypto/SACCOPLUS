@@ -1424,21 +1424,26 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         loanData['disbursedBy'] = FirebaseService.sessionUid;
       }
 
-      await FirebaseFirestore.instance.collection(AppConstants.loansCol).add(loanData);
+      // Create the loan document and get its ID
+      final loanDocRef = await FirebaseFirestore.instance.collection(AppConstants.loansCol).add(loanData);
+      final loanId = loanDocRef.id;
+      
+      // Update the loan with its actual ID
+      await loanDocRef.update({'id': loanId});
 
       // If auto-approved and disbursed, credit to savings and send SMS
       if (_autoApprove) {
         try {
           // Use LoanDisbursementService to credit savings account
           final disbursementResult = await LoanDisbursementService.disburseLoan(
-            loanId: loanData['id'] ?? 'TEMP_ID', // Will be updated after Firestore generates ID
+            loanId: loanId, // Use the real Firestore-generated ID
             disbursedBy: FirebaseService.sessionUid,
             amount: principal.toDouble(),
             narration: 'Loan auto-disbursed on creation',
           );
 
           if (disbursementResult['success'] == true) {
-            debugPrint('✅ Loan disbursed and credited to member savings');
+            debugPrint('✅ Loan $loanId disbursed and credited to member savings');
             debugPrint('✅ SMS notification sent to member');
           } else {
             debugPrint('⚠️ Loan disbursement failed: ${disbursementResult['message']}');
@@ -1454,7 +1459,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
             type: 'loan_approved',
           );
         } catch (e) {
-          debugPrint('Failed to disburse loan or send notifications: $e');
+          debugPrint('❌ Failed to disburse loan or send notifications: $e');
           // Non-critical - loan is already created
         }
       }
