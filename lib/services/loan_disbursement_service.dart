@@ -5,7 +5,7 @@ import '../models/till_session.dart';
 import '../models/till_entry.dart';
 import 'audit_service.dart';
 import 'till_service.dart';
-import 'sacco_service.dart';
+import '../core/sacco_service.dart';
 import '../core/firebase_service.dart';
 
 /// Handles loan disbursement operations
