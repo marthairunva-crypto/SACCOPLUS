@@ -5,6 +5,8 @@ import '../models/till_session.dart';
 import '../models/till_entry.dart';
 import 'audit_service.dart';
 import 'till_service.dart';
+import 'sacco_service.dart';
+import '../core/firebase_service.dart';
 
 /// Handles loan disbursement operations
 class LoanDisbursementService {
@@ -134,6 +136,38 @@ class LoanDisbursementService {
           'newSavings': newSavingsBalance,
         },
       );
+
+      // 10. Send SMS notification to member
+      final phone = memberData['phone'] as String?;
+      final alternativePhone = memberData['alternativePhone'] as String?;
+      
+      if (phone != null && phone.isNotEmpty) {
+        final saccoName = SaccoService.current.saccoName;
+        final formattedAmount = amount.toStringAsFixed(0).replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]},',
+        );
+        final formattedBalance = newSavingsBalance.toStringAsFixed(0).replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]},',
+        );
+        
+        final message = '$saccoName: Your loan of UGX $formattedAmount has been disbursed and credited to your savings account. Your new savings balance is UGX $formattedBalance. Visit any branch to withdraw. Thank you!';
+        
+        try {
+          print('📤 Sending loan disbursement SMS to member phone: $phone');
+          await FirebaseService.sendSmsToPhone(phone, message);
+          
+          // Also send to alternative phone if provided
+          if (alternativePhone != null && alternativePhone.isNotEmpty) {
+            print('📤 Sending loan disbursement SMS to alternative phone: $alternativePhone');
+            await FirebaseService.sendSmsToPhone(alternativePhone, message);
+          }
+        } catch (smsError) {
+          print('⚠️ Failed to send loan disbursement SMS: $smsError');
+          // Non-critical error, don't fail the disbursement
+        }
+      }
 
       return {
         'success': true,
