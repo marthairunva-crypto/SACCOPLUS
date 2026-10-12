@@ -1320,7 +1320,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     final categoryCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     String? err;
-    String selectedCategory = 'Utilities';
+    String selectedCategory = 'Office expenses';
     bool showOtherField = false;
 
     final ok = await showDialog<bool>(
@@ -1348,18 +1348,27 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedCategory,
+                    value: selectedCategory,
                     decoration: fieldDeco('Category'),
                     items: [
-                      'Utilities',
-                      'Rent',
-                      'Internet Data',
-                      'Office Maintenance',
+                      'Lunch allowances',
+                      'Monthly salaries',
+                      'BOD allowance and travel',
+                      'Office expenses',
+                      'Fuel',
+                      'Airtime',
+                      'Stationery',
+                      'Transport',
+                      'Staff welfare',
+                      'Photocopying and printing',
+                      'Consultation fees',
+                      'Staff IDs and tags',
+                      'System update',
                       'Others (Please specify)',
-                    ].map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
+                    ].map((cat) => DropdownMenuItem(value: cat, child: Text(cat, style: ts(13)))).toList(),
                     onChanged: (value) {
                       setD(() {
-                        selectedCategory = value ?? 'Utilities';
+                        selectedCategory = value ?? 'Office expenses';
                         showOtherField = selectedCategory == 'Others (Please specify)';
                         if (!showOtherField) {
                           categoryCtrl.clear();
@@ -1472,7 +1481,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     final sourceCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     String? err;
-    String selectedSource = 'Buying shares';
+    String selectedSource = 'Membership fees';
     bool showOtherField = false;
 
     final ok = await showDialog<bool>(
@@ -1500,18 +1509,23 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedSource,
+                    value: selectedSource,
                     decoration: fieldDeco('Source'),
                     items: [
-                      'Buying shares',
-                      'Passbook',
-                      'Donation',
-                      'Opening account',
+                      'Loan application forms',
+                      'Photos',
+                      'Loan processing fees',
+                      'Files',
+                      'Transport recovery',
+                      'Membership fees',
+                      'Stationery fees',
+                      'Insurance fees',
+                      'Stamp duty',
                       'Others (Specify)',
-                    ].map((source) => DropdownMenuItem(value: source, child: Text(source))).toList(),
+                    ].map((source) => DropdownMenuItem(value: source, child: Text(source, style: ts(13)))).toList(),
                     onChanged: (value) {
                       setD(() {
-                        selectedSource = value ?? 'Buying shares';
+                        selectedSource = value ?? 'Membership fees';
                         showOtherField = selectedSource == 'Others (Specify)';
                         if (!showOtherField) {
                           sourceCtrl.clear();
