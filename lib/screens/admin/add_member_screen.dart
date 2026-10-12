@@ -164,6 +164,7 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
         'walletBalance': 0,
         'savingsBalance': 0,
         'sharesBalance': 0,
+        'fixedDepositBalance': 0,
         'loanBalance': 0,
       };
 
