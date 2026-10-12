@@ -141,6 +141,10 @@ class LoanDisbursementService {
       final phone = memberData['phone'] as String?;
       final alternativePhone = memberData['alternativePhone'] as String?;
       
+      print('📱 SMS Check - Member: $memberName');
+      print('📱 Primary Phone: $phone');
+      print('📱 Alternative Phone: $alternativePhone');
+      
       if (phone != null && phone.isNotEmpty) {
         final saccoName = SaccoService.current.saccoName;
         final formattedAmount = amount.toStringAsFixed(0).replaceAllMapped(
@@ -154,19 +158,26 @@ class LoanDisbursementService {
         
         final message = '$saccoName: Dear $memberName, your loan of UGX $formattedAmount has been disbursed and credited to your savings account. Your new savings balance is UGX $formattedBalance. Visit any branch to withdraw. Thank you!';
         
+        print('📤 SMS Message: $message');
+        
         try {
-          print('📤 Sending loan disbursement SMS to member phone: $phone');
+          print('📤 Sending loan disbursement SMS to PRIMARY phone: $phone');
           await FirebaseService.sendSmsToPhone(phone, message);
+          print('✅ SMS sent successfully to primary phone');
           
           // Also send to alternative phone if provided
           if (alternativePhone != null && alternativePhone.isNotEmpty) {
-            print('📤 Sending loan disbursement SMS to alternative phone: $alternativePhone');
+            print('📤 Sending loan disbursement SMS to ALTERNATIVE phone: $alternativePhone');
             await FirebaseService.sendSmsToPhone(alternativePhone, message);
+            print('✅ SMS sent successfully to alternative phone');
           }
         } catch (smsError) {
-          print('⚠️ Failed to send loan disbursement SMS: $smsError');
+          print('❌ Failed to send loan disbursement SMS: $smsError');
+          print('❌ SMS Error Stack: ${smsError.toString()}');
           // Non-critical error, don't fail the disbursement
         }
+      } else {
+        print('⚠️ No phone number available for member $memberName');
       }
 
       return {
