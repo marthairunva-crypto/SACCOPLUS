@@ -224,7 +224,7 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
         'accountNumber': accountNumber,
         'memberNumber': memberNumber,
         'pin': defaultPin,
-        'role': 'farmer',
+        'role': AppConstants.roleMember, // 'Member' with capital M - ensures they appear in loan creation
         'status': 'active',
         'idStatus': 'pending',
         'tenantId': FirebaseService.sessionTenantId,
