@@ -1411,13 +1411,9 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
     final TextEditingController amountCtrl = TextEditingController(
       text: (widget.loanData['loanAmount'] ?? widget.loanData['amount'] ?? 0).toString()
     );
-    final TextEditingController referenceCtrl = TextEditingController();
-    final TextEditingController chequeCtrl = TextEditingController();
     final TextEditingController narrationCtrl = TextEditingController(
       text: 'Loan disbursement for ${widget.loanData['memberName']}'
     );
-    
-    String destinationType = 'cash';
     
     await showDialog(
       context: context,
@@ -1427,7 +1423,7 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
             children: [
               Icon(Icons.attach_money, color: Colors.green.shade700),
               const SizedBox(width: 8),
-              const Text('Disburse Loan'),
+              const Text('Disburse Loan to Savings'),
             ],
           ),
           content: SingleChildScrollView(
@@ -1467,30 +1463,29 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                   
                   const SizedBox(height: 20),
                   
-                  // Destination Type
-                  Text(
-                    'Destination Type *',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: destinationType,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  // Info banner
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade300),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                      DropdownMenuItem(value: 'bank', child: Text('Bank Transfer')),
-                      DropdownMenuItem(value: 'mobile_money', child: Text('Mobile Money')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setDialogState(() => destinationType = value);
-                      }
-                    },
+                    child: Row(
+                      children: [
+                        Icon(Icons.account_balance_wallet, color: Colors.green.shade700, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Loan will be credited to member\'s savings account. Member can withdraw cash at any branch.',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.green.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   
                   const SizedBox(height: 16),
@@ -1510,50 +1505,13 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                       hintText: 'Enter amount',
+                      fillColor: Colors.grey.shade100,
+                      filled: true,
                     ),
                     readOnly: true, // Amount should match loan amount
                   ),
                   
                   const SizedBox(height: 16),
-                  
-                  // Reference Number
-                  Text(
-                    'Reference Number',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: referenceCtrl,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                      hintText: 'Receipt/transaction number',
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Cheque Number (if bank)
-                  if (destinationType == 'bank') ...[
-                    Text(
-                      'Cheque Number',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: chequeCtrl,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                        hintText: 'Cheque number',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
                   
                   // Narration
                   Text(
@@ -1580,8 +1538,6 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
             TextButton(
               onPressed: () {
                 amountCtrl.dispose();
-                referenceCtrl.dispose();
-                chequeCtrl.dispose();
                 narrationCtrl.dispose();
                 Navigator.pop(dialogContext);
               },
@@ -1622,8 +1578,6 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                 
                 // Dispose controllers
                 amountCtrl.dispose();
-                referenceCtrl.dispose();
-                chequeCtrl.dispose();
                 narrationCtrl.dispose();
                 
                 // Show result

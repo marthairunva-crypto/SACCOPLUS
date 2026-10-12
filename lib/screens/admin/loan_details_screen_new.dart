@@ -9,6 +9,7 @@ import '../../services/loan_disbursement_service.dart';
 import '../../services/loan_actions_service.dart';
 import '../../services/arrears_service.dart';
 import '../../services/teller_service.dart';
+import '../../widgets/success_dialog.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 class _C {
@@ -1617,6 +1618,236 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     }
   }
 
+  /// Same as _runAction but returns result without showing toast
+  Future<Map<String, dynamic>?> _runActionSilent({
+    required Future<Map<String, dynamic>> Function() action,
+  }) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    Map<String, dynamic> result;
+    try {
+      result = await action();
+    } catch (e) {
+      result = {'success': false, 'message': 'Error: $e'};
+    }
+
+    if (!mounted) return null;
+    Navigator.pop(context); // close loading overlay
+
+    final ok = result['success'] == true;
+    if (!ok) {
+      _toast(
+        (result['message'] ?? 'Action failed').toString(),
+        false,
+      );
+      return null;
+    }
+
+    _loadLoanData();
+    return result;
+  }
+
+  /// Build beautiful success dialog for loan disbursement
+  Widget _buildSuccessDialog({
+    required String memberName,
+    required double amount,
+    required String loanReference,
+  }) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 480),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: _C.green.withOpacity(0.3),
+              blurRadius: 40,
+              offset: const Offset(0, 20),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Top colored section with icon
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _C.green,
+                    _C.green.withOpacity(0.8),
+                  ],
+                ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.check_circle_rounded,
+                      color: _C.green,
+                      size: 60,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Content section
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  // Title
+                  Text(
+                    'Loan Disbursed Successfully! 🎉',
+                    textAlign: TextAlign.center,
+                    style: _t(24, w: FontWeight.w700, c: _C.ink),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Message
+                  Text(
+                    'The loan has been credited to the member\'s savings account. '
+                    'An SMS notification has been sent.',
+                    textAlign: TextAlign.center,
+                    style: _t(14, c: _C.muted, h: 1.5),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Info card
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: _C.green.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _C.green.withOpacity(0.2),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        _successInfoRow(
+                          icon: Icons.person_outline,
+                          label: 'Member',
+                          value: memberName,
+                        ),
+                        const SizedBox(height: 16),
+                        _successInfoRow(
+                          icon: Icons.payments_outlined,
+                          label: 'Amount',
+                          value: NumberFormat.currency(
+                            symbol: 'UGX ',
+                            decimalDigits: 0,
+                          ).format(amount),
+                          highlight: true,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // Action button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _C.green,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Done',
+                        style: _t(16, w: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _successInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    bool highlight = false,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _C.green.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: _C.green, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: _t(12, c: _C.muted, w: FontWeight.w500),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: _t(
+                  highlight ? 18 : 15,
+                  w: highlight ? FontWeight.w700 : FontWeight.w600,
+                  c: highlight ? _C.green : _C.text,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _field(
     String label,
     TextEditingController ctrl, {
@@ -1849,18 +2080,15 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   Future<void> _showDisburseLoanDialog() async {
     final amountCtrl =
         TextEditingController(text: _n('loanAmount', _n('amount')).round().toString());
-    final referenceCtrl = TextEditingController();
-    final chequeCtrl = TextEditingController();
     final narrationCtrl =
         TextEditingController(text: 'Loan disbursement for ${_s('memberName')}');
-    String destinationType = 'cash';
 
     await _showFormDialog(
       title: 'Disburse Loan',
       subtitle: _s('memberName'),
       icon: Icons.attach_money,
       color: _C.green,
-      submitLabel: 'DISBURSE',
+      submitLabel: 'DISBURSE TO SAVINGS',
       bodyBuilder: (setS) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1877,25 +2105,29 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               style: _t(12.5, c: _C.muted),
             ),
           ),
-          _label('Destination Type *'),
-          DropdownButtonFormField<String>(
-            value: destinationType,
-            decoration: _dropDecoration(),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text('Cash')),
-              DropdownMenuItem(value: 'bank', child: Text('Bank Transfer')),
-              DropdownMenuItem(value: 'mobile_money', child: Text('Mobile Money')),
-            ],
-            onChanged: (v) {
-              if (v != null) setS(() => destinationType = v);
-            },
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: _C.green.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _C.green.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.account_balance_wallet, color: _C.green, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Loan will be credited to member\'s savings account. Member can withdraw cash at any branch.',
+                    style: _t(12, c: _C.textPrimary),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 14),
           _field('Amount (UGX) *', amountCtrl, readOnly: true, fill: _C.soft),
-          _field('Reference Number', referenceCtrl,
-              hint: 'Receipt / transaction number'),
-          if (destinationType == 'bank')
-            _field('Cheque Number', chequeCtrl, hint: 'Cheque number'),
           _field('Narration / Description', narrationCtrl, maxLines: 3),
         ],
       ),
@@ -1903,22 +2135,31 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           (double.tryParse(amountCtrl.text) ?? 0) <= 0 ? 'Invalid amount' : null,
       onSubmit: () async {
         final amount = double.tryParse(amountCtrl.text) ?? 0;
-        final dest = destinationType;
-        final ref = referenceCtrl.text.trim();
-        final cheque = chequeCtrl.text.trim();
         final narration = narrationCtrl.text.trim();
-        await _runAction(
+        final result = await _runActionSilent(
           action: () => LoanDisbursementService.disburseLoan(
             loanId: widget.loanId,
             disbursedBy: _uid,
             amount: amount,
             narration: narration.isEmpty ? 'Loan disbursement credited to savings' : narration,
           ),
-          successMessage: 'Loan disbursed and credited to member savings',
         );
+        
+        if (result != null && result['success'] == true) {
+          // Show beautiful success dialog
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => _buildSuccessDialog(
+              memberName: _s('memberName'),
+              amount: amount,
+              loanReference: _s('referenceNumber'),
+            ),
+          );
+        }
       },
     );
-    _disposeLater([amountCtrl, referenceCtrl, chequeCtrl, narrationCtrl]);
+    _disposeLater([amountCtrl, narrationCtrl]);
   }
 
   Future<void> _showRescheduleLoanDialog() async {

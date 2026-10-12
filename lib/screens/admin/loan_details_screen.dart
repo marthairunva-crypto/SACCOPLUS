@@ -15,6 +15,7 @@ import '../../services/arrears_service.dart';
 import '../../services/till_service.dart';
 import '../../widgets/loan_payment_mobile_money_dialog.dart';
 import '../../widgets/loan_payment_cash_dialog.dart';
+import '../../widgets/success_dialog.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // One brand colour (navy). Green / red / amber are used ONLY to carry meaning
@@ -1351,13 +1352,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   }
 
   Widget _buildDisbursementCard() {
-    final dest = _s('destinationType', 'Cash').replaceAll('_', ' ');
     return _card(
       title: 'Disbursement',
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
       child: Column(
         children: [
-          _kv('Destination', _cap(dest)),
+          _kv('Method', 'Credited to Savings'),
           _kv('Reference', _s('referenceNumber')),
           _kv('Disbursed by', _s('disbursedBy')),
           _kv(
@@ -2474,6 +2474,39 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     }
   }
 
+  /// Same as _runAction but returns result without showing toast
+  Future<Map<String, dynamic>?> _runActionSilent({
+    required Future<Map<String, dynamic>> Function() action,
+  }) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    Map<String, dynamic> result;
+    try {
+      result = await action();
+    } catch (e) {
+      result = {'success': false, 'message': 'Error: $e'};
+    }
+
+    if (!mounted) return null;
+    Navigator.pop(context); // close loading overlay
+
+    final ok = result['success'] == true;
+    if (!ok) {
+      _toast(
+        (result['message'] ?? 'Action failed').toString(),
+        false,
+      );
+      return null;
+    }
+
+    _loadLoanData();
+    return result;
+  }
+
   Widget _field(
     String label,
     TextEditingController ctrl, {
@@ -2694,44 +2727,43 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   Future<void> _showDisburseLoanDialog() async {
     final amountCtrl =
         TextEditingController(text: _principal.round().toString());
-    final referenceCtrl = TextEditingController();
-    final chequeCtrl = TextEditingController();
     final narrationCtrl = TextEditingController(
         text: 'Loan disbursement for ${_s('memberName')}');
-    String destinationType = 'cash';
 
     await _showFormDialog(
       title: 'Disburse loan',
       subtitle: _s('memberName'),
       icon: Icons.north_east_rounded,
       color: _C.brand,
-      submitLabel: 'Disburse',
+      submitLabel: 'Disburse to Savings',
       bodyBuilder: (setS) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _infoBanner(
               'Account ${_s('accountNumber')} · Ref ${_s('referenceNumber')}',
               _C.muted),
-          _label('Destination'),
-          DropdownButtonFormField<String>(
-            value: destinationType,
-            decoration: _dropDecoration(),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text('Cash')),
-              DropdownMenuItem(value: 'bank', child: Text('Bank transfer')),
-              DropdownMenuItem(
-                  value: 'mobile_money', child: Text('Mobile money')),
-            ],
-            onChanged: (v) {
-              if (v != null) setS(() => destinationType = v);
-            },
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: _C.green.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _C.green.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.account_balance_wallet, color: _C.green, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Loan will be credited to member\'s savings account. Member can withdraw cash at any branch.',
+                    style: _t(12, c: _C.text),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
           _field('Amount (UGX)', amountCtrl, readOnly: true, fill: _C.soft),
-          _field('Reference number', referenceCtrl,
-              hint: 'Receipt or transaction number'),
-          if (destinationType == 'bank')
-            _field('Cheque number', chequeCtrl, hint: 'Cheque number'),
           _field('Narration', narrationCtrl, maxLines: 3),
         ],
       ),
@@ -2740,36 +2772,29 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           : null,
       onSubmit: () async {
         final amount = double.tryParse(amountCtrl.text) ?? 0;
-        final dest = destinationType;
-        final ref = referenceCtrl.text.trim();
-        final cheque = chequeCtrl.text.trim();
         final narration = narrationCtrl.text.trim();
         
-        // Get the open till session if disbursing cash
-        TillSession? openTill;
-        if (dest == 'cash') {
-          try {
-            openTill = await TillService.getOpenSession(_uid);
-            if (openTill == null) {
-              _toast('No open till session. Cash disbursement will be recorded but not posted to till.', false);
-            }
-          } catch (e) {
-            debugPrint('Error getting till session: $e');
-          }
-        }
-        
-        await _runAction(
+        final result = await _runActionSilent(
           action: () => LoanDisbursementService.disburseLoan(
             loanId: widget.loanId,
             disbursedBy: _uid,
             amount: amount,
             narration: narration.isEmpty ? 'Loan disbursement credited to savings' : narration,
           ),
-          successMessage: 'Loan disbursed and credited to member savings',
         );
+        
+        if (result != null && result['success'] == true) {
+          // Show beautiful success dialog
+          await SuccessDialog.showLoanDisbursement(
+            context: context,
+            memberName: _s('memberName'),
+            amount: amount,
+            loanReference: _s('referenceNumber'),
+          );
+        }
       },
     );
-    _disposeLater([amountCtrl, referenceCtrl, chequeCtrl, narrationCtrl]);
+    _disposeLater([amountCtrl, narrationCtrl]);
   }
 
   Future<void> _showRescheduleLoanDialog() async {

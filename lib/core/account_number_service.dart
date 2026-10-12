@@ -1,6 +1,6 @@
 /// Auto-generate unique account numbers for SACCO members.
-/// Format: 8-digit numeric string (60000001, 60000002, 60000003, etc.)
-/// Each SACCO has its own counter starting from 60000000
+/// Format: 12-digit numeric string (922020000001, 922020000002, etc.)
+/// Each SACCO has its own counter starting from 922020000000
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'sacco_service.dart';
@@ -11,7 +11,7 @@ class AccountNumberService {
   static final _db = FirebaseFirestore.instance;
 
   /// Generate the next account number for the current SACCO.
-  /// Format: 8-digit number starting from 60000000 e.g. 60000001, 60000002
+  /// Format: 12-digit number starting from 922020000000 e.g. 922020000001, 922020000002
   static Future<String> generateNext() async {
     final sacco = SaccoService.current;
 
@@ -20,17 +20,63 @@ class AccountNumberService {
         .collection('saccoplus-counters')
         .doc('account_numbers_${sacco.tenantId}');
 
-    // Atomic increment - start from 60000000
-    int nextNumber = 60000000;
+    // Atomic increment - start from 922020000000
+    int nextNumber = 922020000000;
     await _db.runTransaction((txn) async {
       final snap = await txn.get(counterRef);
       if (snap.exists) {
-        nextNumber = (snap.data()!['lastNumber'] as int? ?? 59999999) + 1;
+        final currentNumber = snap.data()!['lastNumber'] as int? ?? 922019999999;
+        // Safety check: if counter is in old format (60000xxx), reset to new format
+        if (currentNumber < 922020000000) {
+          print('⚠️ Old counter format detected ($currentNumber), scanning existing members...');
+          // Scan existing members to find highest account number
+          final existingMembers = await _db
+              .collection('users')  // Changed from 'saccoplus-members' to 'users'
+              .where('tenantId', isEqualTo: sacco.tenantId)
+              .get();
+          
+          int highestNumber = 922020000000;
+          for (var doc in existingMembers.docs) {
+            final accNum = doc.data()['accountNumber']?.toString() ?? '';
+            if (accNum.isNotEmpty) {
+              final numValue = int.tryParse(accNum);
+              if (numValue != null && numValue > highestNumber) {
+                highestNumber = numValue;
+              }
+            }
+          }
+          
+          nextNumber = highestNumber + 1;
+          print('🔢 Reset counter from $currentNumber to $nextNumber');
+        } else {
+          nextNumber = currentNumber + 1;
+        }
+      } else {
+        // First time: check for existing account numbers to avoid conflicts
+        print('🔢 First time setup: scanning existing members...');
+        final existingMembers = await _db
+            .collection('users')  // Changed from 'saccoplus-members' to 'users'
+            .where('tenantId', isEqualTo: sacco.tenantId)
+            .get();
+        
+        int highestNumber = 922020000000;
+        for (var doc in existingMembers.docs) {
+          final accNum = doc.data()['accountNumber']?.toString() ?? '';
+          if (accNum.isNotEmpty) {
+            final numValue = int.tryParse(accNum);
+            if (numValue != null && numValue > highestNumber) {
+              highestNumber = numValue;
+            }
+          }
+        }
+        
+        nextNumber = highestNumber + 1;
+        print('🔢 First account number generation: starting from $nextNumber (after existing max $highestNumber)');
       }
       txn.set(counterRef, {'lastNumber': nextNumber}, SetOptions(merge: true));
     });
 
-    // Return 8-digit number as string (e.g. "60000001")
+    // Return 12-digit number as string (e.g. "922020000601")
     return nextNumber.toString();
   }
 

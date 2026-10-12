@@ -10,6 +10,7 @@ import '../../services/till_service.dart';
 import '../../services/loan_disbursement_service.dart';
 import '../../models/till_entry.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/success_dialog.dart';
 
 /// Admin screen to create and disburse loans to members
 class CreateLoanScreen extends StatefulWidget {
@@ -1405,7 +1406,7 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         'interestAmount': interest.round(),
         'interest': interest.round(),
         'totalAmount': totalAmount.round(),
-        'status': _autoApprove ? 'approved' : 'pending',
+        'status': _autoApprove ? AppConstants.statusApproved : AppConstants.statusPending,
         'balance': totalAmount.round(),
         'principalOutstanding': principal.toDouble(),
         'interestOutstanding': interest,
@@ -1465,24 +1466,40 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       }
 
       if (!mounted) return;
-      final message = _autoApprove
-          ? 'Loan created and disbursed successfully!'
-          : 'Loan created, pending approval';
 
-      // When opened as a tab (no back stack) don't pop the root route
-      if (Navigator.of(context).canPop()) {
-        Navigator.pop(context);
+      // Show beautiful dialog for auto-disbursed loans
+      if (_autoApprove) {
+        // When opened as a tab (no back stack) don't pop the root route
+        final shouldPop = Navigator.of(context).canPop();
+        
+        await SuccessDialog.showLoanDisbursement(
+          context: context,
+          memberName: _selectedMemberName ?? 'Member',
+          amount: principal.toDouble(),
+          loanReference: loanId,
+        );
+        
+        if (shouldPop) {
+          Navigator.pop(context);
+        } else {
+          _resetForm();
+        }
       } else {
-        _resetForm();
-      }
+        // For pending loans, just show snackbar
+        if (Navigator.of(context).canPop()) {
+          Navigator.pop(context);
+        } else {
+          _resetForm();
+        }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text(message, style: GoogleFonts.poppins()),
-          backgroundColor: AppTheme.success,
-        ),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text('Loan created, pending approval', style: GoogleFonts.poppins()),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+      }
     } catch (e) {
       _showError('Failed to create loan: ${e.toString()}');
     } finally {
