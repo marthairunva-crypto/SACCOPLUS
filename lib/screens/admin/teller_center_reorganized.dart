@@ -122,8 +122,17 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
 
   Future<void> _loadAllSessions() async {
     try {
+      final uid = FirebaseService.sessionUid;
+      if (uid == null || uid.isEmpty) {
+        print('⚠️ Cannot load sessions: No user ID');
+        setState(() {
+          _allSessions = [];
+        });
+        return;
+      }
+      
       final sessions = await TillService.getTellerSessions(
-        FirebaseService.sessionUid,
+        uid,
         limit: 50, // Last 50 sessions
       );
       if (!mounted) return;
@@ -131,7 +140,11 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
         _allSessions = sessions;
       });
     } catch (e) {
-      print('Error loading sessions: $e');
+      print('❌ Error loading sessions: $e');
+      if (!mounted) return;
+      setState(() {
+        _allSessions = []; // Set to empty list on error
+      });
     }
   }
 
