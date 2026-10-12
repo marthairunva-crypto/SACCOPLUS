@@ -915,7 +915,6 @@ class TillService {
 
       return session.copyWith(
         actualCash: newActualCash,
-        variance: newVariance,
         denominations: denominations,
         status: newStatus,
       );
