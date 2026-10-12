@@ -2042,14 +2042,25 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     // Check multiple fields: description, category, source, or notes
     String name = 'Unknown';
     if (type == 'revenue' || type == 'expense') {
-      // Priority: description > category/source > notes
+      // Priority: description > category > notes (stripped of prefix) > default
       name = (txn['description']?.toString() ?? '').trim();
+      
       if (name.isEmpty) {
-        name = (txn['category']?.toString() ?? txn['source']?.toString() ?? '').trim();
+        name = (txn['category']?.toString() ?? '').trim();
       }
+      
       if (name.isEmpty) {
-        name = (txn['notes']?.toString() ?? '').trim();
+        // Try to extract from notes if description wasn't set
+        final notes = (txn['notes']?.toString() ?? '').trim();
+        if (notes.startsWith('Expense: ')) {
+          name = notes.substring(9).trim();
+        } else if (notes.startsWith('Revenue: ')) {
+          name = notes.substring(9).trim();
+        } else if (notes.isNotEmpty) {
+          name = notes;
+        }
       }
+      
       if (name.isEmpty) {
         name = type == 'revenue' ? 'Revenue Entry' : 'Expense Payment';
       }

@@ -1073,19 +1073,44 @@ class TellerService {
         }
         
         // For expense/revenue entries, extract description from notes
-        // Notes format: "Expense: DATA (Internet Data)" or "Revenue: Membership fee"
+        // Notes format: "Expense: DATA - Internet Data" or "Revenue: Membership fee - Monthly"
         String description = '';
+        String category = '';
+        
         if (entryType == 'expense' && notes.startsWith('Expense: ')) {
-          description = notes.substring(9); // Remove "Expense: " prefix
+          final content = notes.substring(9); // Remove "Expense: " prefix
+          // If contains " - ", split into category and description
+          if (content.contains(' - ')) {
+            final parts = content.split(' - ');
+            category = parts[0].trim();
+            description = parts.length > 1 ? parts.sublist(1).join(' - ').trim() : '';
+          } else {
+            description = content.trim();
+          }
         } else if (entryType == 'revenue' && notes.startsWith('Revenue: ')) {
-          description = notes.substring(9); // Remove "Revenue: " prefix
+          final content = notes.substring(9); // Remove "Revenue: " prefix
+          // If contains " - ", split into category and description
+          if (content.contains(' - ')) {
+            final parts = content.split(' - ');
+            category = parts[0].trim();
+            description = parts.length > 1 ? parts.sublist(1).join(' - ').trim() : '';
+          } else {
+            description = content.trim();
+          }
         }
+
+        // Use the most specific name available
+        String displayName = description.isNotEmpty 
+            ? (category.isNotEmpty ? '$category - $description' : description)
+            : (category.isNotEmpty ? category : notes);
 
         results.add({
           'id': doc.id,
           ...data,
           'type': transactionType,
-          'description': description.isNotEmpty ? description : notes,
+          'description': displayName,
+          'category': category,
+          'notes': notes,
           'timestamp': (data['createdAt'] as Timestamp?)?.toDate() ??
               DateTime.fromMillisecondsSinceEpoch(0),
           'source': 'teller',
