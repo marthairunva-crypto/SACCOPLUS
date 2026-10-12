@@ -978,6 +978,7 @@ class _SessionDetailsState extends State<_SessionDetails> {
 
   Future<void> _recountCash(TillSession session) async {
     final expected = TillService.expectedCashOf(session);
+    final isFirstCount = session.actualCash == null;
     
     // Show the denomination counting dialog
     final result = await showDialog<Map<String, dynamic>>(
@@ -986,6 +987,7 @@ class _SessionDetailsState extends State<_SessionDetails> {
         expected: expected,
         previousCounted: session.actualCash ?? 0,
         denominations: session.denominations,
+        isFirstCount: isFirstCount,
       ),
     );
     
@@ -1008,7 +1010,7 @@ class _SessionDetailsState extends State<_SessionDetails> {
             children: [
               const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3)),
               const SizedBox(width: 16),
-              Expanded(child: Text('Recounting cash...', style: ts(14))),
+              Expanded(child: Text(isFirstCount ? 'Counting cash...' : 'Recounting cash...', style: ts(14))),
             ],
           ),
         ),
@@ -1029,7 +1031,7 @@ class _SessionDetailsState extends State<_SessionDetails> {
         
         // Show success dialog
         _showSuccessDialog(
-          'Cash Recounted Successfully',
+          isFirstCount ? 'Cash Counted Successfully' : 'Cash Recounted Successfully',
           'New counted amount: ${ugx(updatedSession.actualCash ?? 0)}\n'
           'Variance: ${updatedSession.variance == 0 ? 'Balanced' : (updatedSession.variance! > 0 ? '+' : '') + ugx(updatedSession.variance!.abs())}',
         );
@@ -1333,18 +1335,18 @@ class _SessionDetailsState extends State<_SessionDetails> {
                   ],
                 ]),
                 
-                // ── Recount Cash Button ──
-                if (canRecount && s.actualCash != null) ...[
+                // ── Count/Recount Cash Button ──
+                if (canRecount) ...[
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () => _recountCash(s),
                       icon: const Icon(Icons.calculate_outlined, size: 18),
-                      label: const Text('Recount Cash'),
+                      label: Text(s.actualCash == null ? 'Count Cash' : 'Recount Cash'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: TC.blue,
-                        side: BorderSide(color: TC.blue.withOpacity(0.3)),
+                        foregroundColor: s.actualCash == null ? TC.amber : TC.blue,
+                        side: BorderSide(color: (s.actualCash == null ? TC.amber : TC.blue).withOpacity(0.3)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
@@ -1403,11 +1405,13 @@ class _RecountDialog extends StatefulWidget {
   final int expected;
   final int previousCounted;
   final Map<String, int>? denominations;
+  final bool isFirstCount;
 
   const _RecountDialog({
     required this.expected,
     required this.previousCounted,
     this.denominations,
+    this.isFirstCount = false,
   });
 
   static const denoms = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50];
@@ -1498,7 +1502,11 @@ class _RecountDialogState extends State<_RecountDialog> {
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 14),
               child: Row(
                 children: [
-                  Expanded(child: dialogTitle(Icons.calculate_outlined, TC.blue, 'Recount cash')),
+                  Expanded(child: dialogTitle(
+                    Icons.calculate_outlined, 
+                    widget.isFirstCount ? TC.amber : TC.blue, 
+                    widget.isFirstCount ? 'Count cash' : 'Recount cash'
+                  )),
                   IconButton(
                     tooltip: 'Cancel',
                     icon: const Icon(Icons.close_rounded, color: TC.muted),
@@ -1519,17 +1527,19 @@ class _RecountDialogState extends State<_RecountDialog> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: TC.amber.withOpacity(0.1),
+                        color: (widget.isFirstCount ? TC.amber : TC.blue).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: TC.amber.withOpacity(0.3)),
+                        border: Border.all(color: (widget.isFirstCount ? TC.amber : TC.blue).withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, size: 18, color: TC.amber),
+                          Icon(Icons.info_outline, size: 18, color: widget.isFirstCount ? TC.amber : TC.blue),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Recount the cash and enter the correct denominations. Previously counted: ${ugx(widget.previousCounted)}',
+                              widget.isFirstCount 
+                                ? 'This till was closed without counting. Count the cash now to complete the record.'
+                                : 'Recount the cash and enter the correct denominations. Previously counted: ${ugx(widget.previousCounted)}',
                               style: ts(12, c: TC.text),
                             ),
                           ),
@@ -1545,8 +1555,10 @@ class _RecountDialogState extends State<_RecountDialog> {
                       controller: _reasonCtrl,
                       maxLines: 2,
                       decoration: fieldDeco(
-                        'Reason for recount (optional)',
-                        hint: 'e.g. Found counting error, miscounted coins',
+                        widget.isFirstCount ? 'Reason (optional)' : 'Reason for recount (optional)',
+                        hint: widget.isFirstCount 
+                          ? 'e.g. Forgot to count at closing' 
+                          : 'e.g. Found counting error, miscounted coins',
                         error: _err,
                       ),
                       onChanged: (_) => setState(() => _err = null),
@@ -1570,9 +1582,9 @@ class _RecountDialogState extends State<_RecountDialog> {
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    style: primaryButton(TC.blue),
+                    style: primaryButton(widget.isFirstCount ? TC.amber : TC.blue),
                     onPressed: _submit,
-                    child: const Text('Update Count'),
+                    child: Text(widget.isFirstCount ? 'Submit Count' : 'Update Count'),
                   ),
                 ],
               ),

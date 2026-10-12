@@ -865,7 +865,8 @@ class TillService {
 
   // ─── Recount Cash (Edit actualCash for Closed Till) ──────────────────────
   /// Allows updating the counted cash (actualCash) on an already-closed till.
-  /// Used for accountability corrections when the cash was miscounted at closing.
+  /// Used for accountability corrections when the cash was miscounted at closing,
+  /// OR for counting cash on old tills that were closed without counting.
   static Future<TillSession> recountCash({
     required String tillSessionId,
     required Map<String, int> denominations,
@@ -879,7 +880,7 @@ class TillService {
       }
 
       if (session.status != 'closed' && session.status != 'pending_approval') {
-        throw Exception('Can only recount cash on closed or pending approval tills');
+        throw Exception('Can only count/recount cash on closed or pending approval tills');
       }
 
       final newActualCash = _calculateCashFromDenominations(denominations);
@@ -893,13 +894,24 @@ class TillService {
         'actualCash': newActualCash,
         'variance': newVariance,
         'denominations': denominations,
-        'recountedAt': Timestamp.fromDate(now),
-        'recountedBy': recountedBy,
         'status': newStatus,
       };
 
-      if (reason != null && reason.trim().isNotEmpty) {
-        updates['recountReason'] = reason.trim();
+      // Track whether this is first-time count or recount
+      if (session.actualCash == null) {
+        // First-time count for old closed till
+        updates['countedAt'] = Timestamp.fromDate(now);
+        updates['countedBy'] = recountedBy;
+        if (reason != null && reason.trim().isNotEmpty) {
+          updates['countReason'] = reason.trim();
+        }
+      } else {
+        // Recount for till that was already counted
+        updates['recountedAt'] = Timestamp.fromDate(now);
+        updates['recountedBy'] = recountedBy;
+        if (reason != null && reason.trim().isNotEmpty) {
+          updates['recountReason'] = reason.trim();
+        }
       }
 
       // If it was previously approved but now needs approval again, clear approval
@@ -911,7 +923,8 @@ class TillService {
 
       await _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId).update(updates);
 
-      print('✅ Cash recounted for session $tillSessionId: UGX ${_formatCurrency(newActualCash)} (variance: ${_formatCurrency(newVariance)})');
+      final action = session.actualCash == null ? 'counted' : 'recounted';
+      print('✅ Cash $action for session $tillSessionId: UGX ${_formatCurrency(newActualCash)} (variance: ${_formatCurrency(newVariance)})');
 
       return session.copyWith(
         actualCash: newActualCash,
@@ -919,7 +932,7 @@ class TillService {
         status: newStatus,
       );
     } catch (e) {
-      print('❌ Error recounting cash: $e');
+      print('❌ Error counting/recounting cash: $e');
       rethrow;
     }
   }
