@@ -2027,9 +2027,25 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
         : DateFormat('MMM d, y  •  h:mm a').format(stamp);
     
     // For revenue/expense, use description as the name
-    final name = (type == 'revenue' || type == 'expense')
-        ? (txn['description'] ?? 'Unknown').toString()
-        : (txn['memberName'] ?? txn['accountName'] ?? 'Unknown').toString();
+    // Check multiple fields: description, category, source, or notes
+    String name = 'Unknown';
+    if (type == 'revenue' || type == 'expense') {
+      // Priority: description > category/source > notes
+      name = (txn['description']?.toString() ?? '').trim();
+      if (name.isEmpty) {
+        name = (txn['category']?.toString() ?? txn['source']?.toString() ?? '').trim();
+      }
+      if (name.isEmpty) {
+        name = (txn['notes']?.toString() ?? '').trim();
+      }
+      if (name.isEmpty) {
+        name = type == 'revenue' ? 'Revenue Entry' : 'Expense Payment';
+      }
+    } else {
+      // For member transactions
+      name = (txn['memberName'] ?? txn['accountName'] ?? 'Unknown').toString();
+    }
+    
     final acct = _pretty((txn['accountType'] ?? type).toString());
     final amount = (txn['amount'] as num?) ?? 0;
     final receipt = (txn['receiptNumber'] ?? '').toString();
