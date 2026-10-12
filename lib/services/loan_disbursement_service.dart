@@ -10,25 +10,17 @@ import 'till_service.dart';
 class LoanDisbursementService {
   static final _db = FirebaseFirestore.instance;
 
-  /// Disburse an approved loan
+  /// Disburse an approved loan by crediting member's savings account
   /// 
   /// [loanId] - The loan document ID
-  /// [destinationType] - 'cash', 'bank', or 'mobile_money'
-  /// [referenceNumber] - Receipt/reference number
-  /// [chequeNumber] - Cheque number if applicable
-  /// [narration] - Description of the transaction
   /// [disbursedBy] - User ID of the person disbursing
   /// [amount] - Amount being disbursed (should match loan amount)
-  /// [tillSession] - Optional till session for cash disbursements
+  /// [narration] - Description of the transaction
   static Future<Map<String, dynamic>> disburseLoan({
     required String loanId,
-    required String destinationType,
     required String disbursedBy,
     required double amount,
-    String? referenceNumber,
-    String? chequeNumber,
     String? narration,
-    TillSession? tillSession, // Optional for now (will be required in Phase 3 for cash)
   }) async {
     try {
       // 1. Get loan details
@@ -53,7 +45,17 @@ class LoanDisbursementService {
         return {'success': false, 'message': 'Disbursement amount must match loan amount'};
       }
 
-      // 3. Create disbursement transaction record
+      // 3. Get member details
+      final memberDoc = await _db.collection(AppConstants.usersCol).doc(memberId).get();
+      if (!memberDoc.exists) {
+        return {'success': false, 'message': 'Member not found'};
+      }
+      
+      final memberData = memberDoc.data()!;
+      final memberName = memberData['name'] ?? 'Unknown';
+      final currentSavings = (memberData['savingsBalance'] ?? 0).toDouble();
+
+      // 4. Create disbursement transaction record
       final disbursementId = const Uuid().v4();
       final now = DateTime.now();
       
@@ -61,18 +63,17 @@ class LoanDisbursementService {
         'id': disbursementId,
         'loanId': loanId,
         'memberId': memberId,
+        'memberName': memberName,
         'tenantId': tenantId,
         'amount': amount,
-        'destinationType': destinationType,
-        'referenceNumber': referenceNumber ?? '',
-        'chequeNumber': chequeNumber ?? '',
-        'narration': narration ?? 'Loan disbursement',
+        'destinationType': 'savings_credit', // Credited to savings
+        'narration': narration ?? 'Loan disbursement credited to savings',
         'disbursedBy': disbursedBy,
         'disbursedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 4. Update loan status and set disbursement date
+      // 5. Update loan status and set disbursement date
       await _db.collection(AppConstants.loansCol).doc(loanId).update({
         'status': AppConstants.statusDisbursed,
         'disbursedAt': FieldValue.serverTimestamp(),
@@ -82,88 +83,63 @@ class LoanDisbursementService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 5. Create teller transaction
-      final txnId = const Uuid().v4();
-      await _db.collection(AppConstants.tellerTxnCol).doc(txnId).set({
-        'id': txnId,
-        'type': 'loan_disbursement',
-        'category': 'loan',
+      // 6. Credit member's savings account
+      final newSavingsBalance = currentSavings + amount;
+      await _db.collection(AppConstants.usersCol).doc(memberId).update({
+        'savingsBalance': newSavingsBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 7. Create savings deposit transaction
+      final depositId = const Uuid().v4();
+      await _db.collection(AppConstants.tellerTxnCol).doc(depositId).set({
+        'id': depositId,
+        'type': 'deposit',
+        'accountType': 'savings',
+        'category': 'loan_disbursement',
         'memberId': memberId,
+        'memberName': memberName,
         'loanId': loanId,
         'tenantId': tenantId,
         'amount': amount,
-        'destinationType': destinationType,
-        'referenceNumber': referenceNumber ?? '',
-        'chequeNumber': chequeNumber ?? '',
-        'narration': narration ?? 'Loan disbursement',
+        'paymentMethod': 'Internal Transfer',
+        'source': 'teller',
+        'narration': narration ?? 'Loan disbursement credited to savings',
         'processedBy': disbursedBy,
         'timestamp': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'completed',
+        'businessRecordId': disbursementId,
+        'businessRecordType': 'loan_disbursement',
       });
 
-      // Post till entry if till session provided and disbursement is cash
-      if (tillSession != null && destinationType == 'cash') {
-        try {
-          // Get member details for till entry
-          final memberDoc = await _db.collection(AppConstants.usersCol).doc(memberId).get();
-          final memberName = memberDoc.data()?['name'] ?? 'Unknown';
-          final tellerName = memberDoc.data()?['name'] ?? 'Teller'; // TODO: Get actual teller name
+      // 8. Update member's loan balance
+      final currentLoanBalance = (memberData['loanBalance'] ?? 0).toDouble();
+      await _db.collection(AppConstants.usersCol).doc(memberId).update({
+        'loanBalance': currentLoanBalance + amount,
+      });
 
-          final tillEntryInput = TillEntryInput.loanDisbursement(
-            amount: amount.toInt(),
-            memberId: memberId,
-            memberName: memberName,
-            loanId: loanId,
-            paymentMethod: 'Cash',
-            notes: 'Loan disbursement - ${narration ?? 'Ref: ${referenceNumber ?? disbursementId}'}',
-          );
-
-          await TillService.postEntry(
-            tillSessionId: tillSession.id,
-            tellerId: disbursedBy,
-            tellerName: tellerName,
-            input: tillEntryInput,
-          );
-
-          print('✅ Till entry posted for loan disbursement $loanId');
-        } catch (tillError) {
-          // Till entry failure is non-critical - disbursement already recorded
-          print('⚠️ Failed to post till entry for loan disbursement: $tillError');
-        }
-      }
-
-      // 6. Update member's loan balance (if they track it)
-      if (memberId != null) {
-        final memberDoc = await _db.collection(AppConstants.usersCol).doc(memberId).get();
-        if (memberDoc.exists) {
-          final currentLoanBalance = (memberDoc.data()?['loanBalance'] ?? 0).toDouble();
-          await _db.collection(AppConstants.usersCol).doc(memberId).update({
-            'loanBalance': currentLoanBalance + amount,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
-      }
-
-      // 7. Audit log
+      // 9. Audit log
       await AuditService.log(
         action: AuditService.ACTION_LOAN_DISBURSED,
-        details: 'Loan disbursed: $amount via $destinationType',
+        details: 'Loan disbursed: UGX ${amount.toStringAsFixed(0)} credited to savings account',
         userId: disbursedBy,
         affectedUserId: memberId,
         metadata: {
           'loanId': loanId,
           'amount': amount,
-          'destinationType': destinationType,
-          'referenceNumber': referenceNumber ?? '',
+          'destinationType': 'savings_credit',
           'disbursementId': disbursementId,
+          'previousSavings': currentSavings,
+          'newSavings': newSavingsBalance,
         },
       );
 
       return {
         'success': true,
-        'message': 'Loan disbursed successfully',
+        'message': 'Loan disbursed successfully. Amount credited to member savings account.',
         'disbursementId': disbursementId,
+        'newSavingsBalance': newSavingsBalance,
       };
     } catch (e) {
       print('❌ Error disbursing loan: $e');

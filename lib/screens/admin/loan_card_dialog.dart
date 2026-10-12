@@ -1607,16 +1607,14 @@ class _LoanCardDialogState extends State<LoanCardDialog> {
                   builder: (ctx) => const Center(child: CircularProgressIndicator()),
                 );
                 
-                // Disburse loan
+                // Disburse loan - credit to savings
                 final result = await LoanDisbursementService.disburseLoan(
                   loanId: widget.loanId,
-                  destinationType: destinationType,
                   disbursedBy: 'CURRENT_USER_ID', // TODO: Get from auth
                   amount: amount,
-                  referenceNumber: referenceCtrl.text.trim(),
-                  chequeNumber: chequeCtrl.text.trim(),
-                  narration: narrationCtrl.text.trim(),
-                  tillSession: null, // TODO: Pass actual till session in Phase 3 for cash
+                  narration: narrationCtrl.text.trim().isEmpty 
+                    ? 'Loan disbursement credited to savings'
+                    : narrationCtrl.text.trim(),
                 );
                 
                 // Close loading

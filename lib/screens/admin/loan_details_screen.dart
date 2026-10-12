@@ -2761,15 +2761,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         await _runAction(
           action: () => LoanDisbursementService.disburseLoan(
             loanId: widget.loanId,
-            destinationType: dest,
             disbursedBy: _uid,
             amount: amount,
-            referenceNumber: ref,
-            chequeNumber: cheque,
-            narration: narration,
-            tillSession: openTill, // Pass actual till session for cash
+            narration: narration.isEmpty ? 'Loan disbursement credited to savings' : narration,
           ),
-          successMessage: 'Loan disbursed',
+          successMessage: 'Loan disbursed and credited to member savings',
         );
       },
     );
