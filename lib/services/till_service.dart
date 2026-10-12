@@ -81,13 +81,15 @@ class TillService {
       // ── VALIDATION: Opening float must match last closing balance ──────────
       final lastClosedSession = await _getLastClosedSession(tellerId);
       if (lastClosedSession != null) {
-        final expectedOpening = lastClosedSession.closingBalance ?? 0;
+        // Use actualCash (what was counted at close) or expectedCash as fallback
+        final expectedOpening = lastClosedSession.actualCash ?? lastClosedSession.expectedCash;
         
         if (openingFloat != expectedOpening) {
+          final fmt = NumberFormat('#,###', 'en_US');
           throw Exception(
             'Opening balance mismatch!\n\n'
-            'Your last till closed with UGX ${_fmt(expectedOpening)}.\n'
-            'You must open with exactly UGX ${_fmt(expectedOpening)}, not UGX ${_fmt(openingFloat)}.\n\n'
+            'Your last till closed with UGX ${fmt.format(expectedOpening)}.\n'
+            'You must open with exactly UGX ${fmt.format(expectedOpening)}, not UGX ${fmt.format(openingFloat)}.\n\n'
             'This ensures accountability and prevents cash discrepancies.'
           );
         }
@@ -161,18 +163,15 @@ class TillService {
     final session = await _getLastClosedSession(tellerId);
     if (session == null) return null;
     
+    // Use actualCash (counted at close) or expectedCash as fallback
+    final closingBalance = session.actualCash ?? session.expectedCash;
+    
     return {
       'sessionId': session.id,
       'closedAt': session.closedAt,
-      'closingBalance': session.closingBalance ?? 0,
+      'closingBalance': closingBalance,
       'businessDate': session.businessDate,
     };
-  }
-
-  /// Format currency
-  static String _fmt(int amount) {
-    final formatter = NumberFormat('#,###', 'en_US');
-    return formatter.format(amount);
   }
 
   // ─── Watch / Get Open Session ─────────────────────────────────────────────

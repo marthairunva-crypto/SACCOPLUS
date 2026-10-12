@@ -34,7 +34,6 @@ import 'savings_admin_screen.dart';
 import 'shares_admin_screen.dart';
 import 'savings_summary_screen.dart';
 import 'sacco_settings_screen.dart';
-import 'data_fix_screen.dart';
 
 import 'staff_management_screen.dart';
 import 'dividend_distribution_screen.dart';
@@ -293,17 +292,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ],
           ),
           actions: [
-            // TEMPORARY: Data fix button
-            IconButton(
-              icon: const Icon(Icons.build_circle, color: Colors.white),
-              tooltip: 'Fix Data',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const DataFixScreen(),
-                ),
-              ),
-            ),
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.white),
               onPressed: () {

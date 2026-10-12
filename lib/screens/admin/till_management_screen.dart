@@ -1094,7 +1094,7 @@ class _TillManagementScreenState extends State<TillManagementScreen> {
                           Expanded(
                             child: Text(
                               'Your last till closed with ${ugx(expectedOpening)}.\nYou must open with this exact amount.',
-                              style: ts(12.5, c: TC.text, h: 1.4),
+                              style: ts(12.5, c: TC.text),
                             ),
                           ),
                         ],
