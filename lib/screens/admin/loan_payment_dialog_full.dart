@@ -497,6 +497,10 @@ Future<void> _showRecordPaymentDialog() async {
                               'chargesPaid': FieldValue.increment(charges),
                               'principalOutstanding': FieldValue.increment(-principal),
                               'interestOutstanding': FieldValue.increment(-interest),
+                              'chargesOutstanding': FieldValue.increment(-charges),
+                              'remainingBalance': FieldValue.increment(-(principal + interest + charges)),
+                              'totalOutstanding': FieldValue.increment(-(principal + interest + charges)),
+                              'outstanding': FieldValue.increment(-(principal + interest + charges)),
                             });
                             
                             if (paymentMethod != 'Mobile Money' && context.mounted) {

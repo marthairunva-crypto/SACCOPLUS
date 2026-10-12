@@ -2015,6 +2015,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           'principalOutstanding': FieldValue.increment(p),
           'interestOutstanding': FieldValue.increment(i),
           'chargesOutstanding': FieldValue.increment(c),
+          'remainingBalance': FieldValue.increment(p + i + c),
+          'totalOutstanding': FieldValue.increment(p + i + c),
+          'outstanding': FieldValue.increment(p + i + c),
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
@@ -3357,6 +3360,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         'principalOutstanding': FieldValue.increment(-principalPaid),
         'interestOutstanding': FieldValue.increment(-interestPaid),
         'chargesOutstanding': FieldValue.increment(-chargesPaid),
+        'remainingBalance': FieldValue.increment(-(principalPaid + interestPaid + chargesPaid)),
+        'totalOutstanding': FieldValue.increment(-(principalPaid + interestPaid + chargesPaid)),
+        'outstanding': FieldValue.increment(-(principalPaid + interestPaid + chargesPaid)),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 

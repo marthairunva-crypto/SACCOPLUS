@@ -1408,9 +1408,18 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
         'totalAmount': totalAmount.round(),
         'status': _autoApprove ? AppConstants.statusApproved : AppConstants.statusPending,
         'balance': totalAmount.round(),
+        // Outstanding fields - ensure all are set consistently
         'principalOutstanding': principal.toDouble(),
         'interestOutstanding': interest,
+        'chargesOutstanding': 0.0,
         'interestOriginalBalance': interest,
+        'remainingBalance': totalAmount,
+        'totalOutstanding': totalAmount,
+        'outstanding': totalAmount,
+        // Paid fields
+        'principalPaid': 0.0,
+        'interestPaid': 0.0,
+        'chargesPaid': 0.0,
         'amountPaid': 0,
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': FirebaseService.sessionUid,

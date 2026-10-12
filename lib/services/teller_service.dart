@@ -201,7 +201,7 @@ class TellerService {
           final principalOutstanding =
               (loanData['principalOutstanding'] as num?)?.toDouble() ?? 0.0;
           final interestOutstanding =
-              (loanData['interestOriginalBalance'] as num?)?.toDouble() ?? 0.0;
+              (loanData['interestOutstanding'] as num?)?.toDouble() ?? 0.0; // Fixed: was 'interestOriginalBalance'
 
           // Apply payment: first to interest, then to principal
           double remainingPayment = amount.toDouble();
@@ -225,12 +225,16 @@ class TellerService {
           final newInterestOutstanding = interestOutstanding - interestPayment;
           final newTotalOutstanding = newPrincipalOutstanding + newInterestOutstanding;
 
-          // Update loan
+          // Update loan - ensure all outstanding fields are consistent
           await _db.collection('saccoplus-loans').doc(loanId).update({
             'principalOutstanding': newPrincipalOutstanding,
-            'interestOriginalBalance': newInterestOutstanding,
+            'interestOutstanding': newInterestOutstanding, // Fixed: was 'interestOriginalBalance'
+            'chargesOutstanding': 0, // No charges handling in teller (for consistency)
             'totalOutstanding': newTotalOutstanding,
             'outstanding': newTotalOutstanding, // Also update 'outstanding' field for compatibility
+            'remainingBalance': newTotalOutstanding, // Add remainingBalance for ArrearsService
+            'principalPaid': FieldValue.increment(principalPayment), // Track total paid
+            'interestPaid': FieldValue.increment(interestPayment),
             'status': newTotalOutstanding <= 0 ? 'paid' : loanData['status'],
             'lastPaymentDate': timestamp,
             'lastPaymentAmount': amount,
