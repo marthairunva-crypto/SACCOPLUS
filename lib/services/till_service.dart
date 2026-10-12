@@ -862,6 +862,68 @@ class TillService {
     final formatted = parts.join(',');
     return amount < 0 ? '-$formatted' : formatted;
   }
+
+  // ─── Recount Cash (Edit actualCash for Closed Till) ──────────────────────
+  /// Allows updating the counted cash (actualCash) on an already-closed till.
+  /// Used for accountability corrections when the cash was miscounted at closing.
+  static Future<TillSession> recountCash({
+    required String tillSessionId,
+    required Map<String, int> denominations,
+    required String recountedBy,
+    String? reason,
+  }) async {
+    try {
+      final session = await getSessionById(tillSessionId);
+      if (session == null) {
+        throw Exception('Till session not found: $tillSessionId');
+      }
+
+      if (session.status != 'closed' && session.status != 'pending_approval') {
+        throw Exception('Can only recount cash on closed or pending approval tills');
+      }
+
+      final newActualCash = _calculateCashFromDenominations(denominations);
+      final expectedCash = expectedCashOf(session);
+      final newVariance = newActualCash - expectedCash;
+      final needsApproval = newVariance.abs() > varianceTolerance;
+      final newStatus = needsApproval ? 'pending_approval' : 'closed';
+
+      final now = DateTime.now();
+      final updates = <String, dynamic>{
+        'actualCash': newActualCash,
+        'variance': newVariance,
+        'denominations': denominations,
+        'recountedAt': Timestamp.fromDate(now),
+        'recountedBy': recountedBy,
+        'status': newStatus,
+      };
+
+      if (reason != null && reason.trim().isNotEmpty) {
+        updates['recountReason'] = reason.trim();
+      }
+
+      // If it was previously approved but now needs approval again, clear approval
+      if (needsApproval && session.status == 'closed') {
+        updates['approvedBy'] = FieldValue.delete();
+        updates['approvedByName'] = FieldValue.delete();
+        updates['approvedAt'] = FieldValue.delete();
+      }
+
+      await _db.collection(AppConstants.tillSessionsCol).doc(tillSessionId).update(updates);
+
+      print('✅ Cash recounted for session $tillSessionId: UGX ${_formatCurrency(newActualCash)} (variance: ${_formatCurrency(newVariance)})');
+
+      return session.copyWith(
+        actualCash: newActualCash,
+        variance: newVariance,
+        denominations: denominations,
+        status: newStatus,
+      );
+    } catch (e) {
+      print('❌ Error recounting cash: $e');
+      rethrow;
+    }
+  }
 }
 
 /// Result of closing a till session

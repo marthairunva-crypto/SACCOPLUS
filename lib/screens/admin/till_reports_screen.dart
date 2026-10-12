@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
@@ -975,6 +976,200 @@ class _SessionDetailsState extends State<_SessionDetails> {
     _entries = TillService.getSessionEntries(widget.session.id);
   }
 
+  Future<void> _recountCash(TillSession session) async {
+    final expected = TillService.expectedCashOf(session);
+    
+    // Show the denomination counting dialog
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _RecountDialog(
+        expected: expected,
+        previousCounted: session.actualCash ?? 0,
+        denominations: session.denominations,
+      ),
+    );
+    
+    if (result == null || !mounted) return;
+
+    final denominations = result['denominations'] as Map<String, int>;
+    final reason = (result['reason'] as String).trim();
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          content: Row(
+            children: [
+              const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3)),
+              const SizedBox(width: 16),
+              Expanded(child: Text('Recounting cash...', style: ts(14))),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final updatedSession = await TillService.recountCash(
+        tillSessionId: session.id,
+        denominations: denominations,
+        recountedBy: FirebaseService.sessionUid,
+        reason: reason.isEmpty ? null : reason,
+      );
+
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close loading
+        Navigator.pop(context); // Close details dialog
+        
+        // Show success dialog
+        _showSuccessDialog(
+          'Cash Recounted Successfully',
+          'New counted amount: ${ugx(updatedSession.actualCash ?? 0)}\n'
+          'Variance: ${updatedSession.variance == 0 ? 'Balanced' : (updatedSession.variance! > 0 ? '+' : '') + ugx(updatedSession.variance!.abs())}',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close loading
+        _showErrorDialog(cleanError(e));
+      }
+    }
+  }
+
+  void _showSuccessDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [TC.green, const Color(0xFF047857)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check_circle_outline, color: Colors.white, size: 48),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(title, style: ts(20, w: FontWeight.w700, c: Colors.white), textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Text(message, textAlign: TextAlign.center, style: ts(14, c: TC.text)),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: TC.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Text('OK', style: ts(15, w: FontWeight.w600, c: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.red.shade400, Colors.red.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.error_outline, color: Colors.white, size: 48),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Operation Failed', style: ts(20, w: FontWeight.w700, c: Colors.white)),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Text(message, textAlign: TextAlign.center, style: ts(14, c: TC.text)),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Text('OK', style: ts(15, w: FontWeight.w600, c: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _kv(String label, String value, {Color c = TC.text, bool bold = false}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
@@ -1056,6 +1251,8 @@ class _SessionDetailsState extends State<_SessionDetails> {
         : (variance == 0
             ? TC.green
             : (variance.abs() > TillService.varianceTolerance ? TC.red : TC.amber));
+    
+    final canRecount = s.status == 'closed' || s.status == 'pending_approval';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1135,6 +1332,25 @@ class _SessionDetailsState extends State<_SessionDetails> {
                     ),
                   ],
                 ]),
+                
+                // ── Recount Cash Button ──
+                if (canRecount && s.actualCash != null) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _recountCash(s),
+                      icon: const Icon(Icons.calculate_outlined, size: 18),
+                      label: const Text('Recount Cash'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: TC.blue,
+                        side: BorderSide(color: TC.blue.withOpacity(0.3)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+                
                 const SizedBox(height: 20),
                 FutureBuilder<List<TillEntry>>(
                   future: _entries,
@@ -1175,6 +1391,393 @@ class _SessionDetailsState extends State<_SessionDetails> {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECOUNT CASH DIALOG
+// ═══════════════════════════════════════════════════════════════════════════════
+class _RecountDialog extends StatefulWidget {
+  final int expected;
+  final int previousCounted;
+  final Map<String, int>? denominations;
+
+  const _RecountDialog({
+    required this.expected,
+    required this.previousCounted,
+    this.denominations,
+  });
+
+  static const denoms = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50];
+
+  @override
+  State<_RecountDialog> createState() => _RecountDialogState();
+}
+
+class _RecountDialogState extends State<_RecountDialog> {
+  late final Map<int, TextEditingController> _ctrls = {
+    for (final d in _RecountDialog.denoms) d: TextEditingController(),
+  };
+  final _reasonCtrl = TextEditingController();
+  String? _err;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill with previous denominations if available
+    if (widget.denominations != null) {
+      for (final entry in widget.denominations!.entries) {
+        final denom = int.tryParse(entry.key);
+        if (denom != null && _ctrls.containsKey(denom)) {
+          _ctrls[denom]!.text = entry.value.toString();
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
+    _reasonCtrl.dispose();
+    super.dispose();
+  }
+
+  int _qty(int d) => int.tryParse(_ctrls[d]!.text) ?? 0;
+  int get _counted => _RecountDialog.denoms.fold(0, (sum, d) => sum + d * _qty(d));
+  int get _pieces => _RecountDialog.denoms.fold(0, (sum, d) => sum + _qty(d));
+
+  void _clearAll() {
+    for (final c in _ctrls.values) {
+      c.clear();
+    }
+    setState(() => _err = null);
+  }
+
+  void _submit() {
+    if (_counted == 0) {
+      setState(() => _err = 'You must count the cash before submitting');
+      return;
+    }
+    
+    Navigator.pop(context, {
+      'denominations': <String, int>{
+        for (final d in _RecountDialog.denoms) '$d': _qty(d),
+      },
+      'reason': _reasonCtrl.text,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final dialogW = math.min(560.0, size.width - 32);
+    final narrow = dialogW < 420;
+    final qtyW = narrow ? 72.0 : 92.0;
+    final amtW = narrow ? 88.0 : 112.0;
+
+    final counted = _counted;
+    final variance = counted - widget.expected;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 560, maxHeight: size.height - 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Header ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 8, 14),
+              child: Row(
+                children: [
+                  Expanded(child: dialogTitle(Icons.calculate_outlined, TC.blue, 'Recount cash')),
+                  IconButton(
+                    tooltip: 'Cancel',
+                    icon: const Icon(Icons.close_rounded, color: TC.muted),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: TC.border),
+
+            // ── Body (scrolls) ──
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: TC.amber.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: TC.amber.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 18, color: TC.amber),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Recount the cash and enter the correct denominations. Previously counted: ${ugx(widget.previousCounted)}',
+                              style: ts(12, c: TC.text),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _summary(counted, variance),
+                    const SizedBox(height: 18),
+                    _table(qtyW, amtW),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _reasonCtrl,
+                      maxLines: 2,
+                      decoration: fieldDeco(
+                        'Reason for recount (optional)',
+                        hint: 'e.g. Found counting error, miscounted coins',
+                        error: _err,
+                      ),
+                      onChanged: (_) => setState(() => _err = null),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Footer ──
+            const Divider(height: 1, color: TC.border),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Row(
+                children: [
+                  TextButton(
+                    onPressed: counted == 0 ? null : _clearAll,
+                    child: const Text('Clear all'),
+                  ),
+                  const Spacer(),
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: primaryButton(TC.blue),
+                    onPressed: _submit,
+                    child: const Text('Update Count'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summary(int counted, int variance) {
+    final vColor = variance == 0 ? TC.green : (variance < 0 ? TC.red : TC.amber);
+    final vLabel = variance == 0
+        ? 'Balanced'
+        : (variance > 0 ? 'Over by ${ugx(variance)}' : 'Short by ${ugx(-variance)}');
+    final vIcon = variance == 0 ? Icons.check_circle_rounded : Icons.info_rounded;
+
+    Widget cell(String label, String value, Color c) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: ts(10.5, w: FontWeight.w600, c: TC.muted, ls: 0.6)),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(value, style: ts(17, w: FontWeight.w700, c: c)),
+              ),
+            ],
+          ),
+        );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TC.border),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(
+              children: [
+                cell('EXPECTED', ugx(widget.expected), TC.navy),
+                Container(width: 1, height: 34, color: TC.border),
+                const SizedBox(width: 16),
+                cell('RECOUNTED', ugx(counted), TC.blue),
+              ],
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: vColor.withOpacity(0.1),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(13)),
+            ),
+            child: Row(
+              children: [
+                Icon(vIcon, size: 18, color: vColor),
+                const SizedBox(width: 8),
+                Expanded(child: Text(vLabel, style: ts(13, w: FontWeight.w700, c: vColor))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _table(double qtyW, double amtW) {
+    OutlineInputBorder b(Color c, [double w = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: c, width: w),
+        );
+
+    Widget row(int d, int index) {
+      final q = _qty(d);
+      final isNote = d >= 1000;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: q > 0 ? TC.blue.withOpacity(0.04) : Colors.white,
+          border: const Border(top: BorderSide(color: TC.border)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: (isNote ? TC.green : TC.amber).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(isNote ? Icons.payments_outlined : Icons.toll_outlined,
+                        size: 16, color: isNote ? TC.green : TC.amber),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('UGX ${money(d)}',
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(13, w: FontWeight.w600)),
+                        Text(isNote ? 'Note' : 'Coin', style: ts(10.5, c: TC.muted)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: qtyW,
+              height: 38,
+              child: TextField(
+                controller: _ctrls[d],
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
+                style: ts(13.5, w: FontWeight.w700, c: TC.navy),
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: true,
+                  fillColor: Colors.white,
+                  hintText: '0',
+                  hintStyle: ts(13.5, c: TC.muted.withOpacity(0.6)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  enabledBorder: b(q > 0 ? TC.blue.withOpacity(0.5) : const Color(0xFFD5DCE6)),
+                  focusedBorder: b(TC.blue, 1.6),
+                  border: b(const Color(0xFFD5DCE6)),
+                ),
+                onChanged: (_) => setState(() => _err = null),
+              ),
+            ),
+            SizedBox(
+              width: amtW,
+              child: Text(
+                q > 0 ? money(d * q) : '-',
+                textAlign: TextAlign.right,
+                style: ts(13, w: FontWeight.w600, c: q > 0 ? TC.navy : TC.muted),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TC.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: const Color(0xFFF1F5F9),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Expanded(child: Text('DENOMINATION', style: ts(10.5, w: FontWeight.w600, c: TC.muted, ls: 0.6))),
+                SizedBox(
+                    width: qtyW,
+                    child: Text('QTY',
+                        textAlign: TextAlign.center, style: ts(10.5, w: FontWeight.w600, c: TC.muted, ls: 0.6))),
+                SizedBox(
+                    width: amtW,
+                    child: Text('AMOUNT (UGX)',
+                        textAlign: TextAlign.right, style: ts(10.5, w: FontWeight.w600, c: TC.muted, ls: 0.6))),
+              ],
+            ),
+          ),
+          for (var i = 0; i < _RecountDialog.denoms.length; i++) row(_RecountDialog.denoms[i], i),
+          Container(
+            color: const Color(0xFFF1F5F9),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(child: Text('Total recounted', style: ts(13, w: FontWeight.w700, c: TC.navy))),
+                SizedBox(
+                  width: qtyW,
+                  child: Text('$_pieces', textAlign: TextAlign.center, style: ts(13, w: FontWeight.w700, c: TC.navy)),
+                ),
+                SizedBox(
+                  width: amtW,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(money(_counted), style: ts(14, w: FontWeight.w800, c: TC.navy)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

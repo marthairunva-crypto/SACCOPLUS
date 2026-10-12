@@ -1660,6 +1660,12 @@ class _CloseTillDialogState extends State<_CloseTillDialog> {
   }
 
   void _submit(bool needsReason) {
+    // Prevent closing if counted cash is zero or missing
+    if (_counted == 0) {
+      setState(() => _err = 'You must count the cash before closing the till');
+      return;
+    }
+    
     if (needsReason && _reasonCtrl.text.trim().isEmpty) {
       setState(() => _err = 'Explain the variance to close the till');
       return;
