@@ -152,7 +152,7 @@ class LoanDisbursementService {
           (Match m) => '${m[1]},',
         );
         
-        final message = '$saccoName: Your loan of UGX $formattedAmount has been disbursed and credited to your savings account. Your new savings balance is UGX $formattedBalance. Visit any branch to withdraw. Thank you!';
+        final message = 'Dear $memberName, your loan of UGX $formattedAmount has been disbursed and credited to your savings account. Your new savings balance is UGX $formattedBalance. Visit any branch to withdraw. Thank you! - $saccoName';
         
         try {
           print('📤 Sending loan disbursement SMS to member phone: $phone');
