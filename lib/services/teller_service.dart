@@ -1056,6 +1056,7 @@ class TellerService {
         }
         
         final entryType = data['entryType'] ?? '';
+        final notes = (data['notes'] ?? '').toString();
         
         // Map till entry types to transaction types
         String transactionType = entryType;
@@ -1064,16 +1065,26 @@ class TellerService {
         } else if (entryType == 'loan_disbursement') {
           transactionType = 'loan_disbursement';
         }
+        
+        // For expense/revenue entries, extract description from notes
+        // Notes format: "Expense: DATA (Internet Data)" or "Revenue: Membership fee"
+        String description = '';
+        if (entryType == 'expense' && notes.startsWith('Expense: ')) {
+          description = notes.substring(9); // Remove "Expense: " prefix
+        } else if (entryType == 'revenue' && notes.startsWith('Revenue: ')) {
+          description = notes.substring(9); // Remove "Revenue: " prefix
+        }
 
         results.add({
           'id': doc.id,
           ...data,
           'type': transactionType,
+          'description': description.isNotEmpty ? description : notes,
           'timestamp': (data['createdAt'] as Timestamp?)?.toDate() ??
               DateTime.fromMillisecondsSinceEpoch(0),
           'source': 'teller',
           'paymentMethod': data['affectsCash'] == true ? 'Cash' : 'Bank Transfer',
-          'receiptNumber': data['notes'] ?? '', // Till entries don't have receipt numbers yet
+          'receiptNumber': notes,
         });
       }
 
