@@ -957,6 +957,7 @@ class TellerService {
   static Future<List<Map<String, dynamic>>> getTransactionHistory({
     String? memberId,
     String? tellerId,
+    String? tillSessionId, // Filter by till session
     DateTime? startDate,
     DateTime? endDate,
     int limit = 50,
@@ -967,6 +968,7 @@ class TellerService {
       print('🔍   - tenantId: $_tenantId');
       print('🔍   - memberId: $memberId');
       print('🔍   - tellerId: $tellerId');
+      print('🔍   - tillSessionId: $tillSessionId');
       print('🔍   - includeAllSources: $includeAllSources');
 
       // Query 1: Get teller transactions (deposits, withdrawals, etc.)
@@ -998,6 +1000,10 @@ class TellerService {
       Query query2 = _db
           .collection(AppConstants.tillEntriesCol)
           .where('tenantId', isEqualTo: _tenantId);
+
+      if (tillSessionId != null) {
+        query2 = query2.where('tillSessionId', isEqualTo: tillSessionId);
+      }
 
       if (memberId != null) {
         query2 = query2.where('memberId', isEqualTo: memberId);

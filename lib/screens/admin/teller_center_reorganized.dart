@@ -78,7 +78,7 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
   @override
   void initState() {
     super.initState();
-    _historyFuture = TellerService.getTransactionHistory(limit: 100);
+    _historyFuture = _loadHistory();
     _listenTill();
   }
 
@@ -113,9 +113,21 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _loadHistory() async {
+    // Only load history for the current open till session
+    final till = _till;
+    if (till == null) {
+      return [];
+    }
+    return TellerService.getTransactionHistory(
+      limit: 100,
+      tillSessionId: till.id, // Only show transactions from current session
+    );
+  }
+
   void _refreshHistory() {
     setState(() {
-      _historyFuture = TellerService.getTransactionHistory(limit: 100);
+      _historyFuture = _loadHistory();
     });
   }
 
