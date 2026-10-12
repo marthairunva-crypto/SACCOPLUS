@@ -1022,10 +1022,18 @@ class TellerService {
       print('🔍 TellerService.getTransactionHistory: Found ${snapshot1.docs.length} teller transactions + ${snapshot2.docs.length} till entries');
 
       final results = <Map<String, dynamic>>[];
+      final seenBusinessRecords = <String>{}; // Track business records to avoid duplicates
 
-      // Add teller transactions
+      // Add teller transactions first
       for (final doc in snapshot1.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        final businessRecordId = data['id']?.toString();
+        
+        // Track this record
+        if (businessRecordId != null) {
+          seenBusinessRecords.add(businessRecordId);
+        }
+        
         results.add({
           'id': doc.id,
           ...data,
@@ -1036,9 +1044,17 @@ class TellerService {
         });
       }
 
-      // Add till entries (convert to transaction format)
+      // Add till entries (convert to transaction format) - skip if already in teller transactions
       for (final doc in snapshot2.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        final businessRecordId = data['businessRecordId']?.toString();
+        
+        // Skip if we already have this transaction from teller-transactions collection
+        if (businessRecordId != null && seenBusinessRecords.contains(businessRecordId)) {
+          print('⚠️ Skipping duplicate till entry for businessRecordId: $businessRecordId');
+          continue;
+        }
+        
         final entryType = data['entryType'] ?? '';
         
         // Map till entry types to transaction types
@@ -1060,6 +1076,8 @@ class TellerService {
           'receiptNumber': data['notes'] ?? '', // Till entries don't have receipt numbers yet
         });
       }
+
+      print('🔍 TellerService.getTransactionHistory: ${results.length} unique transactions after deduplication');
 
       // Sort combined results by timestamp
       results.sort((a, b) =>
