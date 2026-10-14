@@ -1,0 +1,2 @@
+D:/SACCOPLUS/agri_loan/android/app/.cxx/RelWithDebInfo/1935j3n5/x86_64/CMakeFiles/edit_cache.dir
+D:/SACCOPLUS/agri_loan/android/app/.cxx/RelWithDebInfo/1935j3n5/x86_64/CMakeFiles/rebuild_cache.dir

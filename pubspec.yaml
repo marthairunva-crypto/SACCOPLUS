@@ -1,0 +1,79 @@
+name: saccoplus_pro
+description: "MBADIFA SACCO — Modern SACCO & Cooperative Fintech Platform"
+publish_to: 'none'
+
+version: 2.0.1+2
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Firebase — updated for Flutter 3.44.5 compatibility
+  firebase_core: ^4.0.0
+  firebase_auth: ^6.0.0
+  cloud_firestore: ^6.0.0
+  firebase_storage: ^13.0.0
+
+  # State management
+  provider: ^6.1.2
+
+  # UI & utilities
+  google_fonts: ^6.2.1
+  fl_chart: ^0.69.0
+  intl: ^0.20.2
+  image_picker: ^1.1.2
+  file_picker: ^8.0.0
+  http: ^1.2.2
+  package_info_plus: ^8.0.0
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+  lottie: ^3.1.2
+  flutter_animate: ^4.5.0
+  shared_preferences: ^2.3.2
+  uuid: ^4.5.1
+  url_launcher: ^6.3.0
+  qr_flutter: ^4.1.0
+  pdf: ^3.11.1
+  printing: ^5.13.1
+  path_provider: ^2.1.4
+  csv: ^6.0.0
+  msix: ^3.18.0
+  device_preview: ^1.2.0
+  # device_preview: INCOMPATIBLE with Flutter 3.44.5
+  # All versions use deprecated APIs (subtitle2, headline6, backgroundColor, toggleableActiveColor)
+  # Alternative: Use Chrome DevTools device emulation or resize the window manually
+      
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+msix_config:
+  display_name: Mbadifa SACCO Pro
+  publisher_display_name: Infinitech Innovations Ltd
+  identity_name: InfinitechInnovations.MbadifaSACCO
+  msix_version: 2.0.0.0
+  logo_path: assets\images\mbadifa-logo.png
+  capabilities: internetClient
+  install_certificate: false
+  publisher: CN=Infinitech Innovations Ltd
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/mbadifa-logo.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#0D2B6B"
+  adaptive_icon_foreground: "assets/images/mbadifa-logo.png"
+  web:
+    generate: false

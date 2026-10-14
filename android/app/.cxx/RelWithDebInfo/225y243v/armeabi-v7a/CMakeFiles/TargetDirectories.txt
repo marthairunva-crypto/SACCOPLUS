@@ -1,0 +1,2 @@
+D:/agri_loan/android/app/.cxx/RelWithDebInfo/225y243v/armeabi-v7a/CMakeFiles/edit_cache.dir
+D:/agri_loan/android/app/.cxx/RelWithDebInfo/225y243v/armeabi-v7a/CMakeFiles/rebuild_cache.dir

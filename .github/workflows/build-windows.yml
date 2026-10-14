@@ -1,0 +1,106 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allows manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.5'
+          channel: 'stable'
+      
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.27.0'
+      
+      - name: Flutter Doctor
+        run: flutter doctor -v
+      
+      - name: Install dependencies
+        run: flutter pub get
+      
+      - name: Build Windows Release
+        run: |
+          # Set CMake policies to avoid deprecation warnings
+          $env:CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
+          $env:CMAKE_POLICY_DEFAULT_CMP0135 = "NEW"
+          flutter build windows --release --verbose
+      
+      - name: List build output (for debugging)
+        run: |
+          Write-Host "=== Build output structure ==="
+          Get-ChildItem -Path build\windows\x64\runner\Release -Force | Select-Object Name, Length
+          Write-Host ""
+          Write-Host "=== Searching for EXE files ==="
+          Get-ChildItem -Path build\windows -Recurse -Filter "*.exe" | Select-Object FullName
+      
+      - name: Create Portable ZIP
+        run: |
+          # The Release folder should be here
+          $releaseFolder = "build\windows\x64\runner\Release"
+          
+          if (Test-Path $releaseFolder) {
+            Write-Host "Release folder exists at: $releaseFolder"
+            Write-Host "Contents:"
+            Get-ChildItem $releaseFolder | Select-Object Name
+            
+            # Create ZIP from Release folder
+            Compress-Archive -Path "$releaseFolder\*" -DestinationPath "MBADIFA_SACCO_Portable.zip" -Force
+            Write-Host "ZIP created successfully"
+            
+            # Verify ZIP was created
+            if (Test-Path "MBADIFA_SACCO_Portable.zip") {
+              $zipSize = (Get-Item "MBADIFA_SACCO_Portable.zip").Length / 1MB
+              Write-Host "ZIP file size: $([math]::Round($zipSize, 2)) MB"
+            }
+          } else {
+            Write-Error "Release folder not found at: $releaseFolder"
+            exit 1
+          }
+      
+      - name: Upload Windows Portable
+        if: false  # Disabled to save storage - use Releases instead
+        uses: actions/upload-artifact@v4
+        with:
+          name: MBADIFA-SACCO-Portable
+          path: MBADIFA_SACCO_Portable.zip
+          retention-days: 7
+      
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main' && success()
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release v1.0.${{ github.run_number }}
+          body: |
+            ## MBADIFA SACCO System - Windows Build
+            
+            ### Download and Installation:
+            1. Download `MBADIFA_SACCO_Portable.zip`
+            2. Extract the ZIP file
+            3. Run `saccoplus_pro.exe`
+            
+            ### What's New:
+            - Auto-update system
+            - Improved loan management
+            - Search and pagination features
+            - Bug fixes and performance improvements
+          files: MBADIFA_SACCO_Portable.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

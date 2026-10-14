@@ -1,0 +1,124 @@
+{
+  "project_info": {
+    "project_number": "1014389560221",
+    "project_id": "mwiza-projects",
+    "storage_bucket": "mwiza-projects.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014389560221:android:b3109ea528916a497f9574",
+        "android_client_info": {
+          "package_name": "com.example.agri_loan"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdrvnjySa2Btru872Tm6AQCKutdCEqz_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014389560221:android:4ec956b58418a5907f9574",
+        "android_client_info": {
+          "package_name": "com.example.aischoolapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdrvnjySa2Btru872Tm6AQCKutdCEqz_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014389560221:android:80ce21867e1852ea7f9574",
+        "android_client_info": {
+          "package_name": "com.example.asthma_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdrvnjySa2Btru872Tm6AQCKutdCEqz_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014389560221:android:d83a0d2751903d7c7f9574",
+        "android_client_info": {
+          "package_name": "com.example.lifeline"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdrvnjySa2Btru872Tm6AQCKutdCEqz_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014389560221:android:7f82fb1dbae247c27f9574",
+        "android_client_info": {
+          "package_name": "com.example.livestock_disease_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdrvnjySa2Btru872Tm6AQCKutdCEqz_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014389560221:android:f80eed243d54cdf77f9574",
+        "android_client_info": {
+          "package_name": "com.example.safemama"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdrvnjySa2Btru872Tm6AQCKutdCEqz_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
