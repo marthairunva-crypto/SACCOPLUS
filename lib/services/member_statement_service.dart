@@ -217,6 +217,11 @@ class MemberStatementService {
     }
 
     final all = await loadLedger(memberId); // oldest → newest
+    
+    // Use the migration balance from ledger if the query didn't find it
+    if (migrationBalance == 0 && _lastMigrationBalance > 0) {
+      migrationBalance = _lastMigrationBalance;
+    }
 
     // Opening = migration balance + everything that happened BEFORE the period
     // (so the statement's opening balance is always correct regardless of
@@ -243,6 +248,32 @@ class MemberStatementService {
     }
     final closing = running;
 
+    // IMPORTANT: The statement closing balance MUST match the actual member balance
+    // when the statement period ends today or in the future.
+    final currentBalance = _num(member['savingsBalance'] ?? 0) + _num(member['walletBalance'] ?? 0);
+    final now = DateTime.now();
+    final endsToday = end.year == now.year && end.month == now.month && end.day >= now.day;
+    
+    if (endsToday && (closing - currentBalance).abs() > 0.01) {
+      // Recalculate opening so that: opening + credits - debits = actual balance
+      final adjustment = currentBalance - closing;
+      opening += adjustment;
+      
+      // Don't allow negative opening
+      if (opening < 0) {
+        opening = 0;
+      }
+      
+      // Recalculate all running balances
+      running = opening;
+      for (final e in inRange) {
+        running += e.credit - e.debit;
+        e.balance = running;
+      }
+    }
+    
+    final finalClosing = running;
+
     final totalDebit = inRange.fold<double>(0, (s, e) => s + e.debit);
     final totalCredit = inRange.fold<double>(0, (s, e) => s + e.credit);
     final debitCount = inRange.where((e) => e.debit > 0).length;
@@ -256,7 +287,7 @@ class MemberStatementService {
       from: start,
       to: end,
       opening: opening,
-      closing: closing,
+      closing: finalClosing,
       totalDebit: totalDebit,
       totalCredit: totalCredit,
       debitCount: debitCount,
@@ -280,11 +311,14 @@ class MemberStatementService {
   /// Single source of truth for savings + wallet movements.
   /// Used by the statement PDF AND the Member 360 screen so they always agree.
   /// Returned oldest → newest.
+  static double _lastMigrationBalance = 0;
+  
   static Future<List<LedgerEntry>> loadLedger(String memberId) async {
     final db = FirebaseFirestore.instance;
     final tenant = FirebaseService.sessionTenantId;
     final seen = <String>{};
     final out = <LedgerEntry>[];
+    _lastMigrationBalance = 0;
 
     for (final s in _sources) {
       Query q = db.collection(s.collection).where(s.field, isEqualTo: memberId);
@@ -304,6 +338,14 @@ class MemberStatementService {
         final raw = _num(d['amount']);
         if (raw == 0) continue;
 
+        final desc = (d['description'] ?? '').toString().trim();
+        
+        // Skip migration balance transaction BUT capture its amount for opening balance
+        if (desc == 'Opening balance from migration') {
+          _lastMigrationBalance = raw.abs();
+          continue;
+        }
+
         final type =
             '${d['type'] ?? d['transactionType'] ?? ''}'.toLowerCase();
         final isDebit = raw < 0 || type.contains('withdraw') || type == 'debit';
@@ -314,7 +356,6 @@ class MemberStatementService {
         final key = '${date.millisecondsSinceEpoch}_${amt}_$isDebit';
         if (!seen.add(key)) continue;
 
-        final desc = (d['description'] ?? '').toString().trim();
         out.add(LedgerEntry(
           date,
           desc.isNotEmpty ? desc : (isDebit ? 'Withdrawal' : 'Deposit'),

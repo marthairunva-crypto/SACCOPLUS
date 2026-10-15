@@ -58,6 +58,7 @@ import '../../scripts/reconcile_savings.dart';
 import '../../services/update_service.dart';
 import '../../widgets/update_dialog.dart';
 import 'admin_statement_preview.dart';
+import 'statement_date_selector.dart';
 import '../../services/member_statement_service.dart';
 import 'admin_nav_panel.dart';
 
@@ -74,11 +75,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Map<String, dynamic>? _selectedLoanData;
   bool? _navCollapsed; // null = follow window width
 
-  // Statement preview state
+  // Statement state
   StatementResult? _pendingStatement;
   String _statementMemberName = '';
+  String _statementMemberId = '';
+  Map<String, dynamic>? _statementMemberData;
   DateTime? _statementFrom;
   DateTime? _statementTo;
+
+  void _showStatementSelector(String memberId, String memberName, Map<String, dynamic> memberData) {
+    setState(() {
+      _statementMemberId = memberId;
+      _statementMemberName = memberName;
+      _statementMemberData = memberData;
+      _pendingStatement = null;
+      _selectedScreen = 'statement_selector';
+    });
+  }
 
   void _showStatement(StatementResult result, String memberName,
       DateTime from, DateTime to) {
@@ -119,11 +132,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return const MemberActivationScreen();
       case 'member_360':
         return Member360Screen(
-          onShowStatement: _showStatement,
+          onShowStatement: _showStatementSelector,
+        );
+      case 'statement_selector':
+        if (_statementMemberId.isEmpty || _statementMemberData == null) {
+          return Member360Screen(onShowStatement: _showStatementSelector);
+        }
+        return StatementDateSelector(
+          memberId: _statementMemberId,
+          memberName: _statementMemberName,
+          memberData: _statementMemberData!,
+          onStatementGenerated: _showStatement,
         );
       case 'statement_preview':
         if (_pendingStatement == null) {
-          return Member360Screen(onShowStatement: _showStatement);
+          return Member360Screen(onShowStatement: _showStatementSelector);
         }
         return AdminStatementPreview(
           pdfBytes: _pendingStatement!.bytes,
@@ -131,7 +154,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           memberName: _statementMemberName,
           from: _statementFrom!,
           to: _statementTo!,
-          onBack: () => setState(() => _selectedScreen = 'member_360'),
+          onBack: () => setState(() => _selectedScreen = 'statement_selector'),
         );
       case 'kyc':
         return const KYCVerificationScreen();

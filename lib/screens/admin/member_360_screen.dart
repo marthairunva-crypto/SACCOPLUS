@@ -8,14 +8,14 @@ import '../../core/theme.dart';
 import '../../core/firebase_service.dart';
 import '../../services/member_statement_service.dart';
 import 'admin_statement_preview.dart';
+import 'statement_date_selector.dart';
 
 class Member360Screen extends StatefulWidget {
   final String? memberId;
-  /// Called when the statement is ready — receives the result so the
-  /// dashboard can display the preview in its own content panel.
+  /// Called when the statement button is clicked — receives member info
+  /// so the dashboard can display the date selector in its content panel.
   /// If null, falls back to pushing a new route (standalone use).
-  final void Function(StatementResult result, String memberName,
-      DateTime from, DateTime to)? onShowStatement;
+  final void Function(String memberId, String memberName, Map<String, dynamic> memberData)? onShowStatement;
 
   const Member360Screen({
     super.key,
@@ -291,104 +291,49 @@ class _Member360ScreenState extends State<Member360Screen>
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  Future<void> _printMemberStatement() async {
+  void _printMemberStatement() {
     if (_memberData == null || _selectedMemberId == null) return;
 
-    final range = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(
-        start: DateTime.now().subtract(const Duration(days: 30)),
-        end: DateTime.now(),
-      ),
-      helpText: 'Select statement period',
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: AppTheme.primary,
-            onPrimary: Colors.white,
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (range == null || !mounted) return;
+    final memberName = _nameOf(_memberData!).isEmpty ? 'Member' : _nameOf(_memberData!);
 
-    bool dialogOpen = true;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                    color: AppTheme.primary, strokeWidth: 3),
-              ),
-              const SizedBox(width: 16),
-              Flexible(
-                child: Text('Generating statement…',
-                    style: GoogleFonts.poppins(fontSize: 14)),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    ).then((_) => dialogOpen = false);
-
-    void closeDialog() {
-      if (dialogOpen && mounted) {
-        dialogOpen = false;
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-    }
-
-    try {
-      final result = await MemberStatementService.generateForAdmin(
-        memberId: _selectedMemberId!,
-        from: range.start,
-        to: range.end,
-      );
-
-      closeDialog();
-      if (!mounted) return;
-
-      // If the parent (dashboard) provided a callback, use it so the preview
-      // stays inside the dashboard content panel. Otherwise push a route.
-      if (widget.onShowStatement != null) {
-        widget.onShowStatement!(
-          result,
-          _nameOf(_memberData!).isEmpty ? 'Member' : _nameOf(_memberData!),
-          range.start,
-          range.end,
-        );
-      } else {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminStatementPreview(
-              pdfBytes: result.bytes,
-              filename: result.filename,
-              memberName: _nameOf(_memberData!).isEmpty
-                  ? 'Member'
-                  : _nameOf(_memberData!),
-              from: range.start,
-              to: range.end,
+    // If embedded in dashboard, show date selector. Otherwise navigate.
+    if (widget.onShowStatement != null) {
+      widget.onShowStatement!(_selectedMemberId!, memberName, _memberData!);
+    } else {
+      // Standalone: navigate to date selector screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(
+              title: Text('Generate Statement',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black87,
+              elevation: 0,
+            ),
+            body: StatementDateSelector(
+              memberId: _selectedMemberId!,
+              memberName: memberName,
+              memberData: _memberData!,
+              onStatementGenerated: (result, name, from, to) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AdminStatementPreview(
+                      pdfBytes: result.bytes,
+                      filename: result.filename,
+                      memberName: name,
+                      from: from,
+                      to: to,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-        );
-      }
-    } catch (e) {
-      closeDialog();
-      _snack('Error generating statement: $e', color: AppTheme.error);
+        ),
+      );
     }
   }
 
