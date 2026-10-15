@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -196,36 +195,48 @@ class FirebaseService {
     }
   }
 
-  /// Send SMS via Firebase Cloud Function (for web platform)
+  /// Send SMS via proxy server (for web platform)
   static Future<bool> _sendSmsViaCloudFunction(String number, String message) async {
     try {
       debugPrint('📤 ========================================');
-      debugPrint('📤 Sending SMS via Cloud Function (WEB)');
+      debugPrint('📤 Sending SMS via Proxy Server (WEB)');
       debugPrint('📤 To: $number');
       debugPrint('📤 Message length: ${message.length} characters');
 
-      // Call Cloud Function
-      final callable = FirebaseFunctions.instance.httpsCallable('sendSMS');
-      final result = await callable.call({
-        'phone': number,
-        'message': message,
-        'sender': _egoSender,
-      });
+      // Call your proxy server (change URL after deployment)
+      const proxyUrl = 'http://localhost:3000/send-sms'; // Change to your deployed URL
+      
+      final response = await http.post(
+        Uri.parse(proxyUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Proxy-Key': 'saccoplus_pro_2025_proxy_key', // Your proxy auth key
+        },
+        body: jsonEncode({
+          'phone': number,
+          'message': message,
+          'sender': _egoSender,
+        }),
+      );
 
-      debugPrint('📥 Cloud Function Response: ${result.data}');
+      debugPrint('📥 Proxy Response Status: ${response.statusCode}');
+      debugPrint('📥 Proxy Response Body: ${response.body}');
 
-      if (result.data['success'] == true) {
-        debugPrint('✅ SMS sent successfully via Cloud Function!');
-        debugPrint('✅ ========================================');
-        return true;
-      } else {
-        debugPrint('❌ Cloud Function SMS failed: ${result.data['message']}');
-        debugPrint('❌ ========================================');
-        return false;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          debugPrint('✅ SMS sent successfully via Proxy!');
+          debugPrint('✅ ========================================');
+          return true;
+        }
       }
+      
+      debugPrint('❌ SMS Proxy failed: ${response.body}');
+      debugPrint('❌ ========================================');
+      return false;
     } catch (e, stackTrace) {
       debugPrint('❌ ========================================');
-      debugPrint('❌ Cloud Function SMS Exception!');
+      debugPrint('❌ SMS Proxy Exception!');
       debugPrint('❌ Error: $e');
       debugPrint('❌ Stack trace:');
       debugPrint(stackTrace.toString());

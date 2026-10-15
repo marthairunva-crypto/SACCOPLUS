@@ -502,6 +502,70 @@ app.post('/ai/chat', async (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+// SMS SENDING — EgoSMS API (for OTP and notifications)
+// POST /send-sms  { phone, message, sender? }
+// Bypasses CORS restrictions for web app SMS sending
+// ════════════════════════════════════════════════════════════════════════════
+
+const EGOSMS_USERNAME = process.env.EGOSMS_USERNAME || 'INFINITECH';
+const EGOSMS_PASSWORD = process.env.EGOSMS_PASSWORD || 'Moses,123##';
+
+app.post('/send-sms', async (req, res) => {
+  try {
+    const { phone, message, sender = 'MBADIFA' } = req.body;
+
+    // Validate input
+    if (!phone || !message) {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone and message are required'
+      });
+    }
+
+    console.log(`[SMS] Sending to: ${phone} | Sender: ${sender}`);
+    console.log(`[SMS] Message preview: ${message.substring(0, 60)}...`);
+
+    // Build EgoSMS API URL
+    const url = `https://www.egosms.co/api/v1/plain/` +
+      `?number=${encodeURIComponent(phone)}` +
+      `&message=${encodeURIComponent(message)}` +
+      `&username=${encodeURIComponent(EGOSMS_USERNAME)}` +
+      `&password=${encodeURIComponent(EGOSMS_PASSWORD)}` +
+      `&sender=${encodeURIComponent(sender)}`;
+
+    // Call EgoSMS API
+    const r = await axios.get(url, { timeout: 10000 });
+    
+    console.log(`[SMS] EgoSMS Status: ${r.status}`);
+    console.log(`[SMS] EgoSMS Response: ${r.data}`);
+
+    if (r.status === 200) {
+      console.log('[SMS] Sent successfully');
+      return res.json({
+        success: true,
+        message: 'SMS sent successfully',
+        statusCode: r.status,
+        response: r.data
+      });
+    } else {
+      console.log(`[SMS] Failed with status: ${r.status}`);
+      return res.status(500).json({
+        success: false,
+        error: `SMS API returned status ${r.status}`,
+        statusCode: r.status,
+        response: r.data
+      });
+    }
+  } catch (e) {
+    console.error('[SMS] Error:', e.message);
+    return res.status(500).json({
+      success: false,
+      error: e.message
+    });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✓ SACCOPLUS Pro Proxy v2.1.0 running on port ${PORT} — markets: UG KE RW CD ZM CM BJ CI GA CG SN SL`));
+app.listen(PORT, () => console.log(`SACCOPLUS Pro Proxy v2.2.0 running on port ${PORT} — markets: UG KE RW CD ZM CM BJ CI GA CG SN SL + SMS`));
