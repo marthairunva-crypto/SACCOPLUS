@@ -1,0 +1,75 @@
+mutation SeedDatabase @transaction {
+  member_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      fullName: "Alice Smith",
+      email: "alice@example.com",
+      phone: "555-0101",
+      status: "ACTIVE"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440002",
+      fullName: "Bob Jones",
+      email: "bob@example.com",
+      phone: "555-0102",
+      status: "ACTIVE"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440003",
+      fullName: "Charlie Brown",
+      email: "charlie@example.com",
+      phone: "555-0103",
+      status: "INACTIVE"
+    }
+  ])
+  account_insertMany(data: [
+    {
+      id: "660e8400-e29b-41d4-a716-446655440001",
+      memberId: "550e8400-e29b-41d4-a716-446655440001",
+      totalSavings: 1500.50,
+      outstandingLoans: 0.0
+    },
+    {
+      id: "660e8400-e29b-41d4-a716-446655440002",
+      memberId: "550e8400-e29b-41d4-a716-446655440002",
+      totalSavings: 500.00,
+      outstandingLoans: 2000.00
+    }
+  ])
+  transaction_insertMany(data: [
+    {
+      memberId: "550e8400-e29b-41d4-a716-446655440001",
+      amount: 500.0,
+      type: "DEPOSIT",
+      date: "2023-10-01T10:00:00Z"
+    },
+    {
+      memberId: "550e8400-e29b-41d4-a716-446655440002",
+      amount: 100.0,
+      type: "WITHDRAWAL",
+      date: "2023-10-02T12:00:00Z"
+    }
+  ])
+  loan_insertMany(data: [
+    {
+      id: "770e8400-e29b-41d4-a716-446655440001",
+      memberId: "550e8400-e29b-41d4-a716-446655440002",
+      principalAmount: 2000.0,
+      interestRate: 5.5,
+      status: "APPROVED",
+      dueDate: "2024-12-31"
+    }
+  ])
+  loanRepayment_insertMany(data: [
+    {
+      loanId: "770e8400-e29b-41d4-a716-446655440001",
+      amountPaid: 200.0,
+      paymentDate: "2023-11-01T09:00:00Z"
+    },
+    {
+      loanId: "770e8400-e29b-41d4-a716-446655440001",
+      amountPaid: 200.0,
+      paymentDate: "2023-12-01T09:00:00Z"
+    }
+  ])
+}

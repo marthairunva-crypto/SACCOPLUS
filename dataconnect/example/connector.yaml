@@ -1,0 +1,17 @@
+connectorId: example
+generate:
+  dartSdk:
+    - outputDir: ..\..\lib\dataconnect_generated
+      package: dataconnect_generated/generated.dart
+      clientCache: {}
+  adminNodeSdk:
+    - outputDir: ..\..\src\dataconnect-admin-generated
+      package: "@dataconnect/admin-generated"
+      packageJsonDir: ..\..
+  javascriptSdk:
+    - outputDir: ..\..\proxy\src\dataconnect-generated
+      package: "@dataconnect/generated"
+      packageJsonDir: ..\..\proxy
+      react: false
+      angular: false
+      clientCache: {}

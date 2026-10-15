@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@dataconnect/admin-generated": "file:src/dataconnect-admin-generated",
     "csv-parser": "^3.2.1",
     "firebase-admin": "^14.5.0"
   }

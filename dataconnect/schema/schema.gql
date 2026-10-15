@@ -1,0 +1,41 @@
+type Member @table {
+  fullName: String!
+  email: String!
+  phone: String!
+  status: String!
+  profilePhotoUrl: String
+  dateJoined: Date
+}
+
+type Account @table {
+  totalSavings: Float!
+  outstandingLoans: Float!
+  lastContributionDate: Date
+  member: Member!
+}
+
+type Transaction @table {
+  amount: Float!
+  type: String!
+  date: Timestamp!
+  referenceNumber: String
+  notes: String
+  member: Member!
+}
+
+type Loan @table {
+  principalAmount: Float!
+  interestRate: Float!
+  status: String!
+  dueDate: Date!
+  approvalDate: Date
+  collateralDetails: String
+  member: Member!
+}
+
+type LoanRepayment @table {
+  amountPaid: Float!
+  paymentDate: Timestamp!
+  receiptUrl: String
+  loan: Loan!
+}

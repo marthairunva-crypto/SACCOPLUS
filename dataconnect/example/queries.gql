@@ -1,0 +1,123 @@
+mutation CreateMemberData($fullName: String!, $email: String!, $phone: String!) @auth(level: USER) {
+  member_insert(data: {
+    id_expr: "auth.uid",
+    fullName: $fullName,
+    email: $email,
+    phone: $phone,
+    status: "active"
+  })
+}
+
+mutation UpdateMemberProfile($fullName: String!) @auth(level: USER) {
+  member_update(key: {id_expr: "auth.uid"}, data: {fullName: $fullName})
+}
+
+mutation DeleteMember @auth(level: USER) {
+  member_delete(key: {id_expr: "auth.uid"})
+}
+
+query GetMyProfile @auth(level: USER) {
+  member(key: {id_expr: "auth.uid"}) {
+    fullName
+    email
+    status
+  }
+}
+
+mutation CreateAccount($totalSavings: Float!) @auth(level: USER) {
+  account_insert(data: {
+    memberId_expr: "auth.uid",
+    totalSavings: $totalSavings,
+    outstandingLoans: 0.0
+  })
+}
+
+mutation UpdateAccountSavings($id: UUID!, $totalSavings: Float!) @auth(level: USER) {
+  account_update(key: {id: $id}, data: {totalSavings: $totalSavings})
+}
+
+mutation DeleteAccount($id: UUID!) @auth(level: USER) {
+  account_delete(key: {id: $id})
+}
+
+query ListMyAccounts @auth(level: USER) {
+  accounts(where: {memberId: {eq_expr: "auth.uid"}}) {
+    id
+    totalSavings
+    outstandingLoans
+  }
+}
+
+mutation CreateLoan($principal: Float!, $interest: Float!, $dueDate: Date!) @auth(level: USER) {
+  loan_insert(data: {
+    memberId_expr: "auth.uid",
+    principalAmount: $principal,
+    interestRate: $interest,
+    status: "requested",
+    dueDate: $dueDate
+  })
+}
+
+mutation UpdateLoanStatus($id: UUID!, $status: String!) @auth(level: USER) {
+  loan_update(key: {id: $id}, data: {status: $status})
+}
+
+mutation DeleteLoan($id: UUID!) @auth(level: USER) {
+  loan_delete(key: {id: $id})
+}
+
+query GetLoanDetails($id: UUID!) @auth(level: USER) {
+  loan(key: {id: $id}) {
+    principalAmount
+    status
+    dueDate
+  }
+}
+
+mutation AddRepayment($loanId: UUID!, $amount: Float!) @auth(level: USER) {
+  loanRepayment_insert(data: {
+    loanId: $loanId,
+    amountPaid: $amount,
+    paymentDate_time: {now: true}
+  })
+}
+
+mutation UpdateRepayment($id: UUID!, $amount: Float!) @auth(level: USER) {
+  loanRepayment_update(key: {id: $id}, data: {amountPaid: $amount})
+}
+
+mutation DeleteRepayment($id: UUID!) @auth(level: USER) {
+  loanRepayment_delete(key: {id: $id})
+}
+
+query ListLoanRepayments($loanId: UUID!) @auth(level: USER) {
+  loanRepayments(where: {loanId: {eq: $loanId}}) {
+    amountPaid
+    paymentDate
+  }
+}
+
+mutation RecordTransaction($amount: Float!, $type: String!) @auth(level: USER) {
+  transaction_insert(data: {
+    memberId_expr: "auth.uid",
+    amount: $amount,
+    type: $type,
+    date_time: {now: true}
+  })
+}
+
+mutation UpdateTransactionNotes($id: UUID!, $notes: String!) @auth(level: USER) {
+  transaction_update(key: {id: $id}, data: {notes: $notes})
+}
+
+mutation DeleteTransaction($id: UUID!) @auth(level: USER) {
+  transaction_delete(key: {id: $id})
+}
+
+query ListMyTransactions @auth(level: USER) {
+  transactions(where: {memberId: {eq_expr: "auth.uid"}}) {
+    amount
+    type
+    date
+  }
+}

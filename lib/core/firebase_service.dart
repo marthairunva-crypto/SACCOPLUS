@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -137,10 +138,17 @@ class FirebaseService {
   }
 
   /// Send a raw SMS via EgoSMS GET API.
+  /// On web, uses Cloud Function to bypass CORS. On mobile, direct API call.
   static Future<bool> _sendEgoSms(String number, String message) async {
+    // Check if running on web
+    if (kIsWeb) {
+      return await _sendSmsViaCloudFunction(number, message);
+    }
+
+    // Mobile/Desktop: Direct API call
     try {
       debugPrint('📤 ========================================');
-      debugPrint('📤 Attempting to send SMS');
+      debugPrint('📤 Attempting to send SMS (Direct API)');
       debugPrint('📤 To: $number');
       debugPrint('📤 Message length: ${message.length} characters');
       debugPrint('📤 Message preview: ${message.substring(0, message.length > 80 ? 80 : message.length)}...');
@@ -180,6 +188,44 @@ class FirebaseService {
     } catch (e, stackTrace) {
       debugPrint('❌ ========================================');
       debugPrint('❌ SMS Exception occurred!');
+      debugPrint('❌ Error: $e');
+      debugPrint('❌ Stack trace:');
+      debugPrint(stackTrace.toString());
+      debugPrint('❌ ========================================');
+      return false;
+    }
+  }
+
+  /// Send SMS via Firebase Cloud Function (for web platform)
+  static Future<bool> _sendSmsViaCloudFunction(String number, String message) async {
+    try {
+      debugPrint('📤 ========================================');
+      debugPrint('📤 Sending SMS via Cloud Function (WEB)');
+      debugPrint('📤 To: $number');
+      debugPrint('📤 Message length: ${message.length} characters');
+
+      // Call Cloud Function
+      final callable = FirebaseFunctions.instance.httpsCallable('sendSMS');
+      final result = await callable.call({
+        'phone': number,
+        'message': message,
+        'sender': _egoSender,
+      });
+
+      debugPrint('📥 Cloud Function Response: ${result.data}');
+
+      if (result.data['success'] == true) {
+        debugPrint('✅ SMS sent successfully via Cloud Function!');
+        debugPrint('✅ ========================================');
+        return true;
+      } else {
+        debugPrint('❌ Cloud Function SMS failed: ${result.data['message']}');
+        debugPrint('❌ ========================================');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ ========================================');
+      debugPrint('❌ Cloud Function SMS Exception!');
       debugPrint('❌ Error: $e');
       debugPrint('❌ Stack trace:');
       debugPrint(stackTrace.toString());
