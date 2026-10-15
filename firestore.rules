@@ -443,6 +443,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── Login Attempts (for rate limiting and security) ───────────────────────
+    match /login_attempts/{docId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    // ── OTP Storage (for web OTP verification) ─────────────────────────────────
+    match /otps/{docId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     // DENY EVERYTHING ELSE
     // ════════════════════════════════════════════════════════════════════════
