@@ -28,8 +28,10 @@ app.use((req, res, next) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
-  // Skip auth for health check and root
-  if (req.path === '/health' || req.path === '/') return next();
+  // Skip auth for health check, root, and SMS endpoint
+  if (req.path === '/health' || req.path === '/' || req.path === '/send-sms') {
+    return next();
+  }
   
   const key = req.headers['x-proxy-key'];
   if (!PROXY_KEYS.has(key)) {

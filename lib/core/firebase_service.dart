@@ -171,6 +171,7 @@ class FirebaseService {
   /// Send SMS via proxy server (for web platform)
   static Future<bool> _sendSmsViaCloudFunction(String number, String message) async {
     try {
+      print('[SMS WEB] Attempting to send via proxy to: $number');
       const proxyUrl = 'https://marzpay-proxy.onrender.com/send-sms';
       
       final response = await http.post(
@@ -183,13 +184,21 @@ class FirebaseService {
         }),
       );
 
+      print('[SMS WEB] Proxy response status: ${response.statusCode}');
+      print('[SMS WEB] Proxy response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          print('[SMS WEB] SMS sent successfully!');
+          return true;
+        }
       }
       
+      print('[SMS WEB] SMS failed');
       return false;
     } catch (e) {
+      print('[SMS WEB] Exception: $e');
       return false;
     }
   }

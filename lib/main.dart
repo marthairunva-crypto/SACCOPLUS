@@ -24,72 +24,9 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Print Firebase console links to CMD
-  debugPrint('');
-  debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
-  debugPrint('║                      FIREBASE CONSOLE LINKS                           ║');
-  debugPrint('╠═══════════════════════════════════════════════════════════════════════╣');
-  debugPrint('║                                                                       ║');
-  debugPrint('║  Firestore Database:                                                  ║');
-  debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore ║');
-  debugPrint('║                                                                       ║');
-  debugPrint('║  Firestore Indexes:                                                   ║');
-  debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore/indexes ║');
-  debugPrint('║                                                                       ║');
-  debugPrint('║  TIP: Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open          ║');
-  debugPrint('║  Or select the link and copy with Ctrl+C / Cmd+C                     ║');
-  debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
-  debugPrint('');
-
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-
-    // Check if it's a Firestore index error
-    final errorString = details.exception.toString();
-    if (errorString.contains('index') && errorString.contains('firebase')) {
-      debugPrint('');
-      debugPrint('╔═══════════════════════════════════════════════════════════════════════╗');
-      debugPrint('║                   FIRESTORE INDEX REQUIRED                            ║');
-      debugPrint('╠═══════════════════════════════════════════════════════════════════════╣');
-      debugPrint('║                                                                       ║');
-
-      // Extract and print the index URL if present
-      final urlMatch = RegExp(r'https://console\.firebase\.google\.com[^\s\)]+')
-          .firstMatch(errorString);
-      
-      String? indexUrl;
-      if (urlMatch != null) {
-        indexUrl = urlMatch.group(0)!;
-        debugPrint('║  CLICK THIS LINK TO AUTO-CREATE THE INDEX:                           ║');
-        debugPrint('║                                                                       ║');
-        debugPrint('║  $indexUrl');
-        debugPrint('║                                                                       ║');
-        debugPrint('║  TIP: Ctrl+Click (Windows/Linux) or Cmd+Click (Mac) to open         ║');
-        debugPrint('║  Or copy the link above with Ctrl+C / Cmd+C                          ║');
-        debugPrint('║  The link will automatically create the required index               ║');
-      } else {
-        debugPrint('║  Manually create indexes at:                                         ║');
-        debugPrint('║  https://console.firebase.google.com/project/mwiza-projects/firestore/indexes ║');
-        debugPrint('║                                                                       ║');
-        debugPrint('║  TIP: Copy the link above and paste in your browser                  ║');
-      }
-      debugPrint('║                                                                       ║');
-      debugPrint('╚═══════════════════════════════════════════════════════════════════════╝');
-      debugPrint('');
-
-      // Show dialog with copyable link
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final context = navigatorKey.currentContext;
-        if (context != null) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => FirebaseIndexDialog(indexUrl: indexUrl),
-          );
-        }
-      });
-    }
   };
 
   // Run app with DevicePreview
