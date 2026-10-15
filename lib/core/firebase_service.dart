@@ -203,14 +203,14 @@ class FirebaseService {
       debugPrint('📤 To: $number');
       debugPrint('📤 Message length: ${message.length} characters');
 
-      // Call your proxy server (change URL after deployment)
-      const proxyUrl = 'http://localhost:3000/send-sms'; // Change to your deployed URL
+      // Call your deployed proxy server
+      const proxyUrl = 'https://marzpay-proxy.onrender.com/send-sms';
       
       final response = await http.post(
         Uri.parse(proxyUrl),
         headers: {
           'Content-Type': 'application/json',
-          'X-Proxy-Key': 'saccoplus_pro_2025_proxy_key', // Your proxy auth key
+          'X-Proxy-Key': 'saccoplus_pro_2025_proxy_key',
         },
         body: jsonEncode({
           'phone': number,
