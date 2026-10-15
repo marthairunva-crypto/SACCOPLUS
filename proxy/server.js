@@ -78,14 +78,10 @@ app.get('/', (_, res) => {
 // Optional: currency (DRC only: 'CDF' | 'USD'), description, callback_url
 app.post('/collect', async (req, res) => {
   try {
-    const country  = req.body.country  ?? 'UG';
-    const currency = req.body.currency ?? '';
-    console.log(`[COLLECT] country=${country}${currency ? ' currency=' + currency : ''} amount=${req.body.amount} phone=${req.body.phone_number}`);
     const r = await axios.post(`${MARZPAY_BASE}/collect-money`, req.body, { headers: marzHeaders });
-    console.log(`[COLLECT] → status=${r.data?.status} txn=${r.data?.data?.transaction?.uuid}`);
     res.json(r.data);
   } catch (e) {
-    console.error('[COLLECT]', e.message, e.response?.data);
+    console.error('[COLLECT] Error');
     res.json(e.response?.data ?? { status: 'error', message: e.message });
   }
 });
@@ -95,14 +91,10 @@ app.post('/collect', async (req, res) => {
 // Optional: currency (DRC only), description, callback_url
 app.post('/withdraw', async (req, res) => {
   try {
-    const country  = req.body.country  ?? 'UG';
-    const currency = req.body.currency ?? '';
-    console.log(`[WITHDRAW] country=${country}${currency ? ' currency=' + currency : ''} amount=${req.body.amount} phone=${req.body.phone_number}`);
     const r = await axios.post(`${MARZPAY_BASE}/send-money`, req.body, { headers: marzHeaders });
-    console.log(`[WITHDRAW] → status=${r.data?.status} txn=${r.data?.data?.transaction?.uuid}`);
     res.json(r.data);
   } catch (e) {
-    console.error('[WITHDRAW]', e.message, e.response?.data);
+    console.error('[WITHDRAW] Error');
     res.json(e.response?.data ?? { status: 'error', message: e.message });
   }
 });
@@ -515,7 +507,6 @@ app.post('/send-sms', async (req, res) => {
   try {
     const { phone, message, sender = 'MBADIFA' } = req.body;
 
-    // Validate input
     if (!phone || !message) {
       return res.status(400).json({
         success: false,
@@ -523,10 +514,6 @@ app.post('/send-sms', async (req, res) => {
       });
     }
 
-    console.log(`[SMS] Sending to: ${phone} | Sender: ${sender}`);
-    console.log(`[SMS] Message preview: ${message.substring(0, 60)}...`);
-
-    // Build EgoSMS API URL
     const url = `https://www.egosms.co/api/v1/plain/` +
       `?number=${encodeURIComponent(phone)}` +
       `&message=${encodeURIComponent(message)}` +
@@ -534,34 +521,23 @@ app.post('/send-sms', async (req, res) => {
       `&password=${encodeURIComponent(EGOSMS_PASSWORD)}` +
       `&sender=${encodeURIComponent(sender)}`;
 
-    // Call EgoSMS API
     const r = await axios.get(url, { timeout: 10000 });
-    
-    console.log(`[SMS] EgoSMS Status: ${r.status}`);
-    console.log(`[SMS] EgoSMS Response: ${r.data}`);
 
     if (r.status === 200) {
-      console.log('[SMS] Sent successfully');
       return res.json({
         success: true,
-        message: 'SMS sent successfully',
-        statusCode: r.status,
-        response: r.data
+        message: 'SMS sent successfully'
       });
     } else {
-      console.log(`[SMS] Failed with status: ${r.status}`);
       return res.status(500).json({
         success: false,
-        error: `SMS API returned status ${r.status}`,
-        statusCode: r.status,
-        response: r.data
+        error: 'SMS delivery failed'
       });
     }
   } catch (e) {
-    console.error('[SMS] Error:', e.message);
     return res.status(500).json({
       success: false,
-      error: e.message
+      error: 'SMS service error'
     });
   }
 });

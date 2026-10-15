@@ -146,12 +146,6 @@ class FirebaseService {
 
     // Mobile/Desktop: Direct API call
     try {
-      debugPrint('📤 ========================================');
-      debugPrint('📤 Attempting to send SMS (Direct API)');
-      debugPrint('📤 To: $number');
-      debugPrint('📤 Message length: ${message.length} characters');
-      debugPrint('📤 Message preview: ${message.substring(0, message.length > 80 ? 80 : message.length)}...');
-      
       final uri = Uri.parse(
         'https://www.egosms.co/api/v1/plain/'
         '?number=${Uri.encodeComponent(number)}'
@@ -161,36 +155,15 @@ class FirebaseService {
         '&sender=${Uri.encodeComponent(_egoSender)}',
       );
       
-      debugPrint('🌐 SMS API URL: ${uri.toString().split('&password=')[0]}&password=***');
-      debugPrint('📤 Sender ID: $_egoSender');
-      
       final res = await http.get(uri).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          throw Exception('SMS API request timed out after 10 seconds');
+          throw Exception('SMS API request timed out');
         },
       );
       
-      debugPrint('📥 SMS API Response Status: ${res.statusCode}');
-      debugPrint('📥 SMS API Response Body: ${res.body}');
-      
-      if (res.statusCode == 200) {
-        debugPrint('✅ SMS sent successfully!');
-        debugPrint('✅ ========================================');
-        return true;
-      } else {
-        debugPrint('❌ SMS API returned error status: ${res.statusCode}');
-        debugPrint('❌ Response body: ${res.body}');
-        debugPrint('❌ ========================================');
-        return false;
-      }
-    } catch (e, stackTrace) {
-      debugPrint('❌ ========================================');
-      debugPrint('❌ SMS Exception occurred!');
-      debugPrint('❌ Error: $e');
-      debugPrint('❌ Stack trace:');
-      debugPrint(stackTrace.toString());
-      debugPrint('❌ ========================================');
+      return res.statusCode == 200;
+    } catch (e) {
       return false;
     }
   }
@@ -198,20 +171,11 @@ class FirebaseService {
   /// Send SMS via proxy server (for web platform)
   static Future<bool> _sendSmsViaCloudFunction(String number, String message) async {
     try {
-      debugPrint('📤 ========================================');
-      debugPrint('📤 Sending SMS via Proxy Server (WEB)');
-      debugPrint('📤 To: $number');
-      debugPrint('📤 Message length: ${message.length} characters');
-
-      // Call your deployed proxy server
       const proxyUrl = 'https://marzpay-proxy.onrender.com/send-sms';
       
       final response = await http.post(
         Uri.parse(proxyUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Proxy-Key': 'saccoplus_pro_2025_proxy_key',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'phone': number,
           'message': message,
@@ -219,28 +183,13 @@ class FirebaseService {
         }),
       );
 
-      debugPrint('📥 Proxy Response Status: ${response.statusCode}');
-      debugPrint('📥 Proxy Response Body: ${response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          debugPrint('✅ SMS sent successfully via Proxy!');
-          debugPrint('✅ ========================================');
-          return true;
-        }
+        return data['success'] == true;
       }
       
-      debugPrint('❌ SMS Proxy failed: ${response.body}');
-      debugPrint('❌ ========================================');
       return false;
-    } catch (e, stackTrace) {
-      debugPrint('❌ ========================================');
-      debugPrint('❌ SMS Proxy Exception!');
-      debugPrint('❌ Error: $e');
-      debugPrint('❌ Stack trace:');
-      debugPrint(stackTrace.toString());
-      debugPrint('❌ ========================================');
+    } catch (e) {
       return false;
     }
   }
