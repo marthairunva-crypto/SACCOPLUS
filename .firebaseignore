@@ -1,0 +1,45 @@
+# Firebase ignore file
+# Don't upload these to Firebase Hosting
+
+# IDE
+.vscode/
+.kiro/
+.idea/
+
+# Build artifacts (except web)
+build/*
+!build/web/
+
+# Development
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# Source code (don't upload source)
+lib/
+test/
+android/
+ios/
+windows/
+linux/
+macos/
+
+# Config files
+pubspec.yaml
+pubspec.lock
+analysis_options.yaml
+*.iml
+*.md
+
+# Git
+.git/
+.gitignore
+
+# Misc
+*.log
+*.pyc
+*.swp
+.DS_Store
