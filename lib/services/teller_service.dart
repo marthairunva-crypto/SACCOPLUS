@@ -164,10 +164,11 @@ class TellerService {
           final actualAmount = sharesPurchased * sharePrice;
 
           updateData['sharesBalance'] = currentBalance + actualAmount;
-          // FIX: parentheses added so the purchased shares are really added
-          // to the existing count (before, `?? 0 + n` ignored n).
           updateData['sharesCount'] =
               ((memberData['sharesCount'] as num?)?.toInt() ?? 0) + sharesPurchased;
+          // ALSO update totalShares for shares screen compatibility
+          updateData['totalShares'] =
+              ((memberData['totalShares'] as num?)?.toInt() ?? 0) + sharesPurchased;
           newBalanceForMessage = (currentBalance + actualAmount).toInt();
 
           // Create shares transaction
