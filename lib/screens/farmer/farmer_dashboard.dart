@@ -496,13 +496,18 @@ class _HomeTabState extends State<_HomeTab> {
         FirebaseService.getUserProfile(_memberId),
         FirebaseService.getFarmerLoansOnce(_memberId),
         FirebaseService.getFarmerRepaymentsOnce(_memberId),
-        FirebaseService.getWallet(_memberId),
+        FirebaseService.getSavingsAccount(_memberId), // Changed from getWallet - SACCO wallet = savings
       ]);
       final profile    = results[0] as Map<String, dynamic>?;
       final loans      = results[1] as List<Map<String, dynamic>>;
       final repayments = results[2] as List<Map<String, dynamic>>;
-      final wallet     = results[3] as Map<String, dynamic>;
+      final savingsAccount = results[3] as Map<String, dynamic>?;
       final fmtLocal   = NumberFormat('#,###', 'en_US');
+
+      // Calculate total savings balance (voluntary + compulsory)
+      final voluntary = (savingsAccount?['voluntaryBalance'] as num?)?.toInt() ?? 0;
+      final compulsory = (savingsAccount?['compulsoryBalance'] as num?)?.toInt() ?? 0;
+      final savingsBalance = voluntary + compulsory;
 
       int active = 0, pending = 0, overdue = 0, paid = 0, totalBorrowed = 0;
       for (final d in loans) {
@@ -535,7 +540,7 @@ class _HomeTabState extends State<_HomeTab> {
         _pending = pending;
         _overdue = overdue;
         _paid = paid;
-        _walletBalance = (wallet['balance'] as num?)?.toInt() ?? 0;
+        _walletBalance = savingsBalance; // Changed from wallet['balance'] - SACCO wallet = savings
         _recent = recent; _loading = false;
       });
     } catch (_) { if (mounted) setState(() => _loading = false); }

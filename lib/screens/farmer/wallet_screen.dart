@@ -36,15 +36,43 @@ class _WalletScreenState extends State<WalletScreen> {
     final uid = FirebaseService.sessionUid;
     if (uid.isEmpty) return;
     try {
+      // SACCO WALLET = SAVINGS ACCOUNT
+      // Wallet and Savings are the same in a SACCO - show savings data here
       final results = await Future.wait([
-        FirebaseService.getWallet(uid),
-        FirebaseService.getWalletTransactions(uid),
+        FirebaseService.getSavingsAccount(uid),
+        FirebaseService.getSavingsTransactions(uid),
       ]);
       if (!mounted) return;
+      
+      final savingsAccount = results[0] as Map<String, dynamic>?;
+      final savingsTxns = results[1] as List<Map<String, dynamic>>;
+      
+      // Calculate total savings balance (voluntary + compulsory)
+      final voluntary = (savingsAccount?['voluntaryBalance'] as num?)?.toInt() ?? 0;
+      final compulsory = (savingsAccount?['compulsoryBalance'] as num?)?.toInt() ?? 0;
+      final totalBalance = voluntary + compulsory;
+      
+      // Calculate total deposited and withdrawn from transactions
+      int totalDeposited = 0;
+      int totalWithdrawn = 0;
+      for (final txn in savingsTxns) {
+        final type = (txn['type'] as String?)?.toLowerCase() ?? '';
+        final amount = (txn['amount'] as num?)?.toInt() ?? 0;
+        if (type == 'deposit') {
+          totalDeposited += amount;
+        } else if (type == 'withdrawal' || type == 'withdraw') {
+          totalWithdrawn += amount;
+        }
+      }
+      
       setState(() {
-        _wallet = results[0] as Map<String, dynamic>;
-        _transactions = (results[1] as List<Map<String, dynamic>>).map((d) {
-          final ts = d['createdAt'];
+        _wallet = {
+          'balance': totalBalance,
+          'totalDeposited': totalDeposited,
+          'totalWithdrawn': totalWithdrawn,
+        };
+        _transactions = savingsTxns.map((d) {
+          final ts = d['createdAt'] ?? d['timestamp'];
           String dateStr = '—';
           if (ts is Timestamp) dateStr = DateFormat('MMM d, yyyy HH:mm').format(ts.toDate());
           return {...d, 'dateStr': dateStr};
