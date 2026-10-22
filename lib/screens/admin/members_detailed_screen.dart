@@ -95,22 +95,25 @@ class _MembersDetailedScreenState extends State<MembersDetailedScreen> {
         // Check if this loan belongs to the member by ID or account number
         if (loanMemberId == memberId || 
             (accountNumber.isNotEmpty && loanAccountNumber == accountNumber)) {
-          final principalOut = (data['principalOutstanding'] ?? 0).toDouble();
+          // Use same priority as Member 360 and statement: totalOutstanding > remainingBalance > principalOutstanding
+          double outstanding = (data['totalOutstanding'] ?? 0).toDouble();
+          if (outstanding == 0) outstanding = (data['remainingBalance'] ?? 0).toDouble();
+          if (outstanding == 0) outstanding = (data['principalOutstanding'] ?? 0).toDouble();
+          
           final status = (data['status'] ?? '').toString().toLowerCase();
           
           // Only count loans with outstanding balance and not cleared/rejected
-          if (principalOut > 0 && 
+          if (outstanding > 0 && 
               status != 'cleared' && 
               status != 'rejected' &&
               status != 'cancelled') {
-            totalOutstanding += principalOut;
+            totalOutstanding += outstanding;
           }
         }
       }
 
       return totalOutstanding;
     } catch (e) {
-      print('Error calculating loan balance: $e');
       return 0;
     }
   }
