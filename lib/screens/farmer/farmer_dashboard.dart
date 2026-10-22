@@ -172,7 +172,12 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
   }
 
   void _confirmLogout(BuildContext context) {
-    Navigator.pop(context);
+    // Close drawer only if on mobile (desktop sidebar is not a Drawer widget)
+    final isDesktop = MediaQuery.of(context).size.width > 900;
+    if (!isDesktop) {
+      Navigator.pop(context);
+    }
+    
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
