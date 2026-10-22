@@ -1121,11 +1121,20 @@ class TellerService {
       for (final doc in snapshot2.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final businessRecordId = data['businessRecordId']?.toString();
+        final docId = doc.id; // Use document ID for deduplication when no businessRecordId
 
         // Skip if we already have this transaction from teller-transactions collection
-        if (businessRecordId != null && seenBusinessRecords.contains(businessRecordId)) {
-          print('⚠️ Skipping duplicate till entry for businessRecordId: $businessRecordId');
+        // Check both businessRecordId (for linked transactions) and docId (for standalone entries)
+        if ((businessRecordId != null && seenBusinessRecords.contains(businessRecordId)) ||
+            seenBusinessRecords.contains(docId)) {
+          print('⚠️ Skipping duplicate till entry: businessRecordId=$businessRecordId, docId=$docId');
           continue;
+        }
+
+        // Mark this entry as seen (by docId)
+        seenBusinessRecords.add(docId);
+        if (businessRecordId != null) {
+          seenBusinessRecords.add(businessRecordId);
         }
 
         final entryType = data['entryType'] ?? '';
