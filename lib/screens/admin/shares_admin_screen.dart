@@ -146,12 +146,20 @@ class _SharesAdminScreenState extends State<SharesAdminScreen>
         'status': 'Approved',
         'approvedAt': FieldValue.serverTimestamp(),
       });
-      // Update member shares total
+      // Update member shares total in shares collection
       await db.collection(AppConstants.sharesCol).doc(memberId).set({
         'memberId': memberId,
         'totalShares': FieldValue.increment(shares),
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      
+      // ALSO update member's profile with totalShares, sharesCount, and sharesBalance
+      await db.collection(AppConstants.usersCol).doc(memberId).update({
+        'totalShares': FieldValue.increment(shares),
+        'sharesCount': FieldValue.increment(shares),
+        'sharesBalance': FieldValue.increment(amount),
+      });
+      
       AuditService.log(
         action: AuditService.kSharePurchase,
         description: 'Share purchase approved: $shares shares (UGX ${fmt.format(amount)})',
