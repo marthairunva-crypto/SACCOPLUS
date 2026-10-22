@@ -3107,6 +3107,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       builder: (ctx) => AddLoanChargeDialog(
         loanId: widget.loanId,
         loanData: _loanData!,
+        memberDocId: _memberDocId, // Pass member ID for SMS
         onSuccess: _loadLoanData,
       ),
     );

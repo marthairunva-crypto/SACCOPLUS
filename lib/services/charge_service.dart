@@ -364,6 +364,7 @@ class ChargeService {
     required int amount,
     required DateTime chargeDate,
     required String notes,
+    String? memberDocId, // Optional: pass member ID from UI to skip lookup
   }) async {
     if (amount <= 0) {
       return {'success': false, 'message': 'Charge amount must be greater than zero'};
@@ -422,7 +423,49 @@ class ChargeService {
         }
       }
 
-      final memberId = loanData['memberId'] ?? loanData['farmerId'];
+      // Get member ID - use passed memberDocId if available, otherwise lookup
+      var memberId = memberDocId; // Try passed member ID first
+      
+      if (memberId == null) {
+        // Fall back to loan document fields
+        memberId = loanData['memberId'] ?? loanData['farmerId'] ?? loanData['userId'] ?? loanData['borrowerId'];
+        
+        // For legacy/migrated loans without direct member ID, look up by member name
+        if (memberId == null) {
+          final memberName = loanData['memberName'] as String?;
+          
+          if (memberName != null && memberName.isNotEmpty) {
+            final tenantId = loanData['tenantId'] ?? FirebaseService.sessionTenantId;
+            
+            // Try exact name match first
+            final exactMatch = await _db
+                .collection(AppConstants.usersCol)
+                .where('name', isEqualTo: memberName)
+                .where('tenantId', isEqualTo: tenantId)
+                .limit(1)
+                .get();
+            
+            if (exactMatch.docs.isNotEmpty) {
+              memberId = exactMatch.docs.first.id;
+            } else {
+              // Try case-insensitive match
+              final allMembers = await _db
+                  .collection(AppConstants.usersCol)
+                  .where('tenantId', isEqualTo: tenantId)
+                  .get();
+              
+              final lowerName = memberName.toLowerCase();
+              for (final doc in allMembers.docs) {
+                final docName = (doc.data()['name'] ?? '').toString().toLowerCase();
+                if (docName == lowerName) {
+                  memberId = doc.id;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
       final now = DateTime.now();
       final chargeId = _uuid.v4();
 
@@ -556,14 +599,19 @@ class ChargeService {
           final formattedAmount = _formatMoney(amount);
           final newTotalDemanded = _formatMoney(newOutstandingBalance);
           
-          // Build SMS message
-          final smsMessage = '$saccoName: Charge added to your loan.\n'
+          // Build SMS message with personalized greeting
+          final memberName = memberDoc.data()?['name'] as String? ?? loanData['memberName'] as String? ?? '';
+          final firstName = memberName.split(' ').first;
+          
+          final smsMessage = 'Dear $firstName,\n'
+              '$saccoName: A charge has been added to your loan.\n'
               'Charge: $chargeTypeName\n'
               'Amount: UGX $formattedAmount\n'
               '${notes.isNotEmpty ? 'Reason: $notes\n' : ''}'
-              'New total due: UGX $newTotalDemanded';
+              'New balance: UGX $newTotalDemanded\n'
+              'Thank you.';
           
-          // Send SMS notification - await to ensure it's sent
+          // Send SMS notification
           final smsSent = await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
           
           if (!smsSent) {
@@ -582,7 +630,7 @@ class ChargeService {
             });
           }
         }
-      } catch (e) {
+      } catch (e, stackTrace) {
         // Log SMS error but don't block charge operation
         try {
           await _db.collection('saccoplus-sms-failures').add({

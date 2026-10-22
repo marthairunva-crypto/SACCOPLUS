@@ -30,12 +30,14 @@ class _ThousandsFormatter extends TextInputFormatter {
 class AddLoanChargeDialog extends StatefulWidget {
   final String loanId;
   final Map<String, dynamic> loanData;
+  final String? memberDocId; // Member document ID for SMS
   final VoidCallback onSuccess;
 
   const AddLoanChargeDialog({
     Key? key,
     required this.loanId,
     required this.loanData,
+    this.memberDocId,
     required this.onSuccess,
   }) : super(key: key);
 
@@ -290,6 +292,7 @@ class _AddLoanChargeDialogState extends State<AddLoanChargeDialog> {
       amount: _parseAmount(),
       chargeDate: _chargeDate,
       notes: _notesCtrl.text.trim(),
+      memberDocId: widget.memberDocId, // Pass member ID for SMS
     );
 
     if (!mounted) return;
