@@ -686,8 +686,9 @@ class _ModernDepositModalState extends State<ModernDepositModal> {
                 children: [
                   _row('You send (from phone)', '${_country.currencySymbol} ${fmt.format(_totalCollected)}'),
                   const SizedBox(height: 8),
-                  _row('Service Charge (3.2%)', '${_country.currencySymbol} ${fmt.format(_charge)}',
-                      valueColor: AppTheme.warning),
+                  _row('Service Charge', 
+                      _charge == 0 ? 'FREE' : '${_country.currencySymbol} ${fmt.format(_charge)}',
+                      valueColor: _charge == 0 ? AppTheme.success : AppTheme.warning),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 10),
                     child: Divider(height: 1),

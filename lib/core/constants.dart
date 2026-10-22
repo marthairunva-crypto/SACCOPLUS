@@ -75,10 +75,10 @@ class AppConstants {
   // ── Wallet Limits (UGX) ───────────────────────────────────────────────────
   static const int walletDailyLimit  = 5000000;  // UGX 5M
   static const int walletMinWithdraw = 1000;      // UGX 1K
-  // Charges — MBADIFA SACCO transaction fees (0.5%)
-  static const double walletDepositChargePercent  = 0.005; // 0.5% collection
+  // Charges — MBADIFA SACCO allows FREE deposits, small withdrawal fee
+  static const double walletDepositChargePercent  = 0.0; // FREE deposits (0%)
   static const double walletWithdrawChargePercent = 0.005; // 0.5% disbursement
-  static const int    walletMinCharge             = 100;  // UGX 100 minimum
+  static const int    walletMinCharge             = 0;  // No minimum charge for deposits
 
   // ── MarzPay (Mobile Money) ────────────────────────────────────────────────
   static const String marzPayBaseUrl    = 'https://wallet.wearemarz.com/api/v1';
