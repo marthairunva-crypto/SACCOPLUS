@@ -89,9 +89,9 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
       const RepaymentScreen(embedded: true),
       // 3: Profile
       const ProfileScreen(),
-      // 4: My Wallet
-      const WalletScreen(),
-      // 5: My Savings
+      // 4: (removed - was duplicate wallet)
+      const SizedBox(), // Placeholder
+      // 5: Savings/Wallet (combined - wallet shows savings data)
       const SavingsScreen(),
       // 6: My Shares
       const SharesScreen(),
@@ -255,8 +255,7 @@ class _SharedDashboardDrawer extends StatelessWidget {
         _item(Icons.home_outlined, 'Dashboard', () => onNavigate(0)),
         _divider(),
         _section('MONEY'),
-        _item(Icons.account_balance_wallet_outlined, 'My Wallet', () => onNavigate(4)),
-        _item(Icons.savings_outlined, 'My Savings', () => onNavigate(5)),
+        _item(Icons.savings_outlined, 'Savings/Wallet', () => onNavigate(5)), // Combined Wallet + Savings
         _item(Icons.pie_chart_outline_rounded, 'My Shares', () => onNavigate(6)),
         _item(Icons.account_balance_rounded, 'Fixed Deposits', () => onNavigate(7)),
         _item(Icons.account_balance_outlined, 'Bank Transfer', () => onNavigate(8)),
@@ -399,8 +398,7 @@ class _MobileDrawer extends StatelessWidget {
             _item(Icons.home_outlined, 'Dashboard', () => onNavigate(0)),
             _divider(),
             _section('MONEY'),
-            _item(Icons.account_balance_wallet_outlined, 'My Wallet', () => onNavigatePage(const WalletScreen())),
-            _item(Icons.savings_outlined, 'My Savings', () => onNavigatePage(const SavingsScreen())),
+            _item(Icons.savings_outlined, 'Savings/Wallet', () => onNavigatePage(const SavingsScreen())), // Combined
             _item(Icons.pie_chart_outline_rounded, 'My Shares', () => onNavigatePage(const SharesScreen())),
             _item(Icons.account_balance_rounded, 'Fixed Deposits', () => onNavigatePage(const FixedDepositScreen())),
             _item(Icons.account_balance_outlined, 'Bank Transfer', () => onNavigatePage(const BankTransferScreen())),
