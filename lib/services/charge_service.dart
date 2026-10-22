@@ -552,13 +552,15 @@ class ChargeService {
               '${notes.isNotEmpty ? 'Reason: $notes\n' : ''}'
               'New total due: UGX $newTotalDemanded';
           
-          // Send SMS (fire and forget - don't block on SMS failure)
-          FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
-          print('📱 SMS sent to $memberPhone about charge added');
+          // Send SMS notification - await to ensure it's attempted
+          try {
+            await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
+          } catch (e) {
+            // SMS failed but don't block charge operation
+          }
         }
       } catch (e) {
-        print('⚠️ Failed to send SMS for charge: $e');
-        // Don't fail the charge operation if SMS fails
+        // SMS send failed - don't block charge operation
       }
 
       return {
@@ -567,7 +569,6 @@ class ChargeService {
         'message': 'Charge added successfully'
       };
     } catch (e) {
-      print('❌ Error adding charge: $e');
       return {'success': false, 'message': 'Error: $e'};
     }
   }
@@ -584,7 +585,6 @@ class ChargeService {
 
       return snapshot.docs.map((doc) => LoanCharge.fromFirestore(doc)).toList();
     } catch (e) {
-      print('❌ Error getting charges: $e');
       return [];
     }
   }
