@@ -74,12 +74,7 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 900;
     
-    // DESKTOP: Use persistent sidebar container
-    if (isDesktop) {
-      return const FarmerDesktopContainer();
-    }
-    
-    // MOBILE: Original page-based navigation
+    // Pages for navigation
     final pages = [
       _HomeTab(
         onApply: () => _navigate(const ApplyLoanScreen()),
