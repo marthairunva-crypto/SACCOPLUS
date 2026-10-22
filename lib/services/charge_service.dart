@@ -540,8 +540,19 @@ class ChargeService {
         final memberDoc = await _db.collection(AppConstants.usersCol).doc(memberId).get();
         final memberPhone = memberDoc.data()?['phone'] as String? ?? '';
         
-        if (memberPhone.isNotEmpty) {
-          final saccoName = 'MBADIFA SACCO'; // Could get from SaccoService
+        if (memberPhone.isEmpty) {
+          await _db.collection('saccoplus-sms-failures').add({
+            'tenantId': tenantId,
+            'memberId': memberId,
+            'loanId': loanId,
+            'reason': 'Member has no phone number',
+            'chargeType': chargeTypeName,
+            'chargeAmount': amount,
+            'resolved': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          final saccoName = 'MBADIFA SACCO';
           final formattedAmount = _formatMoney(amount);
           final newTotalDemanded = _formatMoney(newOutstandingBalance);
           
@@ -552,15 +563,41 @@ class ChargeService {
               '${notes.isNotEmpty ? 'Reason: $notes\n' : ''}'
               'New total due: UGX $newTotalDemanded';
           
-          // Send SMS notification - await to ensure it's attempted
-          try {
-            await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
-          } catch (e) {
-            // SMS failed but don't block charge operation
+          // Send SMS notification - await to ensure it's sent
+          final smsSent = await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
+          
+          if (!smsSent) {
+            // Log SMS failure for tracking
+            await _db.collection('saccoplus-sms-failures').add({
+              'tenantId': tenantId,
+              'memberId': memberId,
+              'loanId': loanId,
+              'phone': memberPhone,
+              'message': smsMessage,
+              'reason': 'SMS gateway returned false',
+              'chargeType': chargeTypeName,
+              'chargeAmount': amount,
+              'resolved': false,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
           }
         }
       } catch (e) {
-        // SMS send failed - don't block charge operation
+        // Log SMS error but don't block charge operation
+        try {
+          await _db.collection('saccoplus-sms-failures').add({
+            'tenantId': tenantId,
+            'memberId': memberId,
+            'loanId': loanId,
+            'reason': 'Exception: $e',
+            'chargeType': chargeTypeName,
+            'chargeAmount': amount,
+            'resolved': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (_) {
+          // Even logging failed - silent fail
+        }
       }
 
       return {
