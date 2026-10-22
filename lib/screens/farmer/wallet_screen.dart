@@ -887,7 +887,7 @@ class _WalletReceiptScreen extends StatelessWidget {
                           fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 4),
-                    Text('SACCOPLUS Pro — Wallet',
+                    Text('MBADIFA SACCO — Wallet',
                         style: GoogleFonts.poppins(
                             color: Colors.white70, fontSize: 11)),
                   ],
@@ -965,7 +965,7 @@ class _WalletReceiptScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Text('SACCOPLUS Pro • ${AppConstants.companyCity}',
+                    Text('MBADIFA SACCO • ${AppConstants.companyCity}',
                         style: GoogleFonts.poppins(
                             fontSize: 9, color: Colors.grey.shade400),
                         textAlign: TextAlign.center),

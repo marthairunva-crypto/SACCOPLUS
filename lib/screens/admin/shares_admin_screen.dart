@@ -1062,7 +1062,7 @@ class _MemberSharesListState extends State<_MemberSharesList> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Transaction history coming soon...', 
+              Text('No transactions recorded yet', 
                   style: GoogleFonts.poppins(fontSize: 13)),
             ],
           ),

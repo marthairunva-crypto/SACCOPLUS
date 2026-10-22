@@ -5,35 +5,44 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../models/till_session.dart';
 import '../../models/till_entry.dart';
 import '../../services/loan_disbursement_service.dart';
 import '../../services/loan_actions_service.dart';
-import '../../services/arrears_service.dart';
+import '../../services/loan_math.dart';
 import '../../services/till_service.dart';
 import '../../widgets/loan_payment_mobile_money_dialog.dart';
 import '../../widgets/loan_payment_cash_dialog.dart';
+import '../../widgets/add_loan_charge_dialog.dart';
+import '../../widgets/loan_charges_tab.dart';
 import '../../widgets/success_dialog.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-// One brand colour (navy). Green / red / amber are used ONLY to carry meaning
-// (paid, owing, warning). Everything else is neutral.
+// Navy is the brand. Green / red / amber carry meaning only (paid, owing,
+// warning). Everything else is neutral, so figures are always the hero.
 class _C {
+  static const navy = Color(0xFF0B1F4B);
   static const brand = Color(0xFF1E3A8A);
   static const blue = Color(0xFF2563EB);
   static const ink = Color(0xFF0F172A);
   static const text = Color(0xFF334155);
   static const muted = Color(0xFF64748B);
-  static const line = Color(0xFFE2E8F0);
-  static const soft = Color(0xFFF1F5F9);
-  static const bg = Color(0xFFF6F8FB);
+  static const line = Color(0xFFE5E9F0);
+  static const hair = Color(0xFFF1F4F9);
+  static const soft = Color(0xFFF4F6FA);
+  static const bg = Color(0xFFF2F4F8);
   static const green = Color(0xFF047857);
   static const red = Color(0xFFB91C1C);
   static const amber = Color(0xFFB45309);
-  static const purple = Color(0xFF6D28D9);
   static const teal = Color(0xFF0F766E);
+  static const gold = Color(0xFFC9A24B);
+  static const mint = Color(0xFF6EE7B7);
+  static const rose = Color(0xFFFCA5A5);
 
   static Color tint(Color c, [double a = 0.10]) =>
       c.withAlpha((a * 255).round());
@@ -43,7 +52,8 @@ class _C {
 class _Bp {
   static const compact = 600.0; // phones
   static const medium = 900.0; // tablets / small windows
-  static const maxContent = 1200.0;
+  static const wide = 1000.0; // two-column layouts
+  static const maxContent = 1800.0;
 }
 
 class _Stat {
@@ -51,6 +61,14 @@ class _Stat {
   final double value;
   final Color color;
   const _Stat(this.label, this.value, [this.color = _C.ink]);
+}
+
+class _Info {
+  final String label;
+  final String value;
+  final bool bold;
+  final Widget? custom;
+  const _Info(this.label, this.value, {this.bold = false, this.custom});
 }
 
 class _Act {
@@ -98,7 +116,6 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   final ScrollController _cardScroll = ScrollController();
 
   Map<String, dynamic>? _loanData;
-  Map<String, dynamic>? _arrearsData;
   Map<String, dynamic>? _member;
   String? _memberDocId;
   String? _memberPhone;
@@ -106,14 +123,21 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   String? _txnError;
   bool _isLoading = true;
 
+  // Single source of truth: the same pipeline the Loan Data Correction screen uses.
+  Map<String, dynamic>? _calc; // normalised loan
+  LoanSnapshot? _snap; // balances + arrears from LoanMath
+
   // Loan-card column flex: disbursements(5) | repayments(5) | balance(3) + action(1)
-  // The last column (actions) is wider so both icon buttons always fit.
   static const _lf = [3, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 7, vsync: this);
+    // Rebuild when the tab settles so tab-specific headers (print button) update.
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging && mounted) setState(() {});
+    });
     _loanData = widget.initialLoanData;
     _loadLoanData();
   }
@@ -126,7 +150,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DATA LOADING (unchanged)
+  // DATA LOADING
   // ═══════════════════════════════════════════════════════════════════════════
   Future<void> _loadLoanData() async {
     if (mounted) setState(() => _isLoading = true);
@@ -134,21 +158,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       final ref = FirebaseFirestore.instance
           .collection(AppConstants.loansCol)
           .doc(widget.loanId);
-      
-      print('🔍 Loading loan data for ID: ${widget.loanId}');
-      print('🔍 Initial loan data passed: ${widget.initialLoanData}');
-      
+
       final doc = await ref.get();
 
       if (doc.exists) {
         final data = <String, dynamic>{'id': doc.id, ...doc.data()!};
-        
-        print('📊 Loaded from Firestore:');
-        print('   - Amount: ${data['loanAmount'] ?? data['amount']}');
-        print('   - Interest Rate: ${data['interestRate']}');
-        print('   - Outstanding: ${data['principalOutstanding']}');
-        print('   - Status: ${data['status']}');
-        print('   - Disbursement: ${data['disbursementDate'] ?? data['disbursedAt']}');
 
         // Auto-correct: has disbursement date but status still "approved"
         final st = (data['status'] ?? '').toString().toLowerCase();
@@ -166,6 +180,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       if (_loanData != null) {
         await _loadMember();
 
+        // Normalise + compute first: transactions and every figure depend on it.
+        try {
+          final reps = await LoanMath.repaymentsFor(widget.loanId);
+          final r = LoanMath.computeFor(_loanData!, reps);
+          _calc = r.calc;
+          _snap = r.snap;
+        } catch (e) {
+          debugPrint('Loan calculation failed: $e');
+        }
+
         try {
           _txns = await _loadTransactions();
           _txnError = null;
@@ -174,18 +198,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         }
       }
 
-      Map<String, dynamic>? arrears;
-      try {
-        arrears = await ArrearsService.calculateLoanArrears(widget.loanId);
-      } catch (e) {
-        debugPrint('Arrears calculation failed: $e');
-      }
-
       if (!mounted) return;
-      setState(() {
-        _arrearsData = arrears;
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     } catch (e) {
       debugPrint('Error loading loan: $e');
       if (mounted) setState(() => _isLoading = false);
@@ -316,88 +330,28 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // LOAN MATHS (unchanged)
+  // LOAN MATHS: everything comes from LoanMath (same as Loan Data Correction)
   // ═══════════════════════════════════════════════════════════════════════════
-  double get _principal => _n('loanAmount', _n('amount'));
-
-  double get _interest {
-    final calc = ArrearsService.calculateInterest(
-      principal: _principal,
-      ratePerPeriod: _n('interestRate'),
-      periods: _n('duration').round(),
-      method: _s('interestMethod', 'flat').toLowerCase(),
-    );
-    return calc > 0 ? calc : _n('interestAmount');
-  }
-
+  double get _principal => LoanMath.d(_calc?['loanAmount']);
+  double get _interest => LoanMath.d(_calc?['interestAmount']);
+  double get _duration => LoanMath.d(_calc?['duration']);
+  double get _instalment => LoanMath.d(_calc?['installment']);
   double get _waived => _n('interestWaived', _n('waivedInterest'));
 
   double _paid(String key) => _txns
       .where((t) => t['type'] == 'Payment')
       .fold(0.0, (s, t) => s + _toD(t[key]));
 
-  // Use stored outstanding values if available (from data correction),
-  // otherwise calculate from original amounts
-  double get _principalOut {
-    // Priority order (same as Member 360, Statement):
-    // 1. totalOutstanding (from Loan Data Correction - manual corrections, most accurate)
-    // 2. remainingBalance (from ArrearsService - auto-calculated)
-    // 3. principalOutstanding (legacy field, principal only)
-    
-    if (_loanData!.containsKey('totalOutstanding')) {
-      final total = _n('totalOutstanding');
-      if (total > 0) {
-        print('💰 Using totalOutstanding: $total');
-        return total;
-      }
-    }
-    
-    if (_loanData!.containsKey('remainingBalance')) {
-      final remaining = _n('remainingBalance');
-      if (remaining > 0) {
-        print('💰 Using remainingBalance: $remaining');
-        return remaining;
-      }
-    }
-    
-    if (_loanData!.containsKey('principalOutstanding')) {
-      final stored = _n('principalOutstanding');
-      if (stored > 0) {
-        print('💰 Using principalOutstanding: $stored');
-        return stored;
-      }
-    }
-    
-    // Fallback: Calculate from original amounts
-    final calculated = math.max(0.0, _principal - _paid('principal'));
-    print('💰 Calculated principalOutstanding: $calculated');
-    return calculated;
-  }
+  double get _totalOut => _snap?.totalOut ?? 0;
+  double get _principalOut => _snap?.pOut ?? 0;
+  double get _interestOut => _snap?.iOut ?? 0;
+  double get _chargesOut => _snap?.cOut ?? 0;
+  double get _arrears => _snap?.arrears ?? 0;
 
-  double get _interestOut {
-    // Check if interestOutstanding field exists in the loan data
-    if (_loanData!.containsKey('interestOutstanding')) {
-      final stored = _n('interestOutstanding');
-      print('💰 Using stored interestOutstanding: $stored');
-      return stored;
-    }
-    final calculated = math.max(0.0, _interest - _waived - _paid('interest'));
-    print('💰 Calculated interestOutstanding: $calculated');
-    return calculated;
-  }
+  double get _totalPayable => _principal + _interest + _n('charges') - _waived;
 
-  double get _chargesOut => math.max(0.0, _n('charges') - _paid('charges'));
-
-  double get _arrears {
-    final a = _arrearsData?['arrearsAmount'];
-    if (a is num) return a.toDouble();
-    return _n('arrears');
-  }
-
-  double get _instalment {
-    final d = _n('duration');
-    return d > 0 ? (_principal + _interest) / d : 0;
-  }
+  /// Includes payments made before this system existed.
+  double get _totalPaidAll => math.max(0.0, _totalPayable - _totalOut);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HELPERS
@@ -556,6 +510,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       {double size = 15,
       FontWeight w = FontWeight.w700,
       Color c = _C.ink,
+      Color prefixColor = _C.muted,
       bool prefix = true,
       TextAlign align = TextAlign.start}) {
     return Text.rich(
@@ -563,7 +518,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         if (prefix)
           TextSpan(
               text: 'UGX ',
-              style: _num(size * 0.72, w: FontWeight.w500, c: _C.muted)),
+              style: _num(size * 0.66, w: FontWeight.w500, c: prefixColor)),
         TextSpan(text: _money(v), style: _num(size, w: w, c: c)),
       ]),
       maxLines: 1,
@@ -578,7 +533,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
         color: _C.tint(color, 0.10),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -603,14 +558,21 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         child: Text(label, style: _t(11.5, w: FontWeight.w600, c: color)),
       );
 
-  /// Plain surface – used by every section so the screen has one visual rhythm.
+  /// Plain surface used by every section so the screen has one visual rhythm.
   Widget _surface({required Widget child, EdgeInsets? margin}) => Container(
         width: double.infinity,
         margin: margin,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: _C.line),
+          boxShadow: [
+            BoxShadow(
+              color: _C.tint(_C.navy, 0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: child,
@@ -619,6 +581,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   Widget _card({
     String? title,
     String? subtitle,
+    IconData? icon,
     Widget? trailing,
     required Widget child,
     EdgeInsets padding = const EdgeInsets.all(20),
@@ -632,6 +595,18 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
               child: Row(
                 children: [
+                  if (icon != null) ...[
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: _C.tint(_C.brand, 0.08),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(icon, size: 17, color: _C.brand),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -665,9 +640,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        border: last
-            ? null
-            : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+        border:
+            last ? null : const Border(bottom: BorderSide(color: _C.hair)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -690,6 +664,48 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     );
   }
 
+  /// Statement-style field grid: label above value, 2 columns when there is
+  /// room, 1 column on phones.
+  Widget _infoGrid(List<_Info> items) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = c.maxWidth >= 520 ? 2 : 1;
+        const gap = 24.0;
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: 0,
+          children: [
+            for (final it in items)
+              SizedBox(
+                width: w,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: _C.hair)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(it.label, style: _t(11.5, c: _C.muted)),
+                      const SizedBox(height: 4),
+                      it.custom ??
+                          Text(it.value,
+                              style: _num(13.5,
+                                  w: it.bold
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  c: _C.ink)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _emptyState(IconData icon, String title, [String? subtitle]) {
     return Center(
       child: Padding(
@@ -698,11 +714,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 56,
-              height: 56,
-              decoration:
-                  const BoxDecoration(color: _C.soft, shape: BoxShape.circle),
-              child: Icon(icon, size: 26, color: _C.muted),
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                  color: _C.tint(_C.brand, 0.07), shape: BoxShape.circle),
+              child: Icon(icon, size: 28, color: _C.brand),
             ),
             const SizedBox(height: 16),
             Text(title,
@@ -731,7 +747,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             ? 32.0
             : c.maxWidth >= _Bp.compact
                 ? 24.0
-                : 16.0;
+                : 14.0;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + 8),
           child: Center(
@@ -751,7 +767,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         elevation: 0,
         minimumSize: const Size(0, 44),
         padding: const EdgeInsets.symmetric(horizontal: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: _t(13.5, w: FontWeight.w600),
       );
 
@@ -760,7 +776,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         minimumSize: const Size(0, 44),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         side: const BorderSide(color: _C.line),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: _t(13.5, w: FontWeight.w600),
       );
 
@@ -778,6 +794,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   List<_Act> get _moreActions => !_isActive
       ? const []
       : [
+          _Act('Add charge', Icons.add_card_outlined, _showAddChargeDialog),
           _Act('Loan top-up', Icons.add_circle_outline, _showTopUpDialog),
           _Act('Reschedule loan', Icons.schedule, _showRescheduleLoanDialog),
           _Act('Waive interest', Icons.money_off, _showWaiveInterestDialog),
@@ -853,8 +870,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         height: 44,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
+          color: Colors.white,
           border: Border.all(color: _C.line),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -875,7 +893,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    if (_loanData == null) {
+    // Wait for the calculation so we never flash stale / zero figures.
+    if (_loanData == null || _calc == null || _snap == null) {
       return Scaffold(
         backgroundColor: _C.bg,
         appBar: AppBar(
@@ -889,8 +908,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : _emptyState(Icons.search_off_rounded, 'Loan not found',
-                'This loan may have been removed.'),
+            : _loanData == null
+                ? _emptyState(Icons.search_off_rounded, 'Loan not found',
+                    'This loan may have been removed.')
+                : _emptyState(Icons.error_outline, 'Could not calculate loan',
+                    'Check the loan terms on the Correct Loan Data screen.'),
       );
     }
 
@@ -903,19 +925,20 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 0,
+        toolbarHeight: 64,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         foregroundColor: _C.ink,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
-        // Breathing room so the title never sits flush against the sidebar.
-        titleSpacing: compact ? 16 : 24,
+        titleSpacing: compact ? 16 : 28,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Loan account',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _t(16, w: FontWeight.w600, c: _C.ink)),
+                style: _t(17, w: FontWeight.w700, c: _C.ink)),
+            const SizedBox(height: 1),
             Text(_s('accountNumber'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -935,7 +958,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               _moreMenuButton(),
             ],
           ],
-          SizedBox(width: compact ? 4 : 24),
+          SizedBox(width: compact ? 4 : 28),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
@@ -948,14 +971,14 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               controller: _tabController,
               isScrollable: true,
               tabAlignment: TabAlignment.start,
-              // Align the first tab label with the title above it.
-              padding: EdgeInsets.only(left: compact ? 0 : 8),
+              padding: EdgeInsets.only(left: compact ? 0 : 12),
               dividerColor: Colors.transparent,
               indicatorColor: _C.brand,
-              indicatorWeight: 2.5,
+              indicatorWeight: 3,
               indicatorSize: TabBarIndicatorSize.label,
               labelColor: _C.brand,
               unselectedLabelColor: _C.muted,
+              overlayColor: WidgetStatePropertyAll(_C.tint(_C.brand, 0.05)),
               labelPadding: const EdgeInsets.symmetric(horizontal: 16),
               labelStyle: _t(13.5, w: FontWeight.w600, c: _C.brand),
               unselectedLabelStyle: _t(13.5, w: FontWeight.w500, c: _C.muted),
@@ -994,14 +1017,21 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       // Phones: primary action lives in a thumb-reachable bar.
       bottomNavigationBar: compact && primary != null
           ? Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: Colors.white,
-                border: Border(top: BorderSide(color: _C.line)),
+                border: const Border(top: BorderSide(color: _C.line)),
+                boxShadow: [
+                  BoxShadow(
+                    color: _C.tint(_C.navy, 0.06),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
               ),
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                   child: Row(
                     children: [
                       Expanded(
@@ -1037,34 +1067,17 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final interest = _interest;
     final charges = _n('charges');
 
-    final pPaid = _paid('principal');
-    final iPaid = _paid('interest');
-    final cPaid = _paid('charges');
-    final totalPaid = pPaid + iPaid + cPaid;
-
-    // Use the corrected totalOutstanding or remainingBalance if available
-    // Otherwise calculate from components
-    double totalOut;
-    if (_loanData!.containsKey('totalOutstanding')) {
-      totalOut = _n('totalOutstanding');
-      print('💰 Using stored totalOutstanding: $totalOut');
-    } else if (_loanData!.containsKey('remainingBalance')) {
-      totalOut = _n('remainingBalance');
-      print('💰 Using stored remainingBalance: $totalOut');
-    } else {
-      final pOut = _principalOut;
-      final iOut = _interestOut;
-      final cOut = _chargesOut;
-      totalOut = pOut + iOut + cOut;
-      print('💰 Calculated totalOutstanding: $totalOut (p=$pOut, i=$iOut, c=$cOut)');
-    }
-    
-    // Still calculate individual components for display
+    final totalOut = _totalOut;
     final pOut = _principalOut;
     final iOut = _interestOut;
     final cOut = _chargesOut;
-    
-    final total = principal + interest - _waived + charges;
+
+    final pPaid = math.max(0.0, principal - pOut);
+    final iPaid = math.max(0.0, interest - _waived - iOut);
+    final cPaid = math.max(0.0, charges - cOut);
+    final totalPaid = _totalPaidAll;
+
+    final total = _totalPayable;
     final arrears = _arrears;
 
     final hasDisb = _loanData!['disbursedAt'] != null ||
@@ -1074,7 +1087,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
     return LayoutBuilder(
       builder: (context, c) {
-        final twoCol = c.maxWidth >= 1000;
+        final twoCol = c.maxWidth >= _Bp.wide;
 
         final left = Column(
           children: [
@@ -1139,6 +1152,60 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     );
   }
 
+  // ─── Avatar: member photo → assets/images/avatar.png → initials ───────────
+  String? get _photoUrl {
+    for (final src in [_member, _loanData]) {
+      if (src == null) continue;
+      for (final k in const [
+        'photoUrl', 'photoURL', 'photo', 'profilePhoto', 'profilePhotoUrl',
+        'profileImage', 'imageUrl', 'avatar', 'passportPhoto', 'passportPhotoUrl'
+      ]) {
+        final v = src[k];
+        if (v is String && v.trim().startsWith('http')) return v.trim();
+      }
+    }
+    return null;
+  }
+
+  Widget _avatar(String name, {String? url, double radius = 28}) {
+    final size = radius * 2;
+    Widget initials() => Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          color: _C.tint(_C.brand, 0.10),
+          child: Text(_initials(name),
+              style: _t(radius * 0.9, w: FontWeight.w700, c: _C.brand)),
+        );
+    Widget asset() => Image.asset(
+          'images/avatar.png',
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => initials(),
+        );
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: _C.line, width: 1.5),
+      ),
+      child: ClipOval(
+        child: url == null
+            ? asset()
+            : Image.network(
+                url,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => asset(),
+              ),
+      ),
+    );
+  }
+
+  /// Plain white account header: who, what is owed, how far along, key figures.
   Widget _buildHeader({
     required double outstanding,
     required double total,
@@ -1149,23 +1216,29 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final progress =
         total > 0 ? (paid / total).clamp(0.0, 1.0).toDouble() : 0.0;
 
-    Widget meta(String label, String value) => Text.rich(
-          TextSpan(children: [
-            TextSpan(text: '$label  ', style: _t(12, c: _C.muted)),
-            TextSpan(
-                text: value, style: _num(12, w: FontWeight.w500, c: _C.text)),
-          ]),
+    Widget meta(String label, String value, {Widget? trailing}) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: '$label  ', style: _t(12, c: _C.muted)),
+                  TextSpan(
+                      text: value,
+                      style: _num(12, w: FontWeight.w500, c: _C.text)),
+                ]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (trailing != null) trailing,
+          ],
         );
 
     final identity = Row(
       children: [
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: _C.tint(_C.brand, 0.10),
-          child: Text(_initials(name),
-              style: _t(15, w: FontWeight.w700, c: _C.brand)),
-        ),
-        const SizedBox(width: 14),
+        _avatar(name, url: _photoUrl, radius: 30),
+        const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1173,14 +1246,31 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               Text(name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: _t(19, w: FontWeight.w700, c: _C.ink)),
-              const SizedBox(height: 6),
+                  style: _t(20, w: FontWeight.w700, c: _C.ink)),
+              const SizedBox(height: 8),
               Wrap(
-                spacing: 14,
+                spacing: 16,
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _statusChip(_status),
+                  meta(
+                    'A/C',
+                    _s('accountNumber'),
+                    trailing: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () {
+                        Clipboard.setData(
+                            ClipboardData(text: _s('accountNumber')));
+                        _toast('Account number copied', true);
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.copy_rounded,
+                            size: 13, color: _C.muted),
+                      ),
+                    ),
+                  ),
                   meta('Member ID', _s('memberId', _memberDocId ?? 'N/A')),
                 ],
               ),
@@ -1190,22 +1280,30 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       ],
     );
 
-    Widget balance(bool right) => Flexible(
+    Widget balance(bool right) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            color: _C.soft,
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Column(
             crossAxisAlignment:
                 right ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text('Outstanding balance',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: _t(12.5, w: FontWeight.w500, c: _C.muted)),
               const SizedBox(height: 4),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: right ? Alignment.centerRight : Alignment.centerLeft,
                 child: _amount(outstanding,
-                    size: right ? 30 : 28, w: FontWeight.w700, c: _C.ink),
+                    size: 28,
+                    c: outstanding > 0.5 ? _C.ink : _C.green),
               ),
+              const SizedBox(height: 2),
+              Text('of UGX ${_money(total)} payable',
+                  style: _t(11.5, c: _C.muted)),
             ],
           ),
         );
@@ -1218,7 +1316,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
             child: LayoutBuilder(
               builder: (context, c) {
-                if (c.maxWidth >= 640) {
+                if (c.maxWidth >= 720) {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -1232,8 +1330,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     identity,
-                    const SizedBox(height: 20),
-                    balance(false),
+                    const SizedBox(height: 16),
+                    SizedBox(width: double.infinity, child: balance(false)),
                   ],
                 );
               },
@@ -1276,7 +1374,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     return LayoutBuilder(
       builder: (context, c) {
         final cols =
-            c.maxWidth >= 640 ? items.length : math.min(2, items.length);
+            c.maxWidth >= 560 ? items.length : math.min(2, items.length);
         final rows = <Widget>[];
         for (var i = 0; i < items.length; i += cols) {
           final slice = items.skip(i).take(cols).toList();
@@ -1306,16 +1404,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
   Widget _statCell(_Stat s) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(s.label, style: _t(12, c: _C.muted)),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: _amount(s.value, size: 16, c: s.color),
+            child: _amount(s.value, size: 17, c: s.color),
           ),
         ],
       ),
@@ -1328,6 +1426,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final compact = _isCompact;
     return _card(
       title: 'Member accounts',
+      icon: Icons.account_balance_wallet_outlined,
       padding: EdgeInsets.zero,
       trailing: _isActive
           ? TextButton.icon(
@@ -1353,36 +1452,37 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final inst = _instalment;
     return _card(
       title: 'Loan details',
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-      child: Column(
-        children: [
-          _kv('Member', _s('memberName')),
-          _kv('Phone number', _memberPhone ?? 'N/A'),
-          _kv('Member ID', _s('memberId', _memberDocId ?? 'N/A')),
-          _kv('Account number', _s('accountNumber')),
-          _kv('Status', _status, custom: _statusChip(_status)),
-          _kv(
-              'Disbursement date',
-              _formatDate(
-                  _loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])),
-          _kv('Branch', _s('branch', 'Main Branch')),
-          _kv('Loan amount', 'UGX ${_money(principal)}', bold: true),
-          _kv('Interest rate', '${_s('interestRate', '0')}% per $_periodWord'),
-          _kv('Total interest', 'UGX ${_money(interest)}'),
-          _kv('Instalment',
-              inst > 0 ? 'UGX ${_money(inst)} per $_periodWord' : 'N/A'),
-          _kv('Loan officer',
-              _loanData!['loanOfficer']?.toString() ?? _s('approvedBy')),
-          _kv('Tenure', '${_s('duration', '0')} ${_getTenureLabel()}'),
-          _kv('Loan type', _s('loanType'), last: true),
-        ],
-      ),
+      icon: Icons.description_outlined,
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: _infoGrid([
+        _Info('Member', _s('memberName')),
+        _Info('Phone number', _memberPhone ?? 'N/A'),
+        _Info('Member ID', _s('memberId', _memberDocId ?? 'N/A')),
+        _Info('Account number', _s('accountNumber')),
+        _Info('Status', _status, custom: Align(
+            alignment: Alignment.centerLeft, child: _statusChip(_status))),
+        _Info(
+            'Disbursement date',
+            _formatDate(
+                _loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])),
+        _Info('Branch', _s('branch', 'Main Branch')),
+        _Info('Loan type', _s('loanType')),
+        _Info('Loan amount', 'UGX ${_money(principal)}', bold: true),
+        _Info('Total interest', 'UGX ${_money(interest)}'),
+        _Info('Interest rate', '${_s('interestRate', '0')}% per $_periodWord'),
+        _Info('Instalment',
+            inst > 0 ? 'UGX ${_money(inst)} per $_periodWord' : 'N/A'),
+        _Info('Tenure', '${_duration.round()} ${_getTenureLabel()}'),
+        _Info('Loan officer',
+            _loanData!['loanOfficer']?.toString() ?? _s('approvedBy')),
+      ]),
     );
   }
 
   Widget _buildAdditionalCard() {
     return _card(
       title: 'Additional information',
+      icon: Icons.notes_rounded,
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
       child: Column(
         children: [
@@ -1396,6 +1496,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   Widget _buildDisbursementCard() {
     return _card(
       title: 'Disbursement',
+      icon: Icons.north_east_rounded,
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
       child: Column(
         children: [
@@ -1426,16 +1527,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     double arrears,
   ) {
     Widget head(String h, {bool left = false}) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           child: Text(h,
               textAlign: left ? TextAlign.left : TextAlign.right,
-              style: _t(12, w: FontWeight.w500, c: _C.muted)),
+              style: _t(11.5, w: FontWeight.w600, c: _C.muted)),
         );
 
     TableRow row(String label, double exp, double paid, double out,
         {bool bold = false, bool top = false}) {
       Widget cell(String text, Color c, {bool left = false}) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 11),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: left ? Alignment.centerLeft : Alignment.centerRight,
@@ -1449,9 +1550,10 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           );
       return TableRow(
         decoration: BoxDecoration(
+          color: top ? _C.soft : null,
           border: top
               ? const Border(top: BorderSide(color: _C.line))
-              : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+              : const Border(bottom: BorderSide(color: _C.hair)),
         ),
         children: [
           cell(label, _C.ink, left: true),
@@ -1465,7 +1567,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     return _card(
       title: 'Balance breakdown',
       subtitle: 'Amounts in UGX',
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      icon: Icons.pie_chart_outline_rounded,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       child: Column(
         children: [
           Table(
@@ -1495,13 +1598,14 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             ],
           ),
           if (arrears > 0) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              margin: const EdgeInsets.only(bottom: 8),
               decoration: BoxDecoration(
                 color: _C.tint(_C.red, 0.06),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _C.tint(_C.red, 0.18)),
               ),
               child: Row(
                 children: [
@@ -1511,7 +1615,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                     child: Text('Arrears',
                         style: _t(13, w: FontWeight.w600, c: _C.red)),
                   ),
-                  _amount(arrears, size: 14, c: _C.red),
+                  _amount(arrears, size: 14, c: _C.red, prefixColor: _C.red),
                 ],
               ),
             ),
@@ -1527,6 +1631,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     return _card(
       title: 'Loan card',
       subtitle: 'Every disbursement and repayment, with running balances',
+      icon: Icons.receipt_long_outlined,
       padding: EdgeInsets.zero,
       child: _txnError != null
           ? Padding(
@@ -1565,28 +1670,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       l.rows.add(_LedgerRow(t, isPay, p, i, c, l.bp, l.bi, l.bc));
     }
 
-    // If we have stored outstanding values (from data correction), override the calculated balances
-    if (_loanData!.containsKey('principalOutstanding') &&
-        _loanData!.containsKey('interestOutstanding')) {
-      print(
-          '💳 Overriding ledger balances with stored outstanding: P=${_n('principalOutstanding')}, I=${_n('interestOutstanding')}');
-      l.bp = _n('principalOutstanding');
-      l.bi = _n('interestOutstanding');
-      l.bc = _n('chargesOutstanding', 0);
+    // Closing balance always comes from LoanMath (includes pre-system payments).
+    if (_snap != null) {
+      l.bp = _snap!.pOut;
+      l.bi = _snap!.iOut;
+      l.bc = _chargesOut;
 
-      // Update the last row's balances to match the corrected values
       if (l.rows.isNotEmpty) {
-        final lastRow = l.rows.last;
-        l.rows[l.rows.length - 1] = _LedgerRow(
-          lastRow.txn,
-          lastRow.isPay,
-          lastRow.p,
-          lastRow.i,
-          lastRow.c,
-          l.bp, // Use corrected balance
-          l.bi, // Use corrected balance
-          l.bc, // Use corrected balance
-        );
+        final r = l.rows.last;
+        l.rows[l.rows.length - 1] =
+            _LedgerRow(r.txn, r.isPay, r.p, r.i, r.c, l.bp, l.bi, l.bc);
       }
     }
 
@@ -1601,7 +1694,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     );
   }
 
-  // Phones: one tile per transaction instead of a 1200px-wide spreadsheet.
+  // Phones: one tile per transaction instead of a 1100px-wide spreadsheet.
   Widget _ledgerList(_Ledger l) {
     if (l.rows.isEmpty) {
       return Padding(
@@ -1620,7 +1713,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           child: Row(
             children: [
-              Text('Balance', style: _t(13, w: FontWeight.w600, c: _C.ink)),
+              Text('Closing balance',
+                  style: _t(13, w: FontWeight.w600, c: _C.ink)),
               const Spacer(),
               _amount(l.bp + l.bi + l.bc,
                   size: 15,
@@ -1646,15 +1740,30 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         ]));
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+        border: Border(bottom: BorderSide(color: _C.hair)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _C.tint(r.isPay ? _C.green : _C.brand, 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                    r.isPay
+                        ? Icons.south_west_rounded
+                        : Icons.north_east_rounded,
+                    size: 18,
+                    color: r.isPay ? _C.green : _C.brand),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1688,11 +1797,14 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           Row(
             children: [
               Expanded(
-                child: Wrap(spacing: 14, runSpacing: 2, children: [
-                  part('Principal', r.p),
-                  part('Interest', r.i),
-                  part('Charges', r.c),
-                ]),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 48),
+                  child: Wrap(spacing: 14, runSpacing: 2, children: [
+                    part('Principal', r.p),
+                    part('Interest', r.i),
+                    part('Charges', r.c),
+                  ]),
+                ),
               ),
               if (r.isPay) ...[
                 IconButton(
@@ -1772,7 +1884,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               color: _C.soft,
               border: Border(left: BorderSide(color: _C.line)),
             ),
-            child: Text(label, style: _t(12, w: FontWeight.w600, c: _C.ink)),
+            child: Text(label.toUpperCase(),
+                style: _t(11, w: FontWeight.w700, c: _C.brand, ls: 0.8)),
           ),
         );
 
@@ -1795,7 +1908,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           return _lc(i, titles[i],
               isNum: i != 0 && i != 5 && i != 13,
               height: 38,
-              style: _t(12, w: FontWeight.w500, c: _C.muted));
+              style: _t(11.5, w: FontWeight.w500, c: _C.muted));
         }),
       ),
       const Divider(height: 1, color: _C.line),
@@ -1811,8 +1924,9 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     for (var n = 0; n < l.rows.length; n++) {
       final r = l.rows[n];
       body.add(Container(
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+        decoration: BoxDecoration(
+          color: n.isOdd ? const Color(0xFFFAFBFD) : null,
+          border: const Border(bottom: BorderSide(color: _C.hair)),
         ),
         child: Row(children: [
           _lc(0, r.isPay ? '' : _formatDate(r.txn['date'])),
@@ -1866,7 +1980,10 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
     if (l.rows.isNotEmpty) {
       body.add(Container(
-        color: _C.soft,
+        decoration: const BoxDecoration(
+          color: _C.soft,
+          border: Border(top: BorderSide(color: _C.line)),
+        ),
         child: Row(children: [
           _lc(0, 'Total', bold: true),
           _lc(1, m(l.dP), isNum: true, bold: true),
@@ -2071,7 +2188,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         }
 
         try {
-          await ArrearsService.updateLoanArrears(widget.loanId);
+          await LoanMath.recalculate(widget.loanId);
         } catch (e) {
           debugPrint('Arrears update failed: $e');
         }
@@ -2105,14 +2222,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         ]));
 
     return _page(
-      maxWidth: 880,
+      maxWidth: _Bp.maxContent,
       child: Column(
         children: [
-          // Add print button header when on Repayments tab (tab index 3)
-          if (_tabController?.index == 3) ...[
+          // Print header on the Repayments tab (index 3)
+          if (_tabController.index == 3) ...[
             _card(
               title: 'Repayment history',
-              subtitle: '${pays.length} payment${pays.length == 1 ? '' : 's'} recorded',
+              subtitle:
+                  '${pays.length} payment${pays.length == 1 ? '' : 's'} recorded',
+              icon: Icons.history_rounded,
               padding: EdgeInsets.zero,
               trailing: IconButton(
                 icon: const Icon(Icons.print_outlined, size: 20),
@@ -2225,7 +2344,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   Widget _buildScheduleTab() {
     final disb =
         _toDate(_loanData!['disbursementDate'] ?? _loanData!['disbursedAt']);
-    final duration = _n('duration').round();
+    final duration = _duration.round();
 
     if (disb == null || duration <= 0) {
       return _emptyState(Icons.event_note_outlined, 'No schedule yet',
@@ -2235,29 +2354,21 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     final principal = _principal;
     final interest = _interest;
     final totalRepayable = principal + interest;
-    final inst = totalRepayable / duration;
-    final totalPaid = _paid('principal') + _paid('interest') + _paid('charges');
+    final inst = _instalment;
+    final totalPaid = _totalPaidAll;
     final now = DateTime.now();
 
-    DateTime due(int n) {
-      switch (_freq) {
-        case 'daily':
-          return disb.add(Duration(days: n));
-        case 'weekly':
-          return disb.add(Duration(days: 7 * n));
-        default:
-          return DateTime(disb.year, disb.month + n, disb.day);
-      }
-    }
+    DateTime due(int n) => LoanMath.dueDate(disb, n, _freq);
 
     return _page(
-      maxWidth: 880,
+      maxWidth: _Bp.maxContent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _card(
             title: 'Repayment schedule',
             subtitle: '$duration ${_getTenureLabel().toLowerCase()}',
+            icon: Icons.event_note_outlined,
             padding: EdgeInsets.zero,
             trailing: IconButton(
               icon: const Icon(Icons.print_outlined, size: 20),
@@ -2305,16 +2416,23 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                         border: n == duration
                             ? null
                             : const Border(
-                                bottom: BorderSide(color: Color(0xFFF1F5F9))),
+                                bottom: BorderSide(color: _C.hair)),
                       ),
                       child: Row(
                         children: [
-                          SizedBox(
-                            width: 28,
+                          Container(
+                            width: 30,
+                            height: 30,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: _C.tint(color, 0.10),
+                              shape: BoxShape.circle,
+                            ),
                             child: Text('$n',
-                                style: _num(13,
-                                    w: FontWeight.w500, c: _C.muted)),
+                                style: _num(12.5,
+                                    w: FontWeight.w700, c: color)),
                           ),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2357,82 +2475,18 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   // TABS 5, 6, 7
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildChargesTab() {
-    final charges = _n('charges');
-    final paid = _paid('charges');
-    final out = _chargesOut;
-
-    Widget chargeRow(String title, double amount, String desc,
-        {bool last = false}) {
-      if (amount <= 0) return const SizedBox.shrink();
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          border: last
-              ? null
-              : const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: _t(14, w: FontWeight.w600, c: _C.ink)),
-                  const SizedBox(height: 2),
-                  Text(desc, style: _t(12, c: _C.muted)),
-                ],
-              ),
-            ),
-            _amount(amount, size: 14),
-          ],
-        ),
-      );
-    }
-
-    final items = <Widget>[
-      chargeRow('Processing fee', _n('processingFee'), 'One-time charge'),
-      chargeRow('Application fee', _n('applicationFee'), 'One-time charge'),
-      chargeRow('Insurance', _n('insurance'), 'Loan insurance premium'),
-      chargeRow('Late payment penalty', _n('lateFee'),
-          'Penalty on overdue instalments',
-          last: true),
-    ];
-
-    return _page(
-      maxWidth: 880,
-      child: Column(
-        children: [
-          _card(
-            title: 'Charges summary',
-            padding: EdgeInsets.zero,
-            child: _statStrip([
-              _Stat('Total charges', charges),
-              _Stat('Paid', paid, paid > 0 ? _C.green : _C.ink),
-              _Stat('Outstanding', out, out > 0 ? _C.red : _C.ink),
-            ]),
-          ),
-          const SizedBox(height: 16),
-          if (charges > 0)
-            _card(
-              title: 'Breakdown',
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-              child: Column(children: items),
-            )
-          else
-            _surface(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: _emptyState(
-                    Icons.check_circle_outline, 'No charges on this loan'),
-              ),
-            ),
-        ],
-      ),
+    return LoanChargesTab(
+      loanId: widget.loanId,
+      loanData: _loanData ?? {},
+      onChargeChanged: () {
+        setState(() => _isLoading = true);
+        _loadLoanData();
+      },
     );
   }
 
   Widget _buildDocumentsTab() => _emptyState(Icons.folder_open_outlined,
-      'No documents', 'Document uploads are coming soon.');
+      'No documents', 'Upload loan documents from the actions menu.');
 
   Widget _buildGuarantorsTab() {
     final guarantors = _loanData!['guarantors'] as List? ?? [];
@@ -2443,7 +2497,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     }
 
     return _page(
-      maxWidth: 880,
+      maxWidth: _Bp.maxContent,
       child: _surface(
         child: Column(
           children: [
@@ -2456,17 +2510,18 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
                   decoration: BoxDecoration(
                     border: index == guarantors.length - 1
                         ? null
-                        : const Border(
-                            bottom: BorderSide(color: Color(0xFFF1F5F9))),
+                        : const Border(bottom: BorderSide(color: _C.hair)),
                   ),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: _C.tint(_C.brand, 0.10),
-                        child: Text(_initials(gName),
-                            style: _t(13, w: FontWeight.w700, c: _C.brand)),
-                      ),
+                      _avatar(gName,
+                          url: (g['photoUrl'] ?? g['photo'])
+                                      ?.toString()
+                                      .startsWith('http') ==
+                                  true
+                              ? (g['photoUrl'] ?? g['photo']).toString()
+                              : null,
+                          radius: 20),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -2611,7 +2666,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
   InputDecoration _inputDecoration({String? hint, Color? fill}) {
     OutlineInputBorder b(Color c, [double w = 1]) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: c, width: w),
         );
     return InputDecoration(
@@ -2620,20 +2675,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       isDense: true,
       filled: true,
       fillColor: fill ?? Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: b(_C.line),
       enabledBorder: b(_C.line),
       focusedBorder: b(_C.brand, 1.5),
     );
   }
-
-  Widget _label(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text, style: _t(13, w: FontWeight.w600, c: _C.ink)),
-      );
-
-  InputDecoration _dropDecoration({String? hint}) =>
-      _inputDecoration(hint: hint);
 
   /// Shared form dialog: neutral header, colour only on the confirm button.
   Future<void> _showFormDialog({
@@ -2655,7 +2702,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           clipBehavior: Clip.antiAlias,
           insetPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -2774,7 +2821,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: _C.tint(color, 0.07),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2840,18 +2887,19 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       onSubmit: () async {
         final amount = double.tryParse(amountCtrl.text) ?? 0;
         final narration = narrationCtrl.text.trim();
-        
+
         final result = await _runActionSilent(
           action: () => LoanDisbursementService.disburseLoan(
             loanId: widget.loanId,
             disbursedBy: _uid,
             amount: amount,
-            narration: narration.isEmpty ? 'Loan disbursement credited to savings' : narration,
+            narration: narration.isEmpty
+                ? 'Loan disbursement credited to savings'
+                : narration,
           ),
         );
-        
+
         if (result != null && result['success'] == true) {
-          // Show beautiful success dialog
           await SuccessDialog.showLoanDisbursement(
             context: context,
             memberName: _s('memberName'),
@@ -2866,13 +2914,13 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
   Future<void> _showRescheduleLoanDialog() async {
     final durationCtrl =
-        TextEditingController(text: (_loanData!['duration'] ?? 12).toString());
+        TextEditingController(text: _duration.round().toString());
     final reasonCtrl = TextEditingController();
     final unit = _getTenureLabel().toLowerCase();
 
     await _showFormDialog(
       title: 'Reschedule loan',
-      subtitle: 'Current duration: ${_s('duration', '0')} $unit',
+      subtitle: 'Current duration: ${_duration.round()} $unit',
       icon: Icons.schedule,
       color: _C.brand,
       submitLabel: 'Reschedule',
@@ -3053,6 +3101,17 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
     _disposeLater([reasonCtrl]);
   }
 
+  void _showAddChargeDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AddLoanChargeDialog(
+        loanId: widget.loanId,
+        loanData: _loanData!,
+        onSuccess: _loadLoanData,
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // TRANSFER FROM SAVINGS (logic unchanged)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3093,7 +3152,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
                 color: _C.soft,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
@@ -3184,7 +3243,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             });
 
             try {
-              await ArrearsService.updateLoanArrears(widget.loanId);
+              await LoanMath.recalculate(widget.loanId);
             } catch (e) {
               debugPrint('Arrears update failed: $e');
             }
@@ -3211,14 +3270,14 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
 
     Widget methodTile(IconData icon, String title, String sub, String value) {
       return InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.pop(context, value),
         child: Container(
           padding: const EdgeInsets.all(14),
           margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
             border: Border.all(color: _C.line),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             children: [
@@ -3254,7 +3313,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text('Payment method',
             style: _t(17, w: FontWeight.w700, c: _C.ink)),
         content: SizedBox(
@@ -3314,9 +3373,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
             // Get the open till session for the current user
             TillSession? openTill;
             try {
-              openTill = await TillService.getOpenSession(FirebaseService.sessionUid);
+              openTill =
+                  await TillService.getOpenSession(FirebaseService.sessionUid);
               if (openTill == null) {
-                _toast('No open till session. Cash payment will be recorded but not posted to till.', false);
+                _toast(
+                    'No open till session. Cash payment will be recorded but not posted to till.',
+                    false);
               }
             } catch (e) {
               debugPrint('Error getting till session: $e');
@@ -3330,7 +3392,8 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
               paymentDate:
                   _toDate(paymentData['paymentDate']) ?? DateTime.now(),
               tillSession: openTill, // Pass the actual till session
-              alternativePhone: paymentData['alternativePhone']?.toString(), // Pass alternative phone for SMS
+              alternativePhone: paymentData['alternativePhone']
+                  ?.toString(), // Pass alternative phone for SMS
             );
           },
         ),
@@ -3424,9 +3487,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         'principalOutstanding': FieldValue.increment(-principalPaid),
         'interestOutstanding': FieldValue.increment(-interestPaid),
         'chargesOutstanding': FieldValue.increment(-chargesPaid),
-        'remainingBalance': FieldValue.increment(-(principalPaid + interestPaid + chargesPaid)),
-        'totalOutstanding': FieldValue.increment(-(principalPaid + interestPaid + chargesPaid)),
-        'outstanding': FieldValue.increment(-(principalPaid + interestPaid + chargesPaid)),
+        'remainingBalance': FieldValue.increment(
+            -(principalPaid + interestPaid + chargesPaid)),
+        'totalOutstanding': FieldValue.increment(
+            -(principalPaid + interestPaid + chargesPaid)),
+        'outstanding': FieldValue.increment(
+            -(principalPaid + interestPaid + chargesPaid)),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -3435,34 +3501,36 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
         final memberName = _loanData!['memberName'] ?? 'Member';
         final memberPhone = _memberPhone ?? ''; // Handle null
         final altPhone = alternativePhone ?? '';
-        
-        // Get updated loan data for balances
-        final updatedLoan = await db.collection(AppConstants.loansCol).doc(widget.loanId).get();
-        final updatedData = updatedLoan.data();
-        final principalOut = (updatedData?['principalOutstanding'] ?? 0).toInt();
-        final interestOut = (updatedData?['interestOutstanding'] ?? 0).toInt();
-        final chargesOut = (updatedData?['chargesOutstanding'] ?? 0).toInt();
-        final totalOut = principalOut + interestOut + chargesOut;
-        
+
+        // Balances after this payment, from the same source as the screen.
+        final reps = await LoanMath.repaymentsFor(widget.loanId);
+        final fresh = await db
+            .collection(AppConstants.loansCol)
+            .doc(widget.loanId)
+            .get();
+        final freshLoan = <String, dynamic>{'id': fresh.id, ...?fresh.data()};
+        final after = LoanMath.computeFor(freshLoan, reps).snap;
+        final totalOut = after.totalOut.round();
+
         final smsMessage = 'MBADIFA SACCO\n'
             'Dear $memberName, your loan payment of UGX ${_money(total)} has been received. '
             'Principal: UGX ${_money(principalPaid)}, '
             'Interest: UGX ${_money(interestPaid)}. '
-            'Outstanding balance: UGX ${_money(totalOut)}. '
+            'Outstanding balance: UGX ${_currencyFormat.format(totalOut)}. '
             'Thank you.';
-        
+
         // Send to member's phone if exists
         if (memberPhone.isNotEmpty) {
           await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
           debugPrint('✅ SMS sent to member phone: $memberPhone');
         }
-        
+
         // Send to alternative phone if provided (can be in addition to member phone)
         if (altPhone.isNotEmpty) {
           await FirebaseService.sendSmsToPhone(altPhone, smsMessage);
           debugPrint('✅ SMS sent to alternative phone: $altPhone');
         }
-        
+
         // Warn if no phone numbers available
         if (memberPhone.isEmpty && altPhone.isEmpty) {
           debugPrint('⚠️ No phone number available for SMS');
@@ -3472,7 +3540,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
       }
 
       try {
-        await ArrearsService.updateLoanArrears(widget.loanId);
+        await LoanMath.recalculate(widget.loanId);
       } catch (e) {
         debugPrint('Arrears update failed: $e');
       }
@@ -3486,39 +3554,317 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PRINT METHODS
+  // PRINTING (PDF via the `pdf` + `printing` packages: web, Android, iOS, desktop)
   // ═══════════════════════════════════════════════════════════════════════════
-  
+  static final _pdfBrand = PdfColor.fromInt(0xFF1E3A8A);
+  static final _pdfLine = PdfColor.fromInt(0xFFE2E8F0);
+  static final _pdfSoft = PdfColor.fromInt(0xFFF4F6FA);
+  static final _pdfMuted = PdfColor.fromInt(0xFF64748B);
+  static final _pdfInk = PdfColor.fromInt(0xFF0F172A);
+
+  pw.Widget _pdfHeader(String title) {
+    final printed = DateFormat('d MMM yyyy, HH:mm').format(DateTime.now());
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('MBADIFA SACCO',
+                    style: pw.TextStyle(
+                        fontSize: 17,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _pdfBrand)),
+                pw.SizedBox(height: 3),
+                pw.Text(title,
+                    style: pw.TextStyle(fontSize: 12, color: _pdfMuted)),
+              ],
+            ),
+            pw.Text('Printed $printed',
+                style: pw.TextStyle(fontSize: 9, color: _pdfMuted)),
+          ],
+        ),
+        pw.SizedBox(height: 8),
+        pw.Container(height: 2, color: _pdfBrand),
+        pw.SizedBox(height: 14),
+      ],
+    );
+  }
+
+  pw.Widget _pdfFacts(List<List<String>> facts) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: _pdfSoft,
+        border: pw.Border.all(color: _pdfLine),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Wrap(
+        spacing: 20,
+        runSpacing: 10,
+        children: [
+          for (final f in facts)
+            pw.SizedBox(
+              width: 160,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(f[0],
+                      style: pw.TextStyle(fontSize: 8, color: _pdfMuted)),
+                  pw.SizedBox(height: 2),
+                  pw.Text(f[1],
+                      style: pw.TextStyle(
+                          fontSize: 10,
+                          fontWeight: pw.FontWeight.bold,
+                          color: _pdfInk)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfTable({
+    required List<String> headers,
+    required List<List<String>> data,
+    required Map<int, pw.Alignment> aligns,
+    Map<int, pw.TableColumnWidth>? widths,
+  }) {
+    return pw.TableHelper.fromTextArray(
+      headers: headers,
+      data: data,
+      border: pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: _pdfLine, width: 0.5),
+        bottom: pw.BorderSide(color: _pdfLine, width: 0.5),
+      ),
+      headerDecoration: pw.BoxDecoration(color: _pdfBrand),
+      headerStyle: pw.TextStyle(
+          fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+      cellStyle: pw.TextStyle(fontSize: 9, color: _pdfInk),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      oddRowDecoration: pw.BoxDecoration(color: _pdfSoft),
+      headerAlignments: aligns,
+      cellAlignments: aligns,
+      columnWidths: widths,
+    );
+  }
+
+  Future<void> _sharePdf(pw.Document doc, String name) async {
+    await Printing.layoutPdf(
+      name: name,
+      onLayout: (PdfPageFormat format) async => doc.save(),
+    );
+  }
+
+  String get _printFileKey =>
+      _s('accountNumber', widget.loanId).replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+
+  List<List<String>> _loanFacts() => [
+        ['Member', _s('memberName')],
+        ['Account number', _s('accountNumber')],
+        ['Member ID', _s('memberId', _memberDocId ?? 'N/A')],
+        ['Loan type', _s('loanType')],
+        [
+          'Disbursed on',
+          _formatDate(_loanData!['disbursementDate'] ?? _loanData!['disbursedAt'])
+        ],
+        ['Status', _cap(_status)],
+        ['Loan amount', 'UGX ${_money(_principal)}'],
+        ['Total interest', 'UGX ${_money(_interest)}'],
+        ['Total payable', 'UGX ${_money(_totalPayable)}'],
+        [
+          'Instalment',
+          _instalment > 0 ? 'UGX ${_money(_instalment)} per $_periodWord' : 'N/A'
+        ],
+        ['Tenure', '${_duration.round()} ${_getTenureLabel()}'],
+        ['Outstanding balance', 'UGX ${_money(_totalOut)}'],
+      ];
+
   Future<void> _printSchedule() async {
+    final disb =
+        _toDate(_loanData?['disbursementDate'] ?? _loanData?['disbursedAt']);
+    final duration = _duration.round();
+    if (disb == null || duration <= 0) {
+      _toast('No schedule to print yet. The loan has not been disbursed.', false);
+      return;
+    }
+
     try {
-      final memberName = _s('memberName', 'Unknown');
-      final accountNo = _s('accountNumber', 'N/A');
-      final loanAmount = _money(_principal);
-      
-      _toast('Preparing repayment schedule for printing...', true);
-      
-      // TODO: Implement actual print functionality
-      // For now, show a placeholder message
-      await Future.delayed(const Duration(milliseconds: 500));
-      _toast('Print schedule feature coming soon!', true);
+      final principal = _principal;
+      final interest = _interest;
+      final inst = _instalment;
+      final totalPaid = _totalPaidAll;
+      final now = DateTime.now();
+
+      final rows = <List<String>>[];
+      for (var n = 1; n <= duration; n++) {
+        final dueDate = LoanMath.dueDate(disb, n, _freq);
+        final cumulative = inst * n;
+        final previous = inst * (n - 1);
+
+        String status;
+        if (totalPaid >= cumulative - 0.5) {
+          status = 'Paid';
+        } else if (dueDate.isBefore(now)) {
+          status = totalPaid > previous + 0.5 ? 'Partial' : 'Overdue';
+        } else if (totalPaid > previous + 0.5) {
+          status = 'Partial';
+        } else {
+          status = 'Upcoming';
+        }
+
+        final paidForRow = math.min(inst, math.max(0.0, totalPaid - previous));
+        rows.add([
+          '$n',
+          DateFormat('d MMM yyyy').format(dueDate),
+          _money(principal / duration),
+          _money(interest / duration),
+          _money(inst),
+          _money(paidForRow),
+          status,
+        ]);
+      }
+      rows.add([
+        '',
+        'TOTAL',
+        _money(principal),
+        _money(interest),
+        _money(inst * duration),
+        _money(math.min(totalPaid, inst * duration)),
+        '',
+      ]);
+
+      final doc = pw.Document();
+      doc.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text('Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+              style: pw.TextStyle(fontSize: 8, color: _pdfMuted)),
+        ),
+        build: (ctx) => [
+          _pdfHeader('Loan repayment schedule'),
+          _pdfFacts(_loanFacts()),
+          pw.SizedBox(height: 16),
+          _pdfTable(
+            headers: [
+              '#', 'Due date', 'Principal', 'Interest', 'Instalment', 'Paid', 'Status'
+            ],
+            data: rows,
+            aligns: {
+              0: pw.Alignment.center,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerRight,
+              3: pw.Alignment.centerRight,
+              4: pw.Alignment.centerRight,
+              5: pw.Alignment.centerRight,
+              6: pw.Alignment.center,
+            },
+            widths: {0: const pw.FixedColumnWidth(28)},
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text('All amounts in UGX.',
+              style: pw.TextStyle(fontSize: 8, color: _pdfMuted)),
+        ],
+      ));
+
+      await _sharePdf(doc, 'Repayment_Schedule_$_printFileKey');
     } catch (e) {
-      _toast('Failed to print schedule: $e', false);
+      debugPrint('Print schedule failed: $e');
+      _toast('Could not print the schedule: $e', false);
     }
   }
 
   Future<void> _printRepaymentHistory() async {
+    final pays = _txns.where((t) => t['type'] == 'Payment').toList();
+    if (pays.isEmpty) {
+      _toast('No repayments to print yet', false);
+      return;
+    }
+
     try {
-      final memberName = _s('memberName', 'Unknown');
-      final accountNo = _s('accountNumber', 'N/A');
-      
-      _toast('Preparing repayment history for printing...', true);
-      
-      // TODO: Implement actual print functionality
-      // For now, show a placeholder message
-      await Future.delayed(const Duration(milliseconds: 500));
-      _toast('Print repayment history feature coming soon!', true);
+      var tp = 0.0, ti = 0.0, tc = 0.0;
+      final rows = <List<String>>[];
+      for (var n = 0; n < pays.length; n++) {
+        final t = pays[n];
+        final p = _toD(t['principal']);
+        final i = _toD(t['interest']);
+        final c = _toD(t['charges']);
+        tp += p;
+        ti += i;
+        tc += c;
+        rows.add([
+          '${n + 1}',
+          _formatDate(t['date']),
+          (t['paymentMethod'] ?? 'Cash').toString(),
+          _money(p),
+          _money(i),
+          _money(c),
+          _money(p + i + c),
+          (t['recordedBy'] ?? '').toString(),
+        ]);
+      }
+      rows.add(['', 'TOTAL', '', _money(tp), _money(ti), _money(tc),
+          _money(tp + ti + tc), '']);
+
+      final listed = tp + ti + tc;
+      final preSystem = math.max(0.0, _totalPaidAll - listed);
+
+      final facts = _loanFacts()
+        ..add(['Payments recorded', '${pays.length}'])
+        ..add(['Total repaid', 'UGX ${_money(_totalPaidAll)}']);
+
+      final doc = pw.Document();
+      doc.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(32),
+        footer: (ctx) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text('Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+              style: pw.TextStyle(fontSize: 8, color: _pdfMuted)),
+        ),
+        build: (ctx) => [
+          _pdfHeader('Repayment history'),
+          _pdfFacts(facts),
+          pw.SizedBox(height: 16),
+          _pdfTable(
+            headers: [
+              '#', 'Date', 'Method', 'Principal', 'Interest', 'Charges',
+              'Total paid', 'Recorded by'
+            ],
+            data: rows,
+            aligns: {
+              0: pw.Alignment.center,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerLeft,
+              3: pw.Alignment.centerRight,
+              4: pw.Alignment.centerRight,
+              5: pw.Alignment.centerRight,
+              6: pw.Alignment.centerRight,
+              7: pw.Alignment.centerLeft,
+            },
+            widths: {0: const pw.FixedColumnWidth(28)},
+          ),
+          pw.SizedBox(height: 10),
+          if (preSystem > 0.5)
+            pw.Text(
+                'Total repaid includes UGX ${_money(preSystem)} paid before this system was in use.',
+                style: pw.TextStyle(fontSize: 8, color: _pdfMuted)),
+          pw.Text('All amounts in UGX.',
+              style: pw.TextStyle(fontSize: 8, color: _pdfMuted)),
+        ],
+      ));
+
+      await _sharePdf(doc, 'Repayment_History_$_printFileKey');
     } catch (e) {
-      _toast('Failed to print repayment history: $e', false);
+      debugPrint('Print repayment history failed: $e');
+      _toast('Could not print the repayment history: $e', false);
     }
   }
 }

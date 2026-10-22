@@ -10,6 +10,7 @@ import '../../core/audit_service.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/professional_data_table.dart';
 import '../../utils/csv_export.dart';
+import '../../services/loan_math.dart';
 import 'loan_details_screen.dart';
 
 class LoanApprovalScreen extends StatefulWidget {
@@ -45,6 +46,11 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
                 onPressed: () => Navigator.pop(context),
               ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Recalculate all loans',
+            onPressed: _recalculateAllLoans,
+          ),
           IconButton(
             icon: const Icon(Icons.file_download_outlined),
             tooltip: 'Export Loans',
@@ -786,6 +792,78 @@ class _LoanApprovalScreenState extends State<LoanApprovalScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _recalculateAllLoans() async {
+    try {
+      // Show confirmation dialog
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Recalculate All Loans?'),
+          content: const Text(
+            'This will recalculate outstanding balances and arrears for all active loans using the correct calculation method. This may take a few moments.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Recalculate'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recalculating all loans...'),
+          duration: Duration(seconds: 30),
+        ),
+      );
+
+      // Get all active loans
+      final loansSnap = await FirebaseFirestore.instance
+          .collection(AppConstants.loansCol)
+          .get();
+
+      int updated = 0;
+      for (final doc in loansSnap.docs) {
+        final loan = {'id': doc.id, ...doc.data()};
+        if (!LoanMath.isActive(loan)) continue;
+
+        try {
+          await LoanMath.recalculate(doc.id);
+          updated++;
+        } catch (e) {
+          debugPrint('Failed to recalculate loan ${doc.id}: $e');
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Successfully recalculated $updated loans!'),
+          backgroundColor: AppTheme.success,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Recalculation failed: ${e.toString()}'),
           backgroundColor: AppTheme.error,
         ),
       );

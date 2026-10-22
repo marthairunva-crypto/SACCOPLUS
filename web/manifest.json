@@ -1,12 +1,12 @@
 {
-    "name": "SACCOPLUS Pro",
-    "short_name": "SACCOPLUS",
+    "name": "MBADIFA SACCO",
+    "short_name": "MBADIFA",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#D4620F",
-    "theme_color": "#D4620F",
-    "description": "Modern SACCO & Cooperative Platform",
-    "orientation": "portrait-primary",
+    "background_color": "#FFFFFF",
+    "theme_color": "#1E3A8A",
+    "description": "MBADIFA SACCO",
+    "orientation": "any",
     "prefer_related_applications": false,
     "scope": "/",
     "icons": [

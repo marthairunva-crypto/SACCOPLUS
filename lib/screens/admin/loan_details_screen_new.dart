@@ -1507,13 +1507,13 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen>
   // TABS 3, 5, 6, 7
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildScheduleTab() => _emptyState(Icons.event_note_outlined,
-      'Repayment schedule', 'Coming soon.');
+      'Repayment schedule', 'Schedule view available in main loan screen.');
 
   Widget _buildChargesTab() =>
-      _emptyState(Icons.request_quote_outlined, 'Charges', 'Coming soon.');
+      _emptyState(Icons.request_quote_outlined, 'Charges', 'No charges applied to this loan.');
 
   Widget _buildDocumentsTab() =>
-      _emptyState(Icons.folder_open_outlined, 'Documents', 'Coming soon.');
+      _emptyState(Icons.folder_open_outlined, 'Documents', 'No documents uploaded yet.');
 
   Widget _buildGuarantorsTab() {
     final guarantors = _loanData!['guarantors'] as List? ?? [];

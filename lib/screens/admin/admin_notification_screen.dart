@@ -23,6 +23,9 @@ const _kWideBreakpoint = 960.0; // desktop / landscape tablets
 const _kNarrowMax = 720.0;
 const _kWideMax = 1120.0;
 
+/// History page size
+const _kPageSize = 100;
+
 double _gutter(double width) => width >= _kMediumBreakpoint ? 24 : 16;
 double _maxWidthFor(double width) =>
     width >= _kWideBreakpoint ? _kWideMax : _kNarrowMax;
@@ -53,6 +56,14 @@ String _memberPhone(Map<String, dynamic> m) =>
 
 String _plural(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
 
+String _humanize(String s) {
+  final words =
+      s.replaceAll('_', ' ').trim().split(' ').where((e) => e.isNotEmpty);
+  return words
+      .map((e) => e[0].toUpperCase() + e.substring(1).toLowerCase())
+      .join(' ');
+}
+
 int _smsParts(int length) {
   if (length == 0) return 0;
   if (length <= 160) return 1;
@@ -77,6 +88,22 @@ InputDecoration _decoration(String hint) => InputDecoration(
       focusedBorder: _border(AppTheme.primary, width: 1.5),
     );
 
+/// When a notification was created (transactions use createdAt,
+/// broadcasts may use timestamp).
+DateTime? _createdOf(Map<String, dynamic> d) {
+  final ts = d['createdAt'] ?? d['timestamp'];
+  return ts is Timestamp ? ts.toDate() : null;
+}
+
+/// Groups raw notification types into the filter buckets.
+String _typeGroup(String type) {
+  if (type == 'deposit') return 'deposit';
+  if (type == 'withdrawal') return 'withdrawal';
+  if (type.startsWith('loan')) return 'loan';
+  if (type == 'message') return 'message';
+  return 'other';
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // Screen
 // ═════════════════════════════════════════════════════════════════════════
@@ -96,6 +123,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
 
   final _titleCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
+  final _historySearch = TextEditingController();
   late final TabController _tabController;
 
   bool _sending = false;
@@ -106,10 +134,20 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
   Set<String> _selectedIds = {};
   List<Map<String, dynamic>> _allMembers = [];
 
+  // History filters
+  String _sortOrder = 'latest'; // 'latest' | 'oldest'
+  String _typeFilter = 'all'; // all | message | deposit | withdrawal | loan | other
+  String _sourceFilter = 'all'; // all | custom | api
+  String _dateFilter = 'all'; // all | today | week | month | custom
+  DateTimeRange? _customRange;
+  int _historyLimit = _kPageSize;
+  late Stream<QuerySnapshot> _historyStream;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _historyStream = _makeHistoryStream();
     _loadMembers();
   }
 
@@ -117,9 +155,17 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
   void dispose() {
     _titleCtrl.dispose();
     _msgCtrl.dispose();
+    _historySearch.dispose();
     _tabController.dispose();
     super.dispose();
   }
+
+  Stream<QuerySnapshot> _makeHistoryStream() => FirebaseFirestore.instance
+      .collection(AppConstants.notificationsCol)
+      .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
+      .orderBy('createdAt', descending: _sortOrder == 'latest')
+      .limit(_historyLimit)
+      .snapshots();
 
   // ── Derived data ───────────────────────────────────────────────────────
 
@@ -155,7 +201,6 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
     Set<String>? result;
 
     if (width >= _kMediumBreakpoint) {
-      // Tablet / desktop: centered dialog
       result = await showDialog<Set<String>>(
         context: context,
         builder: (_) => Dialog(
@@ -176,7 +221,6 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
         ),
       );
     } else {
-      // Phone: bottom sheet
       result = await showModalBottomSheet<Set<String>>(
         context: context,
         isScrollControlled: true,
@@ -381,7 +425,6 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
 
   Widget _buildHeader(double maxW, double screenW) {
     final gutter = _gutter(screenW);
-    final tabsMaxWidth = screenW >= _kMediumBreakpoint ? 320.0 : double.infinity;
 
     return Container(
       decoration: const BoxDecoration(
@@ -391,77 +434,79 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxW),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Notifications',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _text(20, weight: FontWeight.w700)),
-                          const SizedBox(height: 2),
-                          Text('Send messages to members',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _text(13, color: AppTheme.textSecondary)),
-                        ],
-                      ),
-                    ),
-                    if (_allMembers.isNotEmpty) ...[
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: gutter),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 16, 0, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.people_outline_rounded,
-                                size: 14, color: AppTheme.primary),
-                            const SizedBox(width: 6),
-                            Text(
-                              _plural(_allMembers.length, 'member'),
-                              style: _text(12,
-                                  weight: FontWeight.w600,
-                                  color: AppTheme.primary),
-                            ),
+                            Text('Notifications',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: _text(20, weight: FontWeight.w700)),
+                            const SizedBox(height: 2),
+                            Text('Send messages to members',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style:
+                                    _text(13, color: AppTheme.textSecondary)),
                           ],
                         ),
                       ),
+                      if (_allMembers.isNotEmpty) ...[
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.people_outline_rounded,
+                                  size: 14, color: AppTheme.primary),
+                              const SizedBox(width: 6),
+                              Text(
+                                _plural(_allMembers.length, 'member'),
+                                style: _text(12,
+                                    weight: FontWeight.w600,
+                                    color: AppTheme.primary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: screenW >= _kMediumBreakpoint ? gutter - 16 : 0),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: tabsMaxWidth),
-                  child: TabBar(
-                    controller: _tabController,
-                    indicatorColor: AppTheme.primary,
-                    indicatorWeight: 2.5,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: Colors.transparent,
-                    labelColor: AppTheme.primary,
-                    unselectedLabelColor: AppTheme.textSecondary,
-                    labelStyle: _text(14, weight: FontWeight.w600),
-                    unselectedLabelStyle: _text(14, weight: FontWeight.w500),
-                    tabs: const [Tab(text: 'Compose'), Tab(text: 'History')],
                   ),
                 ),
-              ),
-            ],
+                // Tabs sit flush-left, directly under the title.
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  padding: EdgeInsets.zero,
+                  labelPadding: const EdgeInsets.only(right: 28),
+                  indicatorColor: AppTheme.primary,
+                  indicatorWeight: 2.5,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: Colors.transparent,
+                  labelColor: AppTheme.primary,
+                  unselectedLabelColor: AppTheme.textSecondary,
+                  labelStyle: _text(14, weight: FontWeight.w600),
+                  unselectedLabelStyle: _text(14, weight: FontWeight.w500),
+                  tabs: const [Tab(text: 'Compose'), Tab(text: 'History')],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -789,8 +834,8 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
             visualDensity: VisualDensity.compact,
             deleteIcon: Icon(Icons.close_rounded,
                 size: 14, color: AppTheme.textSecondary),
-            onDeleted: () => setState(
-                () => _selectedIds.remove(m['id'].toString())),
+            onDeleted: () =>
+                setState(() => _selectedIds.remove(m['id'].toString())),
           ),
         if (extra > 0)
           Chip(
@@ -883,8 +928,8 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
 
               if (title.isEmpty && msg.isEmpty) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 24),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
                   decoration: BoxDecoration(
                     color: AppTheme.surface,
                     borderRadius: BorderRadius.circular(10),
@@ -918,8 +963,8 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
                         bottomRight: Radius.circular(14),
                         bottomLeft: Radius.circular(4),
                       ),
-                      border: Border.all(
-                          color: AppTheme.primary.withOpacity(0.15)),
+                      border:
+                          Border.all(color: AppTheme.primary.withOpacity(0.15)),
                     ),
                     child: Text(sms, style: _text(13, height: 1.5)),
                   ),
@@ -997,8 +1042,8 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
                         backgroundColor: AppTheme.primary,
                         foregroundColor: Colors.white,
                         disabledBackgroundColor: _kBorder,
-                        padding: EdgeInsets.symmetric(
-                            horizontal: compact ? 18 : 24),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: compact ? 18 : 24),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -1035,14 +1080,310 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
 
   // ── History ────────────────────────────────────────────────────────────
 
+  int get _activeFilterCount =>
+      (_sourceFilter != 'all' ? 1 : 0);
+
+  void _clearFilters() {
+    setState(() {
+      _sortOrder = 'latest';
+      _sourceFilter = 'all';
+    });
+  }
+
+  DateTimeRange? _dateBounds() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (_dateFilter) {
+      case 'today':
+        return DateTimeRange(
+            start: today, end: today.add(const Duration(days: 1)));
+      case 'week':
+        return DateTimeRange(
+            start: today.subtract(const Duration(days: 6)),
+            end: today.add(const Duration(days: 1)));
+      case 'month':
+        return DateTimeRange(
+            start: today.subtract(const Duration(days: 29)),
+            end: today.add(const Duration(days: 1)));
+      case 'custom':
+        final r = _customRange;
+        if (r == null) return null;
+        return DateTimeRange(
+          start: DateTime(r.start.year, r.start.month, r.start.day),
+          end: DateTime(r.end.year, r.end.month, r.end.day)
+              .add(const Duration(days: 1)),
+        );
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDateRange: _customRange,
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _customRange = picked;
+        _dateFilter = 'custom';
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> all) {
+    final q = _historySearch.text.trim().toLowerCase();
+    final range = _dateBounds();
+
+    return all.where((d) {
+      final type = (d['type'] ?? 'message').toString();
+      if (_typeFilter != 'all' && _typeGroup(type) != _typeFilter) {
+        return false;
+      }
+
+      final isApi = d['source'] == 'api';
+      if (_sourceFilter == 'api' && !isApi) return false;
+      if (_sourceFilter == 'custom' && isApi) return false;
+
+      if (range != null) {
+        final dt = _createdOf(d);
+        if (dt == null || dt.isBefore(range.start) || !dt.isBefore(range.end)) {
+          return false;
+        }
+      }
+
+      if (q.isNotEmpty) {
+        final hay = '${d['title'] ?? ''} ${d['message'] ?? ''} '
+                '${d['recipientName'] ?? ''}'
+            .toLowerCase();
+        if (!hay.contains(q)) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  Widget _filterChip(String label, bool selected, VoidCallback onTap,
+      {IconData? icon}) {
+    return ChoiceChip(
+      avatar: icon == null
+          ? null
+          : Icon(icon,
+              size: 14, color: selected ? Colors.white : AppTheme.textSecondary),
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      labelStyle: _text(12,
+          weight: FontWeight.w600,
+          color: selected ? Colors.white : AppTheme.textSecondary),
+      selectedColor: AppTheme.primary,
+      backgroundColor: Colors.white,
+      side: BorderSide(color: selected ? AppTheme.primary : _kBorder),
+      onSelected: (_) => onTap(),
+    );
+  }
+
+  Widget _filterGroup(String label, List<Widget> chips) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 58,
+          child: Text(label.toUpperCase(),
+              style: _text(10.5,
+                  weight: FontWeight.w600, color: AppTheme.textSecondary)),
+        ),
+        Expanded(child: Wrap(spacing: 8, runSpacing: 6, children: chips)),
+      ],
+    );
+  }
+
+  Widget _buildHistoryToolbar(double maxW, double screenW) {
+    final gutter = _gutter(screenW);
+    final narrow = screenW < _kMediumBreakpoint;
+    final active = _activeFilterCount;
+
+    final search = TextField(
+      controller: _historySearch,
+      onChanged: (_) => setState(() {}),
+      style: _text(14),
+      decoration: _decoration('Search title, message or member').copyWith(
+        counterText: '',
+        prefixIcon: Icon(Icons.search_rounded,
+            size: 20, color: AppTheme.textSecondary),
+        suffixIcon: _historySearch.text.isEmpty
+            ? null
+            : IconButton(
+                icon: Icon(Icons.close_rounded,
+                    size: 18, color: AppTheme.textSecondary),
+                onPressed: () => setState(_historySearch.clear),
+              ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      ),
+    );
+
+    final sort = Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _kBorder),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _sortOrder,
+          isDense: true,
+          icon: Icon(Icons.unfold_more_rounded,
+              size: 18, color: AppTheme.textSecondary),
+          style: _text(13, weight: FontWeight.w600),
+          items: const [
+            DropdownMenuItem(value: 'latest', child: Text('Newest first')),
+            DropdownMenuItem(value: 'oldest', child: Text('Oldest first')),
+          ],
+          onChanged: (v) {
+            if (v == null || v == _sortOrder) return;
+            setState(() {
+              _sortOrder = v;
+              _historyStream = _makeHistoryStream();
+            });
+          },
+        ),
+      ),
+    );
+
+    final customLabel = _customRange == null
+        ? 'Custom'
+        : '${DateFormat('d MMM').format(_customRange!.start)} – '
+            '${DateFormat('d MMM').format(_customRange!.end)}';
+
+    final typeChips = <Widget>[
+      _filterChip('All', _typeFilter == 'all',
+          () => setState(() => _typeFilter = 'all')),
+      _filterChip('Messages', _typeFilter == 'message',
+          () => setState(() => _typeFilter = 'message'),
+          icon: Icons.campaign_outlined),
+      _filterChip('Deposits', _typeFilter == 'deposit',
+          () => setState(() => _typeFilter = 'deposit'),
+          icon: Icons.south_west_rounded),
+      _filterChip('Withdrawals', _typeFilter == 'withdrawal',
+          () => setState(() => _typeFilter = 'withdrawal'),
+          icon: Icons.north_east_rounded),
+      _filterChip('Loans', _typeFilter == 'loan',
+          () => setState(() => _typeFilter = 'loan'),
+          icon: Icons.account_balance_outlined),
+      _filterChip('Other', _typeFilter == 'other',
+          () => setState(() => _typeFilter = 'other')),
+    ];
+
+    final sourceChips = <Widget>[
+      _filterChip('All', _sourceFilter == 'all',
+          () => setState(() => _sourceFilter = 'all')),
+      _filterChip('Sent by admin', _sourceFilter == 'custom',
+          () => setState(() => _sourceFilter = 'custom')),
+      _filterChip('Sent by API', _sourceFilter == 'api',
+          () => setState(() => _sourceFilter = 'api')),
+    ];
+
+    final dateChips = <Widget>[
+      _filterChip('Any time', _dateFilter == 'all',
+          () => setState(() => _dateFilter = 'all')),
+      _filterChip('Today', _dateFilter == 'today',
+          () => setState(() => _dateFilter = 'today')),
+      _filterChip('Last 7 days', _dateFilter == 'week',
+          () => setState(() => _dateFilter = 'week')),
+      _filterChip('Last 30 days', _dateFilter == 'month',
+          () => setState(() => _dateFilter = 'month')),
+      _filterChip(customLabel, _dateFilter == 'custom', _pickCustomRange,
+          icon: Icons.date_range_outlined),
+    ];
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: _kBorder)),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxW),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (narrow) ...[
+                  search,
+                  const SizedBox(height: 10),
+                  Align(alignment: Alignment.centerLeft, child: sort),
+                ] else
+                  Row(children: [
+                    Expanded(child: search),
+                    const SizedBox(width: 12),
+                    sort,
+                  ]),
+                const SizedBox(height: 12),
+                if (narrow) ...[
+                  Wrap(spacing: 8, runSpacing: 6, children: typeChips),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 6, children: sourceChips),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 6, children: dateChips),
+                ] else ...[
+                  _filterGroup('Type', typeChips),
+                  const SizedBox(height: 8),
+                  _filterGroup('Source', sourceChips),
+                  const SizedBox(height: 8),
+                  _filterGroup('Date', dateChips),
+                ],
+                if (active > 0) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _clearFilters,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: Icon(Icons.filter_alt_off_outlined,
+                          size: 16, color: AppTheme.primary),
+                      label: Text(
+                        'Clear $active filter${active == 1 ? '' : 's'}',
+                        style: _text(12.5,
+                            weight: FontWeight.w600, color: AppTheme.primary),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHistoryTab(double maxW) {
+    return LayoutBuilder(builder: (context, box) {
+      return Column(
+        children: [
+          _buildHistoryToolbar(maxW, box.maxWidth),
+          Expanded(child: _buildHistoryList(maxW, box.maxWidth)),
+        ],
+      );
+    });
+  }
+
+  Widget _buildHistoryList(double maxW, double screenW) {
+    final gutter = _gutter(screenW);
+    // Centre the content column but keep the scrollbar at the screen edge.
+    final sidePad = math.max(gutter, (screenW - maxW) / 2 + gutter);
+
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection(AppConstants.notificationsCol)
-          .where('tenantId', isEqualTo: FirebaseService.sessionTenantId)
-          .orderBy('createdAt', descending: true)
-          .limit(100)
-          .snapshots(),
+      stream: _historyStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const _EmptyState(
@@ -1057,8 +1398,14 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
               child: CircularProgressIndicator(color: AppTheme.primary));
         }
 
-        final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
+        final raw = snapshot.data?.docs ?? [];
+        final all = raw
+            .map((d) => d.data() as Map<String, dynamic>)
+            .toList(growable: false);
+        final items = _applyFilters(all);
+        final mayHaveMore = raw.length >= _historyLimit;
+
+        if (all.isEmpty) {
           return const _EmptyState(
             icon: Icons.notifications_none_rounded,
             title: 'No notifications yet',
@@ -1066,58 +1413,91 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen>
           );
         }
 
-        final items = docs
-            .map((d) => d.data() as Map<String, dynamic>)
-            .toList(growable: false);
-
-        return LayoutBuilder(
-          builder: (context, c) {
-            final w = c.maxWidth;
-            final gutter = _gutter(w);
-            final wide = w >= _kWideBreakpoint;
-
-            if (!wide) {
-              return Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxW),
-                  child: ListView.separated(
-                    padding: EdgeInsets.all(gutter),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) => _HistoryTile(data: items[i]),
+        if (items.isEmpty) {
+          return _EmptyState(
+            icon: Icons.filter_alt_off_outlined,
+            title: 'Nothing matches these filters',
+            subtitle: mayHaveMore
+                ? 'Only the ${_plural(all.length, 'most recent record')} are '
+                    'loaded. Load more, or clear the filters.'
+                : 'Try a different search or clear the filters.',
+            action: Wrap(
+              spacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                if (_activeFilterCount > 0)
+                  OutlinedButton(
+                    onPressed: _clearFilters,
+                    child: const Text('Clear filters'),
                   ),
-                ),
-              );
-            }
+                if (mayHaveMore)
+                  FilledButton(
+                    onPressed: () => setState(() {
+                      _historyLimit += _kPageSize;
+                      _historyStream = _makeHistoryStream();
+                    }),
+                    child: const Text('Load more'),
+                  ),
+              ],
+            ),
+          );
+        }
 
-            // Wide screens: two balanced columns
-            final left = <Widget>[];
-            final right = <Widget>[];
-            for (var i = 0; i < items.length; i++) {
-              final tile = Padding(
+        return ListView.builder(
+          padding: EdgeInsets.fromLTRB(sidePad, 16, sidePad, 32),
+          itemCount: items.length + 2,
+          itemBuilder: (context, i) {
+            // Summary line
+            if (i == 0) {
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _HistoryTile(data: items[i]),
+                child: Text(
+                  _activeFilterCount > 0
+                      ? '${items.length} of ${all.length} loaded match your filters'
+                      : 'Showing ${_plural(items.length, 'notification')}',
+                  style: _text(12.5,
+                      weight: FontWeight.w500, color: AppTheme.textSecondary),
+                ),
               );
-              (i.isEven ? left : right).add(tile);
             }
-
-            return SingleChildScrollView(
-              padding: EdgeInsets.all(gutter),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxW - gutter * 2),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: Column(children: left)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Column(children: right)),
-                    ],
+            // Footer
+            if (i == items.length + 1) {
+              if (!mayHaveMore) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Center(
+                    child: Text("You've reached the end",
+                        style: _text(12, color: AppTheme.textSecondary)),
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Center(
+                  child: OutlinedButton.icon(
+                    onPressed: () => setState(() {
+                      _historyLimit += _kPageSize;
+                      _historyStream = _makeHistoryStream();
+                    }),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: _kBorder),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: Icon(Icons.expand_more_rounded,
+                        size: 18, color: AppTheme.primary),
+                    label: Text('Load $_kPageSize more',
+                        style: _text(13,
+                            weight: FontWeight.w600, color: AppTheme.primary)),
                   ),
                 ),
-              ),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _HistoryTile(data: items[i - 1]),
             );
           },
         );
@@ -1140,7 +1520,7 @@ class _TypeStyle {
 _TypeStyle _styleFor(String type) {
   switch (type) {
     case 'message':
-      return _TypeStyle(null, AppTheme.primary, Icons.campaign_outlined);
+      return _TypeStyle('Message', AppTheme.primary, Icons.campaign_outlined);
     case 'deposit':
       return _TypeStyle('Deposit', AppTheme.success, Icons.south_west_rounded);
     case 'withdrawal':
@@ -1152,8 +1532,14 @@ _TypeStyle _styleFor(String type) {
     case 'loan_disbursement':
       return _TypeStyle(
           'Loan Disbursed', AppTheme.info, Icons.account_balance_outlined);
+    case 'loan_approved':
+      return _TypeStyle(
+          'Loan Approved', AppTheme.success, Icons.check_circle_outline);
+    case 'loan_rejected':
+      return _TypeStyle(
+          'Loan Rejected', AppTheme.error, Icons.cancel_outlined);
     default:
-      return _TypeStyle(type.toUpperCase(), AppTheme.textSecondary,
+      return _TypeStyle(_humanize(type), AppTheme.textSecondary,
           Icons.notifications_none_rounded);
   }
 }
@@ -1166,13 +1552,13 @@ class _HistoryTile extends StatelessWidget {
   String get _message => (data['message'] ?? '').toString();
   String get _recipient => (data['recipientName'] ?? '').toString();
   String get _type => (data['type'] ?? 'message').toString();
+  bool get _isApi => data['source'] == 'api';
 
   String get _date {
-    // createdAt for transactions, timestamp for broadcasts
-    final ts = data['createdAt'] ?? data['timestamp'];
-    return ts is Timestamp
-        ? DateFormat('d MMM yyyy, HH:mm').format(ts.toDate())
-        : 'Unknown date';
+    final dt = _createdOf(data);
+    return dt == null
+        ? 'Unknown date'
+        : DateFormat('d MMM yyyy, HH:mm').format(dt);
   }
 
   void _showDetails(BuildContext context) {
@@ -1226,6 +1612,7 @@ class _HistoryTile extends StatelessWidget {
                             style: _text(12, color: AppTheme.textSecondary)),
                       if (style.badge != null)
                         _Badge(label: style.badge!, color: style.color),
+                      if (_isApi) _Badge(label: 'API', color: AppTheme.info),
                     ],
                   ),
                 ),
@@ -1292,10 +1679,13 @@ class _HistoryTile extends StatelessWidget {
                             style: _text(14, weight: FontWeight.w600),
                           ),
                         ),
-                        if (style.badge != null) ...[
-                          const SizedBox(width: 8),
-                          _Badge(label: style.badge!, color: style.color),
+                        const SizedBox(width: 8),
+                        if (_isApi) ...[
+                          _Badge(label: 'API', color: AppTheme.info),
+                          const SizedBox(width: 6),
                         ],
+                        if (style.badge != null)
+                          _Badge(label: style.badge!, color: style.color),
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -1305,8 +1695,7 @@ class _HistoryTile extends StatelessWidget {
                             style: _text(12, color: AppTheme.textSecondary)),
                         if (_recipient.isNotEmpty) ...[
                           Text(' • ',
-                              style:
-                                  _text(12, color: AppTheme.textSecondary)),
+                              style: _text(12, color: AppTheme.textSecondary)),
                           Expanded(
                             child: Text(
                               _recipient,
@@ -1319,10 +1708,10 @@ class _HistoryTile extends StatelessWidget {
                       ],
                     ),
                     if (_message.isNotEmpty) ...[
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8),
                       Text(
                         _message,
-                        maxLines: 3,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: _text(13,
                             color: AppTheme.textSecondary, height: 1.5),
@@ -1368,10 +1757,12 @@ class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final Widget? action;
   const _EmptyState({
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.action,
   });
 
   @override
@@ -1392,6 +1783,10 @@ class _EmptyState extends StatelessWidget {
             Text(subtitle,
                 textAlign: TextAlign.center,
                 style: _text(13, color: AppTheme.textSecondary)),
+            if (action != null) ...[
+              const SizedBox(height: 16),
+              action!,
+            ],
           ],
         ),
       ),
@@ -1456,7 +1851,6 @@ class _MemberPickerState extends State<_MemberPicker> {
 
     return Column(
       children: [
-        // Drag handle (sheet only)
         if (!widget.asDialog)
           Padding(
             padding: const EdgeInsets.only(top: 10),
@@ -1469,7 +1863,6 @@ class _MemberPickerState extends State<_MemberPicker> {
               ),
             ),
           ),
-        // Title row
         Padding(
           padding: EdgeInsets.fromLTRB(20, widget.asDialog ? 12 : 8, 8, 0),
           child: Row(
@@ -1486,7 +1879,6 @@ class _MemberPickerState extends State<_MemberPicker> {
             ],
           ),
         ),
-        // Search
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
           child: TextField(
@@ -1511,7 +1903,6 @@ class _MemberPickerState extends State<_MemberPicker> {
             ),
           ),
         ),
-        // Count + select all
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 12, 0),
           child: Row(
@@ -1542,7 +1933,6 @@ class _MemberPickerState extends State<_MemberPicker> {
           ),
         ),
         const Divider(height: 1, color: _kBorder),
-        // List
         Expanded(
           child: visible.isEmpty
               ? const _EmptyState(
@@ -1595,7 +1985,6 @@ class _MemberPickerState extends State<_MemberPicker> {
                   },
                 ),
         ),
-        // Footer
         Container(
           decoration: const BoxDecoration(
             color: Colors.white,

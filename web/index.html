@@ -5,19 +5,34 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="MBADIFA SACCO — Modern SACCO & Cooperative Fintech Platform">
+  
+  <!-- Favicon - must be early in head for best browser support -->
+  <link rel="icon" href="mbadifa-icon.png" type="image/png">
+  <link rel="shortcut icon" href="mbadifa-icon.png" type="image/png">
   <meta name="keywords" content="MBADIFA, SACCO, savings, loans, cooperative, Uganda, fintech">
   <meta name="author" content="Infinitech Innovations Ltd">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
+  <!-- Security headers (X-Frame-Options must be set by server, not meta tag) -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+  <meta name="referrer" content="no-referrer">
   
   <!-- iOS meta tags & icons -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MBADIFA SACCO">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
   
-  <!-- Favicon with cache busting -->
-  <link rel="icon" type="image/png" href="favicon.png?v=2"/>
+  <!-- Favicon with multiple sizes and formats for better compatibility -->
+  <link rel="icon" type="image/png" sizes="16x16" href="mbadifa-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="mbadifa-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/Icon-512.png">
+  <link rel="shortcut icon" type="image/png" href="mbadifa-icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png">
   
   <!-- Open Graph / Social Media -->
   <meta property="og:type" content="website">
@@ -34,6 +49,67 @@
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
+  
+  <!-- Disable Developer Tools for Production ONLY -->
+  <script>
+    // Only enable security features if NOT running on localhost
+    var isProduction = window.location.hostname !== 'localhost' && 
+                       window.location.hostname !== '127.0.0.1' &&
+                       !window.location.hostname.includes('localhost') &&
+                       !window.location.hostname.includes('192.168');
+    
+    if (isProduction) {
+      // Disable right-click
+      document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        return false;
+      });
+      
+      // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
+      document.addEventListener('keydown', function(e) {
+        // F12
+        if (e.keyCode === 123) {
+          e.preventDefault();
+          return false;
+        }
+        // Ctrl+Shift+I (DevTools)
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
+          e.preventDefault();
+          return false;
+        }
+        // Ctrl+Shift+J (Console)
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
+          e.preventDefault();
+          return false;
+        }
+        // Ctrl+U (View Source)
+        if (e.ctrlKey && e.keyCode === 85) {
+          e.preventDefault();
+          return false;
+        }
+        // Ctrl+Shift+C (Inspect Element)
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 67) {
+          e.preventDefault();
+          return false;
+        }
+        // Ctrl+S (Save Page)
+        if (e.ctrlKey && e.keyCode === 83) {
+          e.preventDefault();
+          return false;
+        }
+      });
+      
+      // Disable text selection
+      document.onselectstart = function() { return false; };
+      document.onmousedown = function() { return false; };
+      
+      // Disable drag
+      document.ondragstart = function() { return false; };
+      
+      // Disable copy
+      document.oncopy = function() { return false; };
+    }
+  </script>
 </head>
 <body>
   <script>

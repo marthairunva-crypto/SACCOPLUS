@@ -330,7 +330,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen>
     try {
       final bytes = await _buildPdf();
       final filename =
-          'SACCOPLUS_Statement_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf';
+          'MBADIFA_Statement_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf';
 
       if (kIsWeb) {
         // On web: open in browser's built-in PDF viewer / download dialog
@@ -463,7 +463,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen>
           pw.Expanded(child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Text('SACCOPLUS Pro',
+              pw.Text('MBADIFA SACCO',
                   style: pw.TextStyle(font: fonts.bold, color: PdfColors.white, fontSize: 18)),
               pw.Text('Account Statement',
                   style: pw.TextStyle(font: fonts.regular, color: PdfColor.fromHex('#FFFFFF99'), fontSize: 11)),

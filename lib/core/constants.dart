@@ -20,6 +20,9 @@ class AppConstants {
   static const String loansCol         = 'saccoplus-loans';
   static const String repaymentsCol    = 'saccoplus-repayments';
   static const String guarantorsCol    = 'saccoplus-guarantors';
+  static const String chargeTypesCol   = 'charge_types';
+  // Note: charges are subcollection: loans/{loanId}/charges/{chargeId}
+  // Note: waivers are subcollection: loans/{loanId}/charges/{chargeId}/waivers/{waiverId}
   // Savings
   static const String savingsCol       = 'saccoplus-savings';
   static const String savingsTxnCol    = 'saccoplus-savings-transactions';
@@ -72,10 +75,10 @@ class AppConstants {
   // ── Wallet Limits (UGX) ───────────────────────────────────────────────────
   static const int walletDailyLimit  = 5000000;  // UGX 5M
   static const int walletMinWithdraw = 1000;      // UGX 1K
-  // Charges — MarzPay API fees + platform margin (updated Sept 2026)
-  static const double walletDepositChargePercent  = 0.03; // 3.2% collection
-  static const double walletWithdrawChargePercent = 0.035; // 3.5% disbursement
-  static const int    walletMinCharge             = 200;  // UGX 200 minimum
+  // Charges — MBADIFA SACCO transaction fees (0.5%)
+  static const double walletDepositChargePercent  = 0.005; // 0.5% collection
+  static const double walletWithdrawChargePercent = 0.005; // 0.5% disbursement
+  static const int    walletMinCharge             = 100;  // UGX 100 minimum
 
   // ── MarzPay (Mobile Money) ────────────────────────────────────────────────
   static const String marzPayBaseUrl    = 'https://wallet.wearemarz.com/api/v1';

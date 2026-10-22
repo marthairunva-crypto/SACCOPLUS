@@ -277,7 +277,88 @@ class ReportService {
         }
       }
 
-      return {
+      // Fetch income and expenses from teller transactions (not till entries)
+      final tellerTransactions = await col(AppConstants.tellerTxnCol);
+      double incomeTotal = 0, expenseTotal = 0;
+      double interestIncome = 0, feeIncome = 0, penaltyIncome = 0, otherIncome = 0;
+      double salaries = 0, utilities = 0, officeExpenses = 0, otherExpenses = 0;
+      
+      // Store detailed transactions
+      final List<Map<String, dynamic>> incomeTransactions = [];
+      final List<Map<String, dynamic>> expenseTransactions = [];
+
+      for (final doc in tellerTransactions.docs) {
+        final d = doc.data();
+        if (!inRange(_dt(d['timestamp']) ?? _dt(d['createdAt']))) continue;
+        
+        final txnType = _st(d['type']);
+        final amount = _i(d['amount']).abs();
+        final timestamp = _dt(d['timestamp']) ?? _dt(d['createdAt']);
+
+        if (txnType == 'revenue') {
+          incomeTotal += amount;
+          final source = _st(d['source']).toLowerCase();
+          String category = 'Other';
+          
+          // Map revenue sources to income categories
+          if (source.contains('interest') || source.contains('loan')) {
+            interestIncome += amount;
+            category = 'Interest';
+          } else if (source.contains('fee') || source.contains('processing')) {
+            feeIncome += amount;
+            category = 'Fees';
+          } else if (source.contains('penalty') || source.contains('penalt')) {
+            penaltyIncome += amount;
+            category = 'Penalties';
+          } else {
+            otherIncome += amount;
+            category = 'Other';
+          }
+          
+          incomeTransactions.add({
+            'date': timestamp,
+            'description': _st(d['description']),
+            'source': _st(d['source']),
+            'category': category,
+            'amount': amount,
+            'receiptNumber': _st(d['receiptNumber']),
+            'tellerName': _st(d['tellerName']),
+          });
+        } else if (txnType == 'expense') {
+          expenseTotal += amount;
+          final category = _st(d['category']).toLowerCase();
+          String categoryName = 'Other';
+          
+          if (category.contains('salary') || category.contains('salaries') || 
+              category.contains('allowance') || category.contains('welfare')) {
+            salaries += amount;
+            categoryName = 'Salaries';
+          } else if (category.contains('util') || category.contains('airtime') || 
+                     category.contains('fuel')) {
+            utilities += amount;
+            categoryName = 'Utilities';
+          } else if (category.contains('office') || category.contains('stationery') || 
+                     category.contains('photocopy') || category.contains('printing')) {
+            officeExpenses += amount;
+            categoryName = 'Office Expenses';
+          } else {
+            otherExpenses += amount;
+            categoryName = 'Other';
+          }
+          
+          expenseTransactions.add({
+            'date': timestamp,
+            'description': _st(d['description']),
+            'category': categoryName,
+            'originalCategory': _st(d['category']),
+            'amount': amount,
+            'receiptNumber': _st(d['receiptNumber']),
+            'tellerName': _st(d['tellerName']),
+          });
+        }
+      }
+
+      final result = {
         'period': period,
         'startDate': startDate,
         'endDate': endDate,
@@ -288,6 +369,32 @@ class ReportService {
         'netCashFlow': repAmt + savAmt + shAmt - loanAmt,
         'generatedAt': DateTime.now(),
       };
+
+      // Add income data if any income entries exist
+      if (incomeTotal > 0) {
+        result['income'] = {
+          'interest': interestIncome,
+          'fees': feeIncome,
+          'penalties': penaltyIncome,
+          'other': otherIncome,
+          'total': incomeTotal,
+          'transactions': incomeTransactions,
+        };
+      }
+
+      // Add expense data if any expense entries exist
+      if (expenseTotal > 0) {
+        result['expenses'] = {
+          'salaries': salaries,
+          'utilities': utilities,
+          'officeExpenses': officeExpenses,
+          'other': otherExpenses,
+          'total': expenseTotal,
+          'transactions': expenseTransactions,
+        };
+      }
+
+      return result;
     } catch (e) {
       // Throw so the screen shows an error + Retry instead of fake zeros.
       throw Exception('Could not build monthly report: $e');

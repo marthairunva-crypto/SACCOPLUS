@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -234,7 +235,7 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
       // MEMBER: welcome dialog, then dashboard
       if (mounted) await _showWelcomeDialog(name);
 
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
 
       if (role == 'admin' || role == 'super_admin') {
@@ -278,62 +279,14 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
     );
   }
 
+  /// Branded welcome dialog. Auto-continues after 3 seconds; the button
+  /// continues immediately.
   Future<void> _showWelcomeDialog(String name) {
     return showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: ModernTheme.success.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.check_rounded, size: 48, color: ModernTheme.success),
-                ),
-                const SizedBox(height: 20),
-                Text('Welcome back', textAlign: TextAlign.center, style: _t(24, w: FontWeight.w700)),
-                const SizedBox(height: 8),
-                Text(
-                  name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: _t(17, w: FontWeight.w600, c: ModernTheme.primary),
-                ),
-                const SizedBox(height: 6),
-                Text('Poverty Must Go', style: _t(13, c: ModernTheme.textSecondary)),
-              ],
-            ),
-          ),
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ModernTheme.success,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text('Continue', style: _t(16, w: FontWeight.w600, c: Colors.white)),
-            ),
-          ),
-        ],
-      ),
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (_) => _WelcomeDialog(name: name),
     );
   }
 
@@ -1317,6 +1270,243 @@ class _ProfessionalLoginScreenState extends State<ProfessionalLoginScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+//  Welcome dialog (shown after a successful member login)
+// ═════════════════════════════════════════════════════════════════════
+
+/// Branded welcome dialog. Auto-closes after [_autoCloseSeconds]; the button
+/// closes it immediately. Uses a Timer that is cancelled on dispose so it can
+/// never pop twice or pop a screen that is no longer there.
+class _WelcomeDialog extends StatefulWidget {
+  final String name;
+  const _WelcomeDialog({required this.name});
+
+  @override
+  State<_WelcomeDialog> createState() => _WelcomeDialogState();
+}
+
+class _WelcomeDialogState extends State<_WelcomeDialog> {
+  static const int _autoCloseSeconds = 3;
+  static const Color _brandDark = Color(0xFF0D2B6B);
+  static const Color _brandMid = Color(0xFF1565C0);
+
+  Timer? _timer;
+  bool _closed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(const Duration(seconds: _autoCloseSeconds), _close);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _close() {
+    if (_closed || !mounted) return;
+    _closed = true;
+    _timer?.cancel();
+    Navigator.of(context).pop();
+  }
+
+  TextStyle _t(
+    double size, {
+    FontWeight w = FontWeight.w400,
+    Color? c,
+    double? ls,
+  }) =>
+      GoogleFonts.poppins(
+        fontSize: size,
+        fontWeight: w,
+        color: c ?? ModernTheme.textPrimary,
+        letterSpacing: ls,
+      );
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fullName = widget.name.trim();
+    final firstName = fullName.isEmpty ? 'Member' : fullName.split(RegExp(r'\s+')).first;
+    final showFullName = fullName.isNotEmpty && fullName != firstName;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Material(
+            color: Colors.white,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Branded header with animated check ──
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 44),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_brandDark, _brandMid],
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(milliseconds: 650),
+                          curve: Curves.elasticOut,
+                          builder: (_, v, child) =>
+                              Transform.scale(scale: v.clamp(0.0, 1.2), child: child),
+                          child: Container(
+                            width: 84,
+                            height: 84,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.25),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Icon(Icons.check_rounded, size: 52, color: ModernTheme.success),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'LOGIN SUCCESSFUL',
+                          style: _t(12.5, w: FontWeight.w600, c: Colors.white.withOpacity(0.85), ls: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ── Greeting card (overlaps the header) ──
+                  Transform.translate(
+                    offset: const Offset(0, -22),
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.10),
+                            blurRadius: 20,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Text(_greeting, style: _t(14, c: ModernTheme.textSecondary)),
+                          const SizedBox(height: 4),
+                          Text(
+                            firstName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: _t(28, w: FontWeight.w700, c: _brandDark),
+                          ),
+                          if (showFullName) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: _t(13, c: ModernTheme.textSecondary),
+                            ),
+                          ],
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _brandMid.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'Poverty Must Go',
+                              style: _t(12.5, w: FontWeight.w600, c: _brandMid, ls: 0.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // ── Button + auto-continue progress ──
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _close,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _brandMid,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Go to dashboard',
+                                    style: _t(15.5, w: FontWeight.w600, c: Colors.white)),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.arrow_forward_rounded, size: 18),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0.0, end: 1.0),
+                            duration: const Duration(seconds: _autoCloseSeconds),
+                            builder: (_, v, __) => LinearProgressIndicator(
+                              value: v,
+                              minHeight: 3,
+                              backgroundColor: ModernTheme.borderLight,
+                              valueColor: const AlwaysStoppedAnimation<Color>(_brandMid),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

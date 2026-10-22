@@ -196,7 +196,7 @@ class _FarmerDrawer extends StatelessWidget {
     required this.onLogout,
   });
 
-  // Dark sidebar — SACCOPLUS Pro navy
+  // Dark sidebar — MBADIFA SACCO navy
   static const _bg     = Color(0xFF071A45); // darkest navy
   static const _bg2    = Color(0xFF0D2B6B); // primary navy
   static const _white  = Colors.white;

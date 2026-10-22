@@ -23,12 +23,13 @@ import 'loan_status_screen.dart';
 import 'repayment_screen.dart';
 import 'profile_screen.dart';
 import 'notifications_screen.dart';
-import 'wallet_screen.dart';
+import 'farmer_desktop_container.dart';
 import 'bank_transfer_screen.dart';
 import 'savings_screen.dart';
 import 'shares_screen.dart';
 import 'fixed_deposit_screen.dart';
 import 'create_fixed_deposit_screen.dart';
+import 'wallet_screen.dart';
 
 class FarmerDashboard extends StatefulWidget {
   const FarmerDashboard({super.key});
@@ -73,6 +74,12 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 900;
     
+    // DESKTOP: Use persistent sidebar container
+    if (isDesktop) {
+      return const FarmerDesktopContainer();
+    }
+    
+    // MOBILE: Original page-based navigation
     final pages = [
       _HomeTab(
         onApply: () => _navigate(const ApplyLoanScreen()),
@@ -437,7 +444,7 @@ class _HomeTabState extends State<_HomeTab> {
             Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               // Deposits
               Expanded(child: GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WalletScreen())),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
                     Text('MY DEPOSITS', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: AppTheme.textPrimary, letterSpacing: 0.8)),
@@ -494,7 +501,7 @@ class _HomeTabState extends State<_HomeTab> {
         // ── Wallet card ─────────────────────────────────────────────────────
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           child: GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WalletScreen())),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
@@ -546,7 +553,7 @@ class _HomeTabState extends State<_HomeTab> {
                     _ServiceTile(icon: Icons.folder_copy_rounded,        label: 'My\nLoans',        color: const Color(0xFF6A1B9A), onTap: widget.onStatus),
                     _ServiceTile(icon: Icons.currency_exchange_rounded,  label: 'Repay\nLoan',      color: const Color(0xFF00796B), onTap: widget.onRepay),
                     _ServiceTile(icon: Icons.account_balance_wallet_rounded, label: 'Wallet',        color: const Color(0xFF1565C0),
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()))),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WalletScreen()))),
                     _ServiceTile(icon: Icons.savings_rounded,            label: 'Savings',          color: const Color(0xFF2E7D32),
                         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavingsScreen()))),
                     _ServiceTile(icon: Icons.donut_large_rounded,        label: 'Shares',           color: const Color(0xFF6A1B9A),
@@ -653,7 +660,7 @@ class _HomeTabState extends State<_HomeTab> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Welcome back to SACCOPLUS',
+                      'Welcome back to MBADIFA SACCO',
                       style: GoogleFonts.inter(
                         fontSize: 32,
                         fontWeight: FontWeight.w700,
@@ -2339,7 +2346,7 @@ class _HomeTabState extends State<_HomeTab> {
 
   Widget _buildWalletCard() {
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WalletScreen())),
       child: Container(
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(

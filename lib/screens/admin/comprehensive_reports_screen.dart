@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -25,11 +24,19 @@ class _C {
   static const purple = Color(0xFF6D28D9);
 }
 
+const List<Color> _palette = [_C.blue, _C.teal, _C.purple, _C.amber, _C.green, _C.red];
+
 TextStyle _ps(double size, {FontWeight w = FontWeight.w400, Color c = _C.text, double? ls}) =>
     GoogleFonts.poppins(fontSize: size, fontWeight: w, color: c, letterSpacing: ls);
 
 num _n(dynamic v) => v is num ? v : (num.tryParse('${v ?? ''}') ?? 0);
 Map _m(dynamic v) => v is Map ? v : const {};
+
+String _cap(String s) {
+  final t = s.trim();
+  if (t.isEmpty) return t;
+  return t[0].toUpperCase() + t.substring(1);
+}
 
 final NumberFormat _nf = NumberFormat('#,##0', 'en_US');
 
@@ -48,6 +55,10 @@ BoxDecoration _cardDeco() => BoxDecoration(
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: _C.border),
     );
+
+/// Page gutters grow with the screen; content may use up to [_maxContentWidth].
+const double _maxContentWidth = 1800;
+double _padFor(double w) => w < 600 ? 12 : (w < 1024 ? 16 : 24);
 
 void _toast(BuildContext context, String msg, {bool error = false}) {
   if (!context.mounted) return;
@@ -159,10 +170,12 @@ class _Row {
   final String label;
   final num? amount;
   final String? hint;
-  const _Row(this.kind, this.label, [this.amount, this.hint]);
+  final bool showZero;
+  const _Row(this.kind, this.label, [this.amount, this.hint, this.showZero = false]);
   const _Row.header(String label) : this(_K.header, label);
   const _Row.sub(String label) : this(_K.sub, label);
-  const _Row.item(String label, num amount, {String? hint}) : this(_K.item, label, amount, hint);
+  const _Row.item(String label, num amount, {String? hint, bool showZero = false})
+      : this(_K.item, label, amount, hint, showZero);
   const _Row.total(String label, num amount) : this(_K.total, label, amount);
   const _Row.grand(String label, num amount) : this(_K.grand, label, amount);
 }
@@ -245,10 +258,10 @@ Future<void> _printStatement(String title, DateTime asOf, List<_Row> rows) async
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared widgets
 // ═══════════════════════════════════════════════════════════════════════════════
-Widget _amount(num v, {bool bold = false, double size = 13}) {
+Widget _amount(num v, {bool bold = false, double size = 13, bool showZero = false}) {
   final color = v < 0 ? _C.red : (v == 0 ? _C.muted : _C.text);
   return Text(
-    _money(v),
+    _money(v, dash: !showZero),
     style: GoogleFonts.robotoMono(
         fontSize: size, fontWeight: bold ? FontWeight.w700 : FontWeight.w500, color: color),
   );
@@ -261,34 +274,38 @@ class _PageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _C.border)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 10,
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: _ps(20, w: FontWeight.w700, c: _C.navy)),
-              Text(subtitle, style: _ps(12, c: _C.muted)),
-            ],
-          ),
-          if (trailing != null) trailing!,
-        ],
-      ),
-    );
+    return LayoutBuilder(builder: (context, box) {
+      final pad = _padFor(box.maxWidth);
+      return Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(bottom: BorderSide(color: _C.border)),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: pad + 4, vertical: 14),
+        child: Wrap(
+          spacing: 16,
+          runSpacing: 10,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: _ps(20, w: FontWeight.w700, c: _C.navy)),
+                Text(subtitle, style: _ps(12, c: _C.muted)),
+              ],
+            ),
+            if (trailing != null) trailing!,
+          ],
+        ),
+      );
+    });
   }
 }
 
+/// Loads a report and lays its widgets out using the full available width.
 class _ReportLoader<T> extends StatefulWidget {
   final Future<T> Function() load;
   final List<Widget> Function(BuildContext context, T data) builder;
@@ -345,30 +362,13 @@ class _ReportLoaderState<T> extends State<_ReportLoader<T>> {
       onRefresh: () => _run(silent: true),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // Responsive max width: use full width on mobile, constrained on desktop
-          final screenWidth = constraints.maxWidth;
-          final isMobile = screenWidth < 600;
-          final isTablet = screenWidth >= 600 && screenWidth < 1024;
-          
-          double maxWidth;
-          double horizontalPadding;
-          
-          if (isMobile) {
-            maxWidth = screenWidth;
-            horizontalPadding = 12;
-          } else if (isTablet) {
-            maxWidth = screenWidth * 0.95;
-            horizontalPadding = 16;
-          } else {
-            maxWidth = 1000;
-            horizontalPadding = 20;
-          }
-          
-          return Center(
+          final pad = _padFor(constraints.maxWidth);
+          return Align(
+            alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxWidth),
+              constraints: const BoxConstraints(maxWidth: _maxContentWidth),
               child: ListView(
-                padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 16),
+                padding: EdgeInsets.fromLTRB(pad, 16, pad, 32),
                 children: widget.builder(context, data),
               ),
             ),
@@ -466,7 +466,8 @@ class _Kpi extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(value, style: _ps(18, w: FontWeight.w700, c: _C.navy)),
                 ),
-                if (sub != null) Text(sub!, style: _ps(11, c: _C.muted)),
+                if (sub != null)
+                  Text(sub!, maxLines: 1, overflow: TextOverflow.ellipsis, style: _ps(11, c: _C.muted)),
               ],
             ),
           ),
@@ -496,6 +497,154 @@ class _KpiGrid extends StatelessWidget {
       );
     });
   }
+}
+
+/// Two columns on wide screens (main + side panel); stacks on narrow ones.
+class _Split extends StatelessWidget {
+  final Widget main, side;
+  final int mainFlex, sideFlex;
+  final double breakpoint;
+  const _Split({
+    required this.main,
+    required this.side,
+    this.mainFlex = 7,
+    this.sideFlex = 4,
+    this.breakpoint = 1100,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, box) {
+      if (box.maxWidth >= breakpoint) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: mainFlex, child: main),
+            const SizedBox(width: 16),
+            Expanded(flex: sideFlex, child: side),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [main, const SizedBox(height: 16), side],
+      );
+    });
+  }
+}
+
+class _BarItem {
+  final String label;
+  final num value;
+  final Color color;
+  final String? sub;
+  const _BarItem(this.label, this.value, this.color, {this.sub});
+}
+
+/// Card with a labelled progress bar per item showing its share of the total.
+class _BarsCard extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final List<_BarItem> items;
+  const _BarsCard({required this.title, required this.items, this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = items.where((i) => i.value > 0).toList();
+    final total = shown.fold<num>(0, (s, i) => s + i.value);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: _ps(15, w: FontWeight.w600, c: _C.navy)),
+          if (subtitle != null) Text(subtitle!, style: _ps(11.5, c: _C.muted)),
+          const SizedBox(height: 14),
+          if (shown.isEmpty)
+            Text('Nothing to show yet.', style: _ps(12.5, c: _C.muted))
+          else
+            for (final i in shown)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(color: i.color, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(i.label,
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: _ps(12.5, w: FontWeight.w500)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(_nf.format(i.value.round()),
+                            style: GoogleFonts.robotoMono(fontSize: 12, fontWeight: FontWeight.w600)),
+                        SizedBox(
+                          width: 52,
+                          child: Text('${(i.value / total * 100).toStringAsFixed(1)}%',
+                              textAlign: TextAlign.right, style: _ps(11.5, c: _C.muted)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: (i.value / total).clamp(0.0, 1.0).toDouble(),
+                        minHeight: 6,
+                        backgroundColor: const Color(0xFFE5E7EB),
+                        valueColor: AlwaysStoppedAnimation<Color>(i.color),
+                      ),
+                    ),
+                    if (i.sub != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(i.sub!, style: _ps(10.5, c: _C.muted)),
+                      ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Side panel for Trial Balance / Balance Sheet.
+Widget _positionSide(_Position p) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _BarsCard(
+        title: 'Where the money is',
+        subtitle: 'Share of total assets',
+        items: [
+          _BarItem('Cash, bank & mobile money', p.cash, _C.green),
+          _BarItem('Loans to members - principal', p.principal, _C.blue),
+          _BarItem('Interest receivable', p.interest, _C.amber),
+        ],
+      ),
+      const SizedBox(height: 16),
+      _BarsCard(
+        title: 'Who funds it',
+        subtitle: 'Share of liabilities and equity',
+        items: [
+          _BarItem('Member savings (incl. wallets)', p.savings, _C.teal),
+          _BarItem('Fixed deposits', p.fixedDeposits, _C.navy),
+          _BarItem('Share capital', p.shares, _C.purple),
+          _BarItem(p.balancingLabel, p.retained, _C.green),
+        ],
+      ),
+    ],
+  );
 }
 
 /// Headline figures shown above the Trial Balance and Balance Sheet.
@@ -637,37 +786,6 @@ class _AsAtBar extends StatelessWidget {
   }
 }
 
-class _Narrow extends StatelessWidget {
-  final Widget child;
-  const _Narrow(this.child);
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
-        final isMobile = screenWidth < 600;
-        final isTablet = screenWidth >= 600 && screenWidth < 1024;
-        
-        double maxWidth;
-        if (isMobile) {
-          maxWidth = screenWidth;
-        } else if (isTablet) {
-          maxWidth = screenWidth * 0.95;
-        } else {
-          maxWidth = 820;
-        }
-        
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: child,
-          ),
-        );
-      },
-    );
-  }
-}
-
 /// Navy statement banner: SACCO name, statement title and (optionally) the "as at" date.
 class _StatementBanner extends StatelessWidget {
   final String title;
@@ -735,20 +853,17 @@ class _StatementCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Text(r.label, style: _ps(13, c: _C.text)),
-                    ),
+                    Text(r.label, style: _ps(13, c: _C.text)),
                     if (r.hint != null)
                       Padding(
-                        padding: const EdgeInsets.only(left: 12, top: 1),
+                        padding: const EdgeInsets.only(top: 1),
                         child: Text(r.hint!, style: _ps(10.5, c: _C.muted)),
                       ),
                   ],
                 ),
               ),
               const SizedBox(width: 12),
-              _amount(r.amount ?? 0),
+              _amount(r.amount ?? 0, showZero: r.showZero),
             ],
           ),
         );
@@ -936,6 +1051,313 @@ class _RateCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Transaction report (shared by Income & Expense)
+// ═══════════════════════════════════════════════════════════════════════════════
+class _Txn {
+  final DateTime? date;
+  final String description, group, receipt;
+  final num amount;
+  const _Txn({
+    required this.date,
+    required this.description,
+    required this.group,
+    required this.receipt,
+    required this.amount,
+  });
+}
+
+/// Full-width transactions table. Columns flex with the screen; on narrow
+/// screens each row collapses into a two-line layout.
+class _TxnTable extends StatelessWidget {
+  final String groupLabel, totalLabel;
+  final List<_Txn> txns;
+  final num total;
+  const _TxnTable({
+    required this.groupLabel,
+    required this.totalLabel,
+    required this.txns,
+    required this.total,
+  });
+
+  static const _hdr = TextStyle(fontSize: 10.5);
+
+  Widget _headCell(String t, int flex, {bool right = false, bool pad = true}) => Expanded(
+        flex: flex,
+        child: Padding(
+          padding: EdgeInsets.only(right: pad ? 12 : 0),
+          child: Text(
+            t,
+            textAlign: right ? TextAlign.right : TextAlign.left,
+            style: _ps(_hdr.fontSize!, w: FontWeight.w600, c: _C.muted, ls: 0.8),
+          ),
+        ),
+      );
+
+  Widget _dateCell(_Txn t) {
+    final d = t.date;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(d != null ? DateFormat('MMM d, yyyy').format(d) : 'N/A', style: _ps(13, w: FontWeight.w500)),
+        if (d != null) Text(DateFormat('h:mm a').format(d), style: _ps(11.5, c: const Color(0xFF9CA3AF))),
+      ],
+    );
+  }
+
+  BoxDecoration _rowDeco(int i) => BoxDecoration(
+        color: i.isOdd ? const Color(0xFFFAFBFC) : Colors.white,
+        border: const Border(bottom: BorderSide(color: Color(0xFFF1F3F6))),
+      );
+
+  Widget _wideRow(_Txn t, int i) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: _rowDeco(i),
+      child: Row(
+        children: [
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.only(right: 12), child: _dateCell(t))),
+          Expanded(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(_cap(t.description), maxLines: 2, overflow: TextOverflow.ellipsis, style: _ps(13)),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(_cap(t.group),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: _ps(13, c: _C.muted)),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                t.receipt.isEmpty ? '–' : t.receipt,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.robotoMono(fontSize: 11.5, color: const Color(0xFF9CA3AF)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(alignment: Alignment.centerRight, child: _amount(t.amount, showZero: true)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _narrowRow(_Txn t, int i) {
+    final d = t.date;
+    final meta = [
+      if (d != null) DateFormat('MMM d, yyyy').format(d),
+      _cap(t.group),
+    ].where((e) => e.isNotEmpty).join('  •  ');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: _rowDeco(i),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_cap(t.description),
+                    maxLines: 2, overflow: TextOverflow.ellipsis, style: _ps(13, w: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: _ps(11.5, c: _C.muted)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _amount(t.amount, showZero: true),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: _cardDeco(),
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(builder: (context, box) {
+        final wide = box.maxWidth >= 640;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Transactions', style: _ps(15, w: FontWeight.w600, c: _C.navy)),
+                  Text('${txns.length} ${txns.length == 1 ? 'entry' : 'entries'}',
+                      style: _ps(12, c: _C.muted)),
+                ],
+              ),
+            ),
+            if (wide)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF8FAFC),
+                  border: Border.symmetric(horizontal: BorderSide(color: _C.border)),
+                ),
+                child: Row(
+                  children: [
+                    _headCell('DATE', 2),
+                    _headCell('DESCRIPTION', 4),
+                    _headCell(groupLabel.toUpperCase(), 3),
+                    _headCell('RECEIPT', 3),
+                    _headCell('AMOUNT', 2, right: true, pad: false),
+                  ],
+                ),
+              )
+            else
+              const Divider(height: 1, color: _C.border),
+            for (var i = 0; i < txns.length; i++) wide ? _wideRow(txns[i], i) : _narrowRow(txns[i], i),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: wide ? 20 : 16, vertical: 16),
+              decoration: BoxDecoration(
+                color: _C.navy.withOpacity(0.06),
+                border: const Border(top: BorderSide(color: _C.navy, width: 1.5)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(totalLabel, style: _ps(13, w: FontWeight.w700, c: _C.navy, ls: 0.6)),
+                  Text('UGX ${_nf.format(total.round())}',
+                      style: GoogleFonts.robotoMono(fontSize: 15, fontWeight: FontWeight.w700, color: _C.navy)),
+                ],
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+}
+
+List<Widget> _txnReport(
+  BuildContext ctx, {
+  required Map data,
+  required String period,
+  required int month,
+  required int year,
+  required String noun, // 'income' | 'expenses'
+  required String groupLabel, // 'Source' | 'Category'
+  required String Function(Map) groupOf,
+  required Color accent,
+  required IconData icon,
+  required String fileStem,
+}) {
+  final txns = ((data['transactions'] as List?) ?? const [])
+      .whereType<Map>()
+      .map((t) => _Txn(
+            date: t['date'] is DateTime ? t['date'] as DateTime : null,
+            description: '${t['description'] ?? ''}'.trim().isEmpty ? '–' : '${t['description']}',
+            group: groupOf(t),
+            receipt: '${t['receiptNumber'] ?? ''}'.replaceAll('null', ''),
+            amount: _n(t['amount']),
+          ))
+      .toList()
+    ..sort((a, b) {
+      if (a.date == null && b.date == null) return 0;
+      if (a.date == null) return 1;
+      if (b.date == null) return -1;
+      return b.date!.compareTo(a.date!);
+    });
+
+  if (txns.isEmpty) {
+    return [
+      _EmptyCard(
+        icon: icon,
+        title: 'No $noun recorded for $period',
+        message: 'Pick another month or year, or post $noun entries to see them here.',
+      ),
+    ];
+  }
+
+  final reported = _n(data['total']);
+  final total = reported != 0 ? reported : txns.fold<num>(0, (s, t) => s + t.amount);
+  final avg = total / txns.length;
+
+  final sums = <String, num>{};
+  final counts = <String, int>{};
+  for (final t in txns) {
+    final k = _cap(t.group.isEmpty ? 'Other' : t.group);
+    sums[k] = (sums[k] ?? 0) + t.amount;
+    counts[k] = (counts[k] ?? 0) + 1;
+  }
+  final ranked = sums.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+  final top = ranked.first;
+  final topPct = total == 0 ? 0 : top.value / total * 100;
+  final nounCap = _cap(noun);
+
+  Future<void> export() async {
+    final b = StringBuffer()
+      ..writeln('MBADIFA SACCO')
+      ..writeln('$nounCap Report - $period')
+      ..writeln('Date,Description,$groupLabel,Receipt,Amount (UGX)');
+    for (final t in txns) {
+      final d = t.date != null ? DateFormat('yyyy-MM-dd HH:mm').format(t.date!) : '';
+      b.writeln('$d,${_q(t.description)},${_q(t.group)},${_q(t.receipt)},${t.amount}');
+    }
+    b.writeln(',,,Total,$total');
+    await _saveCsv(ctx, '${fileStem}_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
+  }
+
+  return [
+    Align(
+      alignment: Alignment.centerRight,
+      child: _btn('Export CSV', Icons.file_download_outlined, export, primary: true),
+    ),
+    const SizedBox(height: 14),
+    _KpiGrid(children: [
+      _Kpi(label: 'Total $noun', value: _ugx(total), sub: period, icon: icon, color: accent),
+      _Kpi(label: 'Transactions', value: '${txns.length}', sub: 'Recorded this period', icon: Icons.receipt_long_outlined, color: _C.blue),
+      _Kpi(label: 'Average per transaction', value: _ugx(avg), icon: Icons.functions, color: _C.teal),
+      _Kpi(
+        label: 'Top ${groupLabel.toLowerCase()}',
+        value: top.key,
+        sub: '${_ugx(top.value)}  •  ${topPct.toStringAsFixed(0)}%',
+        icon: Icons.emoji_events_outlined,
+        color: _C.purple,
+      ),
+    ]),
+    const SizedBox(height: 16),
+    _Split(
+      main: _TxnTable(
+        groupLabel: groupLabel,
+        totalLabel: 'TOTAL ${noun.toUpperCase()}',
+        txns: txns,
+        total: total,
+      ),
+      side: _BarsCard(
+        title: 'By ${groupLabel.toLowerCase()}',
+        subtitle: 'Share of total $noun',
+        items: [
+          for (var i = 0; i < ranked.length; i++)
+            _BarItem(
+              ranked[i].key,
+              ranked[i].value,
+              _palette[i % _palette.length],
+              sub: '${counts[ranked[i].key]} ${counts[ranked[i].key] == 1 ? 'transaction' : 'transactions'}',
+            ),
+        ],
+      ),
+    ),
+  ];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Screen
 // ═══════════════════════════════════════════════════════════════════════════════
 class _TabDef {
@@ -987,6 +1409,7 @@ class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen>
     final bar = TabBar(
       controller: _ctrl,
       isScrollable: true,
+      tabAlignment: TabAlignment.start,
       indicatorColor: Colors.white,
       indicatorWeight: 3,
       labelColor: Colors.white,
@@ -1167,7 +1590,32 @@ class _MonthlyTab extends StatelessWidget {
             _Kpi(label: 'Share purchases', value: _ugx(_n(sh['amount'])), sub: tx(sh), icon: Icons.pie_chart_outline, color: _C.purple),
           ]),
           const SizedBox(height: 16),
-          _Narrow(_StatementCard(title: 'Cash movement - ${r['period'] ?? ''}', rows: rows)),
+          _Split(
+            main: _StatementCard(title: 'Cash movement - ${r['period'] ?? ''}', rows: rows),
+            side: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _BarsCard(
+                  title: 'Inflow mix',
+                  subtitle: 'Where the cash came from',
+                  items: [
+                    _BarItem('Loan repayments', _n(rep['amount']), _C.green, sub: tx(rep)),
+                    _BarItem('Savings deposits', _n(sav['amount']), _C.teal, sub: tx(sav)),
+                    _BarItem('Share purchases', _n(sh['amount']), _C.purple, sub: tx(sh)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _BarsCard(
+                  title: 'Inflows vs outflows',
+                  subtitle: 'Net cash flow: ${_ugx(net)}',
+                  items: [
+                    _BarItem('Total inflows', inflow, _C.green),
+                    _BarItem('Total outflows', outflow, _C.blue),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
           Center(
             child: Text('Based on loan, repayment, savings and share transactions recorded in the period.',
@@ -1198,17 +1646,19 @@ class _IncomeTab extends StatelessWidget {
             ),
           ];
         }
-        final inc = _m(r['income']);
-        final total = _n(inc['total']);
-        return [
-          _Narrow(_StatementCard(title: 'Income - ${r['period'] ?? ''}', rows: [
-            const _Row.header('OPERATING INCOME'),
-            _Row.item('Interest income', _n(inc['interest'])),
-            _Row.item('Fee income', _n(inc['fees'])),
-            _Row.item('Penalty income', _n(inc['penalties'])),
-            _Row.grand('Total income', total),
-          ])),
-        ];
+        return _txnReport(
+          ctx,
+          data: _m(r['income']),
+          period: '${r['period'] ?? ''}',
+          month: month,
+          year: year,
+          noun: 'income',
+          groupLabel: 'Source',
+          groupOf: (t) => '${t['source'] ?? 'Other'}',
+          accent: _C.green,
+          icon: Icons.trending_up,
+          fileStem: 'income_report',
+        );
       },
     );
   }
@@ -1232,18 +1682,19 @@ class _ExpenseTab extends StatelessWidget {
             ),
           ];
         }
-        final ex = _m(r['expenses']);
-        final total = _n(ex['total']);
-        return [
-          _Narrow(_StatementCard(title: 'Expenses - ${r['period'] ?? ''}', rows: [
-            const _Row.header('OPERATING EXPENSES'),
-            _Row.item('Salaries', _n(ex['salaries'])),
-            _Row.item('Utilities', _n(ex['utilities'])),
-            _Row.item('Office expenses', _n(ex['officeExpenses'])),
-            _Row.item('Other expenses', _n(ex['other'])),
-            _Row.grand('Total expenses', total),
-          ])),
-        ];
+        return _txnReport(
+          ctx,
+          data: _m(r['expenses']),
+          period: '${r['period'] ?? ''}',
+          month: month,
+          year: year,
+          noun: 'expenses',
+          groupLabel: 'Category',
+          groupOf: (t) => '${t['originalCategory'] ?? t['category'] ?? 'Other'}',
+          accent: _C.red,
+          icon: Icons.trending_down,
+          fileStem: 'expense_report',
+        );
       },
     );
   }
@@ -1343,6 +1794,49 @@ class _TrialBalanceTab extends StatelessWidget {
                     ]),
                   );
 
+              final table = Container(
+                decoration: _cardDeco(),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _StatementBanner(title: 'Trial Balance', asOf: p.asOf),
+                    colHeader(),
+                    for (final g in groups) ...[
+                      Container(
+                        color: const Color(0xFFF1F5F9),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Text(g.title, style: _ps(11.5, w: FontWeight.w700, c: _C.navy, ls: 0.8)),
+                      ),
+                      for (final e in g.entries)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                          child: Row(children: [
+                            Expanded(flex: 4, child: Text(e.label, style: _ps(13))),
+                            _cell(e.debit),
+                            _cell(e.credit),
+                          ]),
+                        ),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: _C.navy.withOpacity(0.06),
+                        border: const Border(
+                          top: BorderSide(color: _C.navy, width: 1.5),
+                          bottom: BorderSide(color: _C.navy, width: 3),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Expanded(flex: 4, child: Text('TOTAL', style: _ps(14, w: FontWeight.w700, c: _C.navy))),
+                        _cell(dr, bold: true),
+                        _cell(cr, bold: true),
+                      ]),
+                    ),
+                  ],
+                ),
+              );
+
               return [
                 _AsAtBar(asOf: p.asOf, actions: [
                   _Badge(balanced ? 'Debits = Credits' : 'Out of balance', balanced ? _C.green : _C.red),
@@ -1351,48 +1845,7 @@ class _TrialBalanceTab extends StatelessWidget {
                 ]),
                 _PositionSummary(p),
                 ...issues.map((i) => _Alert(i)),
-                Container(
-                  decoration: _cardDeco(),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _StatementBanner(title: 'Trial Balance', asOf: p.asOf),
-                      colHeader(),
-                      for (final g in groups) ...[
-                        Container(
-                          color: const Color(0xFFF1F5F9),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                          child: Text(g.title, style: _ps(11.5, w: FontWeight.w700, c: _C.navy, ls: 0.8)),
-                        ),
-                        for (final e in g.entries)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-                            child: Row(children: [
-                              Expanded(flex: 4, child: Text(e.label, style: _ps(13))),
-                              _cell(e.debit),
-                              _cell(e.credit),
-                            ]),
-                          ),
-                      ],
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: _C.navy.withOpacity(0.06),
-                          border: const Border(
-                            top: BorderSide(color: _C.navy, width: 1.5),
-                            bottom: BorderSide(color: _C.navy, width: 3),
-                          ),
-                        ),
-                        child: Row(children: [
-                          Expanded(flex: 4, child: Text('TOTAL', style: _ps(14, w: FontWeight.w700, c: _C.navy))),
-                          _cell(dr, bold: true),
-                          _cell(cr, bold: true),
-                        ]),
-                      ),
-                    ],
-                  ),
-                ),
+                _Split(main: table, side: _positionSide(p)),
               ];
             },
           ),
@@ -1450,7 +1903,10 @@ class _BalanceSheetTab extends StatelessWidget {
                 ]),
                 _PositionSummary(p),
                 ...issues.map((i) => _Alert(i)),
-                _Narrow(_StatementCard(title: 'Balance sheet', rows: rows, asOf: p.asOf)),
+                _Split(
+                  main: _StatementCard(title: 'Balance sheet', rows: rows, asOf: p.asOf),
+                  side: _positionSide(p),
+                ),
               ];
             },
           ),
@@ -1481,6 +1937,36 @@ class _KycTab extends StatelessWidget {
               final rate = _n(s['verificationRate']).toDouble();
               String date(dynamic d) => d is DateTime ? DateFormat.yMMMd().format(d) : '-';
 
+              final pendingCard = pending.isEmpty
+                  ? const _EmptyCard(
+                      icon: Icons.check_circle_outline,
+                      title: 'No pending verifications',
+                      message: 'Every submitted ID has been reviewed.')
+                  : _ListCard(title: 'Pending verifications (${pending.length})', children: [
+                      for (final m in pending)
+                        _PersonTile(
+                          name: '${m['name'] ?? ''}',
+                          phone: '${m['phone'] ?? ''}',
+                          note: 'Submitted ${date(m['submittedAt'])}',
+                          color: _C.amber,
+                        ),
+                    ]);
+
+              final rejectedCard = rejected.isEmpty
+                  ? const _EmptyCard(
+                      icon: Icons.thumb_up_alt_outlined,
+                      title: 'No rejected verifications',
+                      message: 'No member IDs have been rejected.')
+                  : _ListCard(title: 'Rejected verifications (${rejected.length})', children: [
+                      for (final m in rejected)
+                        _PersonTile(
+                          name: '${m['name'] ?? ''}',
+                          phone: '${m['phone'] ?? ''}',
+                          note: '${m['reason'] ?? ''}',
+                          color: _C.red,
+                        ),
+                    ]);
+
               return [
                 _KpiGrid(children: [
                   _Kpi(label: 'Total members', value: '${_n(s['total']).toInt()}', icon: Icons.people_outline, color: _C.blue),
@@ -1490,30 +1976,8 @@ class _KycTab extends StatelessWidget {
                 ]),
                 const SizedBox(height: 16),
                 _RateCard(label: 'Verification rate', percent: rate, color: rate >= 80 ? _C.green : (rate >= 50 ? _C.amber : _C.red)),
-                if (pending.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _ListCard(title: 'Pending verifications (${pending.length})', children: [
-                    for (final m in pending)
-                      _PersonTile(
-                        name: '${m['name'] ?? ''}',
-                        phone: '${m['phone'] ?? ''}',
-                        note: 'Submitted ${date(m['submittedAt'])}',
-                        color: _C.amber,
-                      ),
-                  ]),
-                ],
-                if (rejected.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _ListCard(title: 'Rejected verifications (${rejected.length})', children: [
-                    for (final m in rejected)
-                      _PersonTile(
-                        name: '${m['name'] ?? ''}',
-                        phone: '${m['phone'] ?? ''}',
-                        note: '${m['reason'] ?? ''}',
-                        color: _C.red,
-                      ),
-                  ]),
-                ],
+                const SizedBox(height: 16),
+                _Split(mainFlex: 1, sideFlex: 1, breakpoint: 900, main: pendingCard, side: rejectedCard),
               ];
             },
           ),
@@ -1567,26 +2031,33 @@ class _LoansTab extends StatelessWidget {
                   _Kpi(label: 'Repayment rate', value: '${_n(s['repaymentRate']).toDouble().toStringAsFixed(1)}%', icon: Icons.trending_up, color: _C.green),
                 ]),
                 const SizedBox(height: 16),
-                _InfoCard(title: 'Loan status breakdown', rows: [
-                  ['Total loans', '${_n(s['totalLoans']).toInt()}', _C.navy],
-                  ['Pending', '${_n(s['pending']).toInt()}', _C.amber],
-                  ['Approved', '${_n(s['approved']).toInt()}', _C.green],
-                  ['Rejected', '${_n(s['rejected']).toInt()}', _C.red],
-                  ['Paid', '${_n(s['paid']).toInt()}', _C.blue],
-                  ['Overdue', '${_n(s['overdue']).toInt()}', Colors.deepOrange],
-                ]),
-                if (overdue.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _ListCard(title: 'Overdue loans (${overdue.length})', children: [
-                    for (final l in overdue.take(10))
-                      _PersonTile(
-                        name: '${l['farmerName'] ?? ''}',
-                        phone: 'Amount ${_ugx(_n(l['amount']))}  •  Outstanding ${_ugx(_n(l['outstanding']))}',
-                        note: '${_n(l['daysOverdue']).toInt()} days overdue',
-                        color: _C.red,
-                      ),
+                _Split(
+                  mainFlex: 1,
+                  sideFlex: 1,
+                  breakpoint: 900,
+                  main: _InfoCard(title: 'Loan status breakdown', rows: [
+                    ['Total loans', '${_n(s['totalLoans']).toInt()}', _C.navy],
+                    ['Pending', '${_n(s['pending']).toInt()}', _C.amber],
+                    ['Approved', '${_n(s['approved']).toInt()}', _C.green],
+                    ['Rejected', '${_n(s['rejected']).toInt()}', _C.red],
+                    ['Paid', '${_n(s['paid']).toInt()}', _C.blue],
+                    ['Overdue', '${_n(s['overdue']).toInt()}', Colors.deepOrange],
                   ]),
-                ],
+                  side: overdue.isEmpty
+                      ? const _EmptyCard(
+                          icon: Icons.check_circle_outline,
+                          title: 'No overdue loans',
+                          message: 'All active loans are up to date.')
+                      : _ListCard(title: 'Overdue loans (${overdue.length})', children: [
+                          for (final l in overdue.take(10))
+                            _PersonTile(
+                              name: '${l['farmerName'] ?? ''}',
+                              phone: 'Amount ${_ugx(_n(l['amount']))}  •  Outstanding ${_ugx(_n(l['outstanding']))}',
+                              note: '${_n(l['daysOverdue']).toInt()} days overdue',
+                              color: _C.red,
+                            ),
+                        ]),
+                ),
               ];
             },
           ),
@@ -1633,6 +2104,117 @@ class _MembersTabState extends State<_MembersTab> {
     }
   }
 
+  /// Full-width member table. Columns flex with the screen; below 760px the
+  /// table scrolls horizontally instead of squeezing.
+  Widget _table(List<Map<String, dynamic>> list) {
+    Widget cell(int flex, Widget child, {Alignment align = Alignment.centerLeft}) => Expanded(
+          flex: flex,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Align(alignment: align, child: child),
+          ),
+        );
+
+    Widget head(int flex, String t, {bool right = false}) => cell(
+          flex,
+          Text(t, style: _ps(11.5, w: FontWeight.w600, c: Colors.white, ls: 0.6)),
+          align: right ? Alignment.centerRight : Alignment.centerLeft,
+        );
+
+    return LayoutBuilder(builder: (context, box) {
+      const minW = 760.0;
+      final w = box.maxWidth < minW ? minW : box.maxWidth;
+
+      return Container(
+        decoration: _cardDeco(),
+        clipBehavior: Clip.antiAlias,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: w,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  color: _C.navy,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  child: Row(children: [
+                    head(4, 'NAME'),
+                    head(3, 'PHONE'),
+                    head(2, 'KYC'),
+                    head(3, 'SAVINGS', right: true),
+                    head(3, 'SHARES', right: true),
+                    head(2, 'LOANS', right: true),
+                  ]),
+                ),
+                for (var i = 0; i < list.length; i++)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: i.isOdd ? const Color(0xFFFAFBFC) : Colors.white,
+                      border: const Border(bottom: BorderSide(color: Color(0xFFF1F3F6))),
+                    ),
+                    child: Row(children: [
+                      cell(
+                        4,
+                        Row(children: [
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: _C.blue.withOpacity(0.1),
+                            child: Text(
+                              '${list[i]['name'] ?? '?'}'.trim().isEmpty
+                                  ? '?'
+                                  : '${list[i]['name']}'.trim()[0].toUpperCase(),
+                              style: _ps(12, w: FontWeight.w600, c: _C.blue),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text('${list[i]['name'] ?? ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: _ps(12.5, w: FontWeight.w600)),
+                          ),
+                        ]),
+                      ),
+                      cell(
+                        3,
+                        Text('${list[i]['phone'] ?? ''}',
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: _ps(12.5)),
+                      ),
+                      cell(2, () {
+                        final b = _status('${list[i]['idStatus'] ?? ''}');
+                        return _Badge(b.label, b.color);
+                      }()),
+                      cell(
+                        3,
+                        Text(_money(_n(list[i]['savingsBalance']), dash: false),
+                            style: GoogleFonts.robotoMono(fontSize: 12.5)),
+                        align: Alignment.centerRight,
+                      ),
+                      cell(
+                        3,
+                        Text(_money(_n(list[i]['sharesValue']), dash: false),
+                            style: GoogleFonts.robotoMono(fontSize: 12.5)),
+                        align: Alignment.centerRight,
+                      ),
+                      cell(
+                        2,
+                        Text('${_n(list[i]['activeLoans']).toInt()} / ${_n(list[i]['totalLoans']).toInt()}',
+                            style: _ps(12.5)),
+                        align: Alignment.centerRight,
+                      ),
+                    ]),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1642,52 +2224,38 @@ class _MembersTabState extends State<_MembersTab> {
           subtitle: 'Balances and verification status per member',
           trailing: _btn('Export CSV', Icons.download_outlined, _export, primary: true),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final screenWidth = constraints.maxWidth;
-              final isMobile = screenWidth < 600;
-              final isTablet = screenWidth >= 600 && screenWidth < 1024;
-              
-              double maxWidth;
-              if (isMobile) {
-                maxWidth = screenWidth;
-              } else if (isTablet) {
-                maxWidth = screenWidth * 0.95;
-              } else {
-                maxWidth = 1000;
-              }
-              
-              return Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: TextField(
-                    style: _ps(13),
-                    decoration: InputDecoration(
-                      hintText: 'Search by name or phone',
-                      hintStyle: _ps(13, c: _C.muted),
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      isDense: true,
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: _C.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: _C.border),
-                      ),
+        LayoutBuilder(builder: (context, box) {
+          final pad = _padFor(box.maxWidth);
+          return Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(pad, 14, pad, 0),
+                child: TextField(
+                  style: _ps(13),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name or phone',
+                    hintStyle: _ps(13, c: _C.muted),
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _C.border),
                     ),
-                    onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _C.border),
+                    ),
                   ),
+                  onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
                 ),
-              );
-            },
-          ),
-        ),
+              ),
+            ),
+          );
+        }),
         Expanded(
           child: _ReportLoader<List<Map<String, dynamic>>>(
             load: () => ReportService.generateMemberReport(),
@@ -1721,55 +2289,7 @@ class _MembersTabState extends State<_MembersTab> {
                     message: 'Try a different name or phone number.',
                   )
                 else
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final screenWidth = constraints.maxWidth;
-                      final isMobile = screenWidth < 600;
-                      
-                      return Container(
-                        decoration: _cardDeco(),
-                        clipBehavior: Clip.antiAlias,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minWidth: isMobile ? screenWidth : 800,
-                            ),
-                            child: DataTable(
-                              headingRowColor: MaterialStateProperty.all(_C.navy),
-                              headingTextStyle: _ps(12, w: FontWeight.w600, c: Colors.white),
-                              dataTextStyle: _ps(12.5),
-                              columnSpacing: isMobile ? 16 : 24,
-                              dataRowMinHeight: 48,
-                              dataRowMaxHeight: 56,
-                              columns: const [
-                                DataColumn(label: Text('Name')),
-                                DataColumn(label: Text('Phone')),
-                                DataColumn(label: Text('KYC')),
-                                DataColumn(label: Text('Savings'), numeric: true),
-                                DataColumn(label: Text('Shares'), numeric: true),
-                                DataColumn(label: Text('Loans'), numeric: true),
-                              ],
-                              rows: [
-                                for (final m in list)
-                                  DataRow(cells: [
-                                    DataCell(Text('${m['name'] ?? ''}', style: _ps(12.5, w: FontWeight.w600))),
-                                    DataCell(Text('${m['phone'] ?? ''}')),
-                                    DataCell(Builder(builder: (_) {
-                                      final b = _status('${m['idStatus'] ?? ''}');
-                                      return _Badge(b.label, b.color);
-                                    })),
-                                    DataCell(Text(_money(_n(m['savingsBalance']), dash: false), style: GoogleFonts.robotoMono(fontSize: 12.5))),
-                                    DataCell(Text(_money(_n(m['sharesValue']), dash: false), style: GoogleFonts.robotoMono(fontSize: 12.5))),
-                                    DataCell(Text('${_n(m['activeLoans']).toInt()} / ${_n(m['totalLoans']).toInt()}')),
-                                  ]),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                  _table(list),
               ];
             },
           ),

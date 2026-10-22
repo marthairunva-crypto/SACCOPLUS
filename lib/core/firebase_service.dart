@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -52,12 +53,12 @@ class FirebaseService {
       final doc = await _db.collection(AppConstants.usersCol).doc(uid).get();
       final data = doc.data();
       if (data == null) return false;
-      
+
       final tempPassword = data['tempPassword'] as String?;
       final firstLoginComplete = data['firstLoginComplete'] as bool?;
-      
+
       // Needs setup if they have temp password and haven't completed first login
-      return (tempPassword != null && tempPassword.isNotEmpty) && 
+      return (tempPassword != null && tempPassword.isNotEmpty) &&
              (firstLoginComplete != true);
     } catch (e) {
       print('Error checking first login status: $e');
@@ -74,7 +75,6 @@ class FirebaseService {
         'lastLogin': DateTime.now(),
       });
     } catch (e) {
-      print('Error completing first login: $e');
       rethrow;
     }
   }
@@ -96,6 +96,9 @@ class FirebaseService {
   // In-memory OTP store: phone → {code, expiry}
   static final Map<String, Map<String, dynamic>> _otpStore = {};
 
+  // TODO(security): these credentials are shipped inside the app and can be
+  // extracted by anyone. Move SMS sending to the proxy / a Cloud Function and
+  // keep the credentials server-side. Rotate this password once moved.
   static const String _egoUsername = 'INFINITECH';
   static const String _egoPassword = 'Moses,123##';
   // SMS sender is the current SACCO name (max 11 chars for EgoSMS)
@@ -137,7 +140,10 @@ class FirebaseService {
   }
 
   /// Send a raw SMS via EgoSMS GET API.
-  /// On web, uses Cloud Function to bypass CORS. On mobile, direct API call.
+  /// On web, uses the proxy to bypass CORS. On mobile, direct API call.
+  ///
+  /// Returns true only when the gateway accepted the message. The raw
+  /// response (status + body) is always logged so failures can be diagnosed.
   static Future<bool> _sendEgoSms(String number, String message) async {
     // Check if running on web
     if (kIsWeb) {
@@ -154,15 +160,26 @@ class FirebaseService {
         '&password=${Uri.encodeComponent(_egoPassword)}'
         '&sender=${Uri.encodeComponent(_egoSender)}',
       );
-      
+
       final res = await http.get(uri).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw Exception('SMS API request timed out');
         },
       );
-      
-      return res.statusCode == 200;
+
+      if (res.statusCode != 200) return false;
+
+      // A 200 does not always mean delivered — the gateway can put an error
+      // in the body. Treat obvious error words as a failure.
+      final body = res.body.toLowerCase();
+      final looksLikeError = RegExp(
+              r'fail|error|invalid|insufficient|denied|not\s+ok|rejected')
+          .hasMatch(body);
+      if (looksLikeError) {
+        return false;
+      }
+      return true;
     } catch (e) {
       return false;
     }
@@ -170,48 +187,84 @@ class FirebaseService {
 
   /// Send SMS via proxy server (for web platform)
   static Future<bool> _sendSmsViaCloudFunction(String number, String message) async {
-    try {
-      print('[SMS WEB] Attempting to send via proxy to: $number');
-      const proxyUrl = 'https://marzpay-proxy.onrender.com/send-sms';
-      
-      final response = await http.post(
-        Uri.parse(proxyUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'phone': number,
-          'message': message,
-          'sender': _egoSender,
-        }),
-      );
+    const maxRetries = 2;
 
-      print('[SMS WEB] Proxy response status: ${response.statusCode}');
-      print('[SMS WEB] Proxy response body: ${response.body}');
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final proxyUrl = '${AppConstants.renderProxyUrl}/send-sms';
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          print('[SMS WEB] SMS sent successfully!');
-          return true;
+        final response = await http.post(
+          Uri.parse(proxyUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'phone': number,
+            'message': message,
+            'sender': _egoSender,
+          }),
+        ).timeout(
+          Duration(seconds: attempt == 1 ? 60 : 30), // First attempt: wait 60s for cold start
+          onTimeout: () {
+            throw TimeoutException('Proxy request timed out');
+          },
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data['success'] == true) {
+            return true;
+          }
+        }
+
+        if (attempt < maxRetries) {
+          await Future.delayed(const Duration(seconds: 3));
+        }
+      } catch (e, stack) {
+        if (attempt < maxRetries) {
+          await Future.delayed(const Duration(seconds: 5));
         }
       }
-      
-      print('[SMS WEB] SMS failed');
-      return false;
+    }
+
+    return false;
+  }
+
+  /// Records a failed SMS in Firestore so it can be reviewed / retried and so
+  /// you can see how many members are affected. Never throws.
+  static Future<void> _logSmsFailure(String phone, String message) async {
+    try {
+      await _db.collection('saccoplus-sms-failures').add({
+        'tenantId': sessionTenantId,
+        'phone': phone,
+        'message': message,
+        'messageLength': message.length,
+        'platform': kIsWeb ? 'web' : 'native',
+        'resolved': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
-      print('[SMS WEB] Exception: $e');
-      return false;
+      print('⚠️ Could not log SMS failure: $e');
     }
   }
 
-  /// Public: send an SMS to any phone number (used for admin broadcasts).
-  static Future<void> sendSmsToPhone(String phone, String message) async {
-    phone = formatPhone(phone);
-    await _sendEgoSms(phone, message);
+  /// Public: send an SMS to any phone number.
+  /// Returns true if the gateway accepted the SMS, false otherwise
+  /// (empty number, gateway error, timeout…). Failures are logged to
+  /// the `saccoplus-sms-failures` collection.
+  static Future<bool> sendSmsToPhone(String phone, String message) async {
+    if (phone.replaceAll(RegExp(r'[^0-9]'), '').isEmpty) {
+      return false;
+    }
+    final formatted = formatPhone(phone);
+    final ok = await _sendEgoSms(formatted, message);
+    if (!ok) {
+      await _logSmsFailure(formatted, message);
+    }
+    return ok;
   }
 
-  /// Generate a 6-digit OTP, store it in memory (5 min TTL), send via EgoSMS.
+  /// Generate a 6-digit OTP, store it in memory (5 min TTL), send via SMS.
   /// Always returns true after storing — SMS delivery is confirmed by the user
-  /// receiving it; the EgoSMS API may return non-200 even on success.
+  /// receiving it; the SMS API may return non-200 even on success.
   static Future<bool> generateAndSendOtp(String phone) async {
     phone = formatPhone(phone);
     final code = (100000 + Random().nextInt(900000)).toString();
@@ -219,8 +272,8 @@ class FirebaseService {
       'code': code,
       'expiry': DateTime.now().add(const Duration(minutes: 5)),
     };
-    // Fire and forget — don't block on the HTTP result
-    _sendEgoSms(
+    // Send SMS (await ensures proxy routing on web)
+    await _sendEgoSms(
       phone,
       'Your MBADIFA SACCO verification code is: $code. Valid for 5 minutes.',
     );
@@ -388,7 +441,7 @@ class FirebaseService {
 
         // ── 3. Fall back: direct doc-ID lookup (phone_256XXXXXXXXX) ─────
         final docId = 'phone_$phone';
-        
+
         // Try saccoplus-members first
         var doc = await _db
             .collection(AppConstants.usersCol)
@@ -599,6 +652,24 @@ class FirebaseService {
       'tenantId': sessionTenantId,
       'paidAt': FieldValue.serverTimestamp(),
     });
+
+    // ── Best-effort confirmation SMS ─────────────────────────────────────
+    // FIX: member self-repayments previously sent NO SMS at all.
+    // Never blocks or fails the repayment.
+    try {
+      final amt = (data['amount'] as num?)?.toInt();
+      final phone = _loggedInProfile?['phone'] as String? ?? '';
+      if (amt != null && amt > 0 && phone.isNotEmpty) {
+        final saccoName = SaccoService.current.saccoName;
+        // Fire and forget so a slow gateway doesn't hold up the UI.
+        sendSmsToPhone(
+          phone,
+          '$saccoName: Loan repayment of UGX ${_formatCurrency(amt)} received. Thank you!',
+        ).catchError((_) => false);
+      }
+    } catch (e) {
+      // SMS error - non-critical, don't expose
+    }
   }
 
   static Stream<QuerySnapshot> getFarmerRepayments(String memberId) => _db
@@ -820,7 +891,6 @@ class FirebaseService {
 
       return rawStatus; // 'pending', 'processing', etc.
     } catch (e) {
-      print('⚠️ Status check error (will retry): $e');
       return 'pending'; // Return pending on network error so we keep checking
     }
   }
@@ -844,7 +914,7 @@ class FirebaseService {
     if (AppConstants.useRenderProxy) {
       // Render proxy — clean REST endpoints
       final base = AppConstants.renderProxyUrl;
-      
+
       // Handle bill payment routes
       if (action.startsWith('bill-payment')) {
         proxyUrl = '$base/$action';
@@ -1213,7 +1283,7 @@ class FirebaseService {
       final txnId = found.id;
       // amount stored is totalCollected (amount + charge); we credit only amount
       final totalCollected = (data['amount'] as num?)?.toInt() ?? 0;
-      // charge was stored separately if available, otherwise estimate 3.2%
+      // charge was stored separately if available, otherwise estimate 0.5%
       final charge = (data['charge'] as num?)?.toInt() ??
           (totalCollected * AppConstants.walletDepositChargePercent).ceil()
               .clamp(AppConstants.walletMinCharge, 999999);
@@ -1423,13 +1493,13 @@ class FirebaseService {
     try {
       // MarzPay phone verification expects format WITHOUT + prefix: 256XXXXXXXXX
       final formattedPhone = formatPhoneForMarzPay(phoneNumber).replaceAll('+', '');
-      
+
       final responseBody = await _marzPayRequest('POST', 'phone-verification/verify', {
         'phone_number': formattedPhone,
       });
-      
+
       final json = jsonDecode(responseBody) as Map<String, dynamic>;
-      
+
       if (json['success'] == true) {
         final data = json['data'] as Map<String, dynamic>? ?? {};
         return {
@@ -1444,7 +1514,7 @@ class FirebaseService {
           'countryCode': countryCode,
         };
       }
-      
+
       return {
         'success': false,
         'verified': false,
@@ -1869,40 +1939,40 @@ class FirebaseService {
 
       final responseBody = await _marzPayRequest('POST', 'bank-transfer', payload);
       final json = jsonDecode(responseBody) as Map<String, dynamic>;
-      
+
       // Handle both success and error responses more gracefully
       if (json['status'] == 'success' || json['status'] == 'completed') {
         // Try multiple possible response structures
-        final data = json['data']?['bank_transfer'] as Map<String, dynamic>? 
+        final data = json['data']?['bank_transfer'] as Map<String, dynamic>?
                   ?? json['data'] as Map<String, dynamic>?
                   ?? json;
-        
+
         // Extract reference from multiple possible locations
-        final reference = data['reference'] as String? 
+        final reference = data['reference'] as String?
                        ?? data['transaction_uuid'] as String?
                        ?? data['uuid'] as String?
                        ?? '';
-        
+
         // Extract status - if money was deducted, it's at least processing
         final status = data['status'] as String? ?? 'processing';
-        
+
         // Extract charge and total amounts with fallback calculations
         final chargeRaw = data['charge_amount']?['raw'] as num?
                        ?? data['charge'] as num?
                        ?? 0;
         final charge = chargeRaw.toInt();
-        
+
         final totalRaw = data['total_amount']?['raw'] as num?
                       ?? data['total'] as num?
                       ?? (amount + charge);
         final total = totalRaw.toInt();
-        
+
         // Extract account name from bank details or use provided name
         final accountName = data['bank_details']?['account_name'] as String?
                          ?? data['account_name'] as String?
-                         ?? bankAccountName 
+                         ?? bankAccountName
                          ?? '';
-        
+
         return {
           'reference': reference,
           'status': status,
@@ -1914,7 +1984,7 @@ class FirebaseService {
           'accountName': accountName,
         };
       }
-      
+
       // If status is not success, throw with the error message
       final errorMsg = json['message'] as String? ?? 'Bank transfer failed';
       throw Exception(errorMsg);
@@ -1940,7 +2010,7 @@ class FirebaseService {
     final base = AppConstants.renderProxyUrl;
     // Call Render proxy directly — it has CORS headers for web and Android.
     final proxyUrl = '$base/marzpay/airtime/$path';
-    
+
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'X-Proxy-Key': AppConstants.marzPayProxyKey,
@@ -1956,12 +2026,12 @@ class FirebaseService {
       } else {
         res = await http.post(uri, headers: headers, body: jsonEncode(body ?? {}));
       }
-      
+
       // Check if response is JSON
       if (res.body.trim().startsWith('<') || res.body.trim().startsWith('<!DOCTYPE')) {
         throw Exception('Proxy server returned HTML. Status: ${res.statusCode}. Make sure proxy is running and CORS is enabled.');
       }
-      
+
       return jsonDecode(res.body) as Map<String, dynamic>;
     } catch (e) {
       if (e.toString().contains('HTML')) rethrow;
@@ -2254,7 +2324,7 @@ class FirebaseService {
         {},
       );
       final json = jsonDecode(responseBody) as Map<String, dynamic>;
-      
+
       if (json['status'] == 'success') {
         final data = json['data']?['bank_transfer_request'] as Map<String, dynamic>?;
         if (data == null) throw Exception('Invalid response format');
@@ -2296,21 +2366,21 @@ class FirebaseService {
     // 2. Verify OTP
     final phone = profile['phone'] as String?;
     if (phone == null) throw Exception('Phone number not found');
-    
+
     final normalizedPhone = formatPhone(phone);
     if (!_otpStore.containsKey(normalizedPhone)) {
       throw Exception('No OTP found. Please request a new OTP.');
     }
-    
+
     final otpData = _otpStore[normalizedPhone]!;
     final storedOtp = otpData['code'] as String;
     final expiry = otpData['expiry'] as DateTime;
-    
+
     if (DateTime.now().isAfter(expiry)) {
       _otpStore.remove(normalizedPhone);
       throw Exception('OTP expired. Please request a new OTP.');
     }
-    
+
     if (storedOtp != otpCode) {
       throw Exception('Invalid OTP. Transaction cancelled for security.');
     }
@@ -2320,7 +2390,7 @@ class FirebaseService {
     if (!walletDoc.exists) {
       throw Exception('Wallet not found. Please contact support.');
     }
-    
+
     final walletBalance = (walletDoc.data()?['balance'] as int?) ?? 0;
     if (walletBalance < amount) {
       throw Exception('Insufficient wallet balance. Current balance: UGX ${_formatCurrency(walletBalance)}');
@@ -2358,7 +2428,7 @@ class FirebaseService {
       'id': savingsId,
       'uid': uid,
       'memberId': uid, // For admin queries
-      'memberName': profile['name'] ?? profile['fullName'] ?? profile['firstName'] ?? 
+      'memberName': profile['name'] ?? profile['fullName'] ?? profile['firstName'] ??
                     (uid.length >= 8 ? 'Member ${uid.substring(0, 8)}' : 'Member $uid'),
       'memberPhone': phone,
       'memberNumber': profile['memberNumber'] ?? profile['memberNo'] ?? '',
@@ -2379,7 +2449,7 @@ class FirebaseService {
     // Update or create savings account
     final savingsRef = _db.collection(AppConstants.savingsCol).doc(uid);
     final savingsDoc = await savingsRef.get();
-    
+
     if (savingsDoc.exists) {
       batch.update(savingsRef, {
         'totalBalance': FieldValue.increment(amount),
@@ -2419,7 +2489,7 @@ class FirebaseService {
       targetId: uid,
       targetName: profile['name'] as String?,
       meta: {
-        'amount': amount, 
+        'amount': amount,
         'savingsType': savingsType,
         'securityLevel': 'HIGH',
         'verificationMethod': 'PIN+OTP'
@@ -2437,7 +2507,7 @@ class FirebaseService {
   // ─── SAVINGS WITHDRAWAL ───────────────────────────────────────────────────
 
   /// Withdraw from savings — to wallet or directly to mobile money.
-  /// Charges [AppConstants.walletWithdrawChargePercent] (3.5%) on the amount.
+  /// Charges [AppConstants.walletWithdrawChargePercent] (0.5%) on the amount.
   static Future<Map<String, dynamic>> withdrawFromSavings({
     required String uid,
     required int amount,
@@ -2481,7 +2551,7 @@ class FirebaseService {
           'Insufficient $savingsType savings. Available: UGX ${_formatCurrency(savingsBalance)}');
     }
 
-    // 4. Calculate charge (12%)
+    // 4. Calculate charge (0.5%)
     final charge = (amount * AppConstants.walletWithdrawChargePercent)
         .ceil()
         .clamp(AppConstants.walletMinCharge, 999999);
@@ -2593,7 +2663,7 @@ class FirebaseService {
             .get(const GetOptions(source: Source.server));
         if (doc.exists) return doc.data();
       } catch (e) {
-        print('ERROR getSavingsAccount for $uidKey: $e');
+        // Error getting savings account - non-critical
       }
     }
 
@@ -2627,7 +2697,7 @@ class FirebaseService {
           }
         }
       } catch (e) {
-        print('ERROR getSavingsTransactions for $uidKey: $e');
+        // Error getting savings transactions - non-critical
       }
     }
 
@@ -2668,21 +2738,21 @@ class FirebaseService {
     // 2. Verify OTP
     final phone = profile['phone'] as String?;
     if (phone == null) throw Exception('Phone number not found');
-    
+
     final normalizedPhone = formatPhone(phone);
     if (!_otpStore.containsKey(normalizedPhone)) {
       throw Exception('No OTP found. Please request a new OTP.');
     }
-    
+
     final otpData = _otpStore[normalizedPhone]!;
     final storedOtp = otpData['code'] as String;
     final expiry = otpData['expiry'] as DateTime;
-    
+
     if (DateTime.now().isAfter(expiry)) {
       _otpStore.remove(normalizedPhone);
       throw Exception('OTP expired. Please request a new OTP.');
     }
-    
+
     if (storedOtp != otpCode) {
       throw Exception('Invalid OTP. Transaction cancelled for security.');
     }
@@ -2692,7 +2762,7 @@ class FirebaseService {
     if (!walletDoc.exists) {
       throw Exception('Wallet not found. Please contact support.');
     }
-    
+
     final walletBalance = (walletDoc.data()?['balance'] as int?) ?? 0;
     if (walletBalance < totalAmount) {
       throw Exception('Insufficient wallet balance. Required: UGX ${_formatCurrency(totalAmount)}, Available: UGX ${_formatCurrency(walletBalance)}');
@@ -2745,7 +2815,7 @@ class FirebaseService {
     final memberSharesRef = _db.collection(AppConstants.usersCol).doc(uid);
     final memberDoc = await memberSharesRef.get();
     final currentShares = (memberDoc.data()?['totalShares'] as int?) ?? 0;
-    
+
     batch.update(memberSharesRef, {
       'totalShares': currentShares + numberOfShares,
       'shareValue': (currentShares + numberOfShares) * pricePerShare,
@@ -2765,7 +2835,7 @@ class FirebaseService {
       targetId: uid,
       targetName: profile['name'] as String?,
       meta: {
-        'numberOfShares': numberOfShares, 
+        'numberOfShares': numberOfShares,
         'totalAmount': totalAmount,
         'securityLevel': 'HIGH',
         'verificationMethod': 'PIN+OTP'
@@ -2785,7 +2855,7 @@ class FirebaseService {
     // Get member's total shares from profile
     final memberDoc = await _db.collection(AppConstants.usersCol).doc(uid).get();
     final memberData = memberDoc.data() ?? {};
-    
+
     // Get share transactions
     final txnQuery = await _db
         .collection(AppConstants.sharesCol)
@@ -2793,9 +2863,9 @@ class FirebaseService {
         .orderBy('timestamp', descending: true)
         .limit(50)
         .get();
-    
+
     final transactions = txnQuery.docs.map((doc) => doc.data()).toList();
-    
+
     return {
       'totalShares': memberData['totalShares'] ?? 0,
       'shareValue': memberData['shareValue'] ?? 0,
@@ -2817,16 +2887,16 @@ class FirebaseService {
     // 1. Update FD status
     final fdRef = _db.collection(AppConstants.fixedDepositCol).doc(fdId);
     final fdDoc = await fdRef.get();
-    
+
     if (!fdDoc.exists) {
       throw Exception('Fixed deposit not found');
     }
-    
+
     final fdData = fdDoc.data()!;
     final principal = fdData['principal'] as int;
     final termMonths = fdData['termMonths'] as int;
     final interestRate = fdData['interestRate'] as double;
-    
+
     // Calculate maturity date and amount
     final maturityDate = now.add(Duration(days: termMonths * 30));
     final interestAmount = (principal * interestRate * termMonths / 12 / 100).round();
@@ -2872,11 +2942,11 @@ class FirebaseService {
     // 1. Update FD status
     final fdRef = _db.collection(AppConstants.fixedDepositCol).doc(fdId);
     final fdDoc = await fdRef.get();
-    
+
     if (!fdDoc.exists) {
       throw Exception('Fixed deposit not found');
     }
-    
+
     final fdData = fdDoc.data()!;
 
     batch.update(fdRef, {
@@ -2936,21 +3006,21 @@ class FirebaseService {
     // 2. Verify OTP
     final phone = profile['phone'] as String?;
     if (phone == null) throw Exception('Phone number not found');
-    
+
     final normalizedPhone = formatPhone(phone);
     if (!_otpStore.containsKey(normalizedPhone)) {
       throw Exception('No OTP found. Please request a new OTP.');
     }
-    
+
     final otpData = _otpStore[normalizedPhone]!;
     final storedOtp = otpData['code'] as String;
     final expiry = otpData['expiry'] as DateTime;
-    
+
     if (DateTime.now().isAfter(expiry)) {
       _otpStore.remove(normalizedPhone);
       throw Exception('OTP expired. Please request a new OTP.');
     }
-    
+
     if (storedOtp != otpCode) {
       throw Exception('Invalid OTP. Transaction cancelled for security.');
     }
@@ -2960,7 +3030,7 @@ class FirebaseService {
     if (!walletDoc.exists) {
       throw Exception('Wallet not found. Please contact support.');
     }
-    
+
     final walletBalance = (walletDoc.data()?['balance'] as int?) ?? 0;
     if (walletBalance < principal) {
       throw Exception('Insufficient wallet balance. Required: UGX ${_formatCurrency(principal)}, Available: UGX ${_formatCurrency(walletBalance)}');
@@ -3000,7 +3070,7 @@ class FirebaseService {
     batch.set(fdRef, {
       'id': fdId,
       'uid': uid,
-      'memberName': profile['name'] ?? profile['fullName'] ?? profile['firstName'] ?? 
+      'memberName': profile['name'] ?? profile['fullName'] ?? profile['firstName'] ??
                     (uid.length >= 8 ? 'Member ${uid.substring(0, 8)}' : 'Member $uid'),
       'principal': principal,
       'termMonths': termMonths,
@@ -3055,11 +3125,11 @@ class FirebaseService {
         .get();
 
     final batch = _db.batch();
-    
+
     for (final doc in query.docs) {
       final fdData = doc.data();
       final fdRef = doc.reference;
-      
+
       // Mark as matured
       batch.update(fdRef, {
         'status': 'Matured',
@@ -3098,7 +3168,7 @@ class FirebaseService {
       final savingsData = doc.data();
       final uid = savingsData['uid'] as String;
       final totalBalance = (savingsData['totalBalance'] as int?) ?? 0;
-      
+
       if (totalBalance <= 0) continue;
 
       // Calculate monthly interest (example: 2% per annum = 0.167% per month)
@@ -3160,11 +3230,11 @@ class FirebaseService {
       final memberData = memberDoc.data();
       final uid = memberData['uid'] as String;
       final totalShares = (memberData['totalShares'] as int?) ?? 0;
-      
+
       if (totalShares <= 0) continue;
 
       final dividendAmount = (totalShares * dividendPerShare).round();
-      
+
       // Record dividend transaction
       final memberDividendId = '${dividendId}_$uid';
       final dividendRef = _db.collection(AppConstants.dividendsCol).doc(memberDividendId);
@@ -3228,4 +3298,3 @@ class FirebaseService {
     );
   }
 }
-

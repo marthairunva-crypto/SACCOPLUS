@@ -308,7 +308,7 @@ class _BirthdayNotifCard extends StatelessWidget {
                           ],
                         ),
                         Text(
-                          'SACCOPLUS Pro — Developer',
+                          'MBADIFA SACCO — Developer',
                           style: GoogleFonts.poppins(
                             color: Colors.white60,
                             fontSize: 10,

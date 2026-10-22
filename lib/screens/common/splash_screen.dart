@@ -2,9 +2,15 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/constants.dart';
+import '../../core/firebase_service.dart';
+import '../../core/sacco_service.dart';
 import '../auth/professional_login_screen.dart';
+import '../admin/admin_dashboard.dart';
+import '../farmer/farmer_dashboard.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -34,7 +40,63 @@ class _SplashScreenState extends State<SplashScreen>
     )..forward().whenComplete(_navigate);
   }
 
-  void _navigate() {
+  void _navigate() async {
+    if (!mounted) return;
+    
+    // Check if user is already authenticated
+    try {
+      print('🔍 Checking auth state...');
+      final user = FirebaseAuth.instance.currentUser;
+      
+      if (user != null) {
+        print('✅ User already authenticated: ${user.uid}');
+        // User is logged in, navigate to appropriate dashboard
+        final doc = await FirebaseFirestore.instance
+            .collection('saccoplus-users')
+            .doc(user.uid)
+            .get();
+            
+        if (doc.exists) {
+          final data = doc.data()!;
+          final role = data['role'] as String?;
+          
+          print('✅ User role: $role');
+          
+          // Restore session in FirebaseService
+          FirebaseService.setSession(user.uid, data);
+          
+          // Load tenant profile
+          await SaccoService.loadForUser(data);
+          
+          if (!mounted) return;
+          
+          // Navigate based on role
+          Widget destination;
+          if (role == 'admin' || role == 'teller' || role == 'super_admin') {
+            destination = const AdminDashboard();
+          } else {
+            destination = FarmerDashboard();
+          }
+          
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, a, __) => destination,
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 600),
+            ),
+          );
+          return;
+        }
+      }
+      
+      print('❌ No authenticated user, showing login screen');
+    } catch (e) {
+      print('❌ Error checking auth state: $e');
+    }
+    
+    // No valid session, go to login
     if (!mounted) return;
     Navigator.pushReplacement(
       context,

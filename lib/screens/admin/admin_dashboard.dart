@@ -42,6 +42,7 @@ import '../../services/alerts_service.dart';
 import '../../services/enhanced_metrics_service.dart';
 import '../../services/loan_risk_service.dart';
 import '../../services/liquidity_service.dart';
+import '../../services/loan_math.dart';
 import 'loan_risk_center_screen.dart';
 import 'liquidity_monitor_screen.dart';
 import 'member_360_screen.dart';
@@ -53,7 +54,8 @@ import 'loan_details_screen.dart';
 import 'arrears_management_screen.dart';
 import 'risk_provisioning_screen.dart';
 import 'payment_screens.dart';
-import 'finance_screens.dart';
+import 'finance_screens.dart' hide GeneralLedgerScreen;
+import 'general_ledger_screen.dart';
 import '../../scripts/reconcile_savings.dart';
 import '../../services/update_service.dart';
 import '../../widgets/update_dialog.dart';
@@ -219,7 +221,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
       // FINANCE
       case 'cash_bank':
-        return const CashBankScreen();
+        return const CashAndBankScreen();
       case 'income':
         return const IncomeScreen();
       case 'expenses':
@@ -457,15 +459,61 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('Sign Out',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        content: Text('Are you sure?', style: GoogleFonts.poppins()),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ModernTheme.error.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.logout_rounded, color: ModernTheme.error, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Text('Sign Out',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 20,
+                )),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to sign out?',
+              style: GoogleFonts.poppins(
+                fontSize: 15,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You will need to log in again to access your account.',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Text('Cancel',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[600],
+                )),
+          ),
           ElevatedButton(
             onPressed: () async {
               await FirebaseService.signOut();
@@ -477,8 +525,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
-            child: const Text('Sign Out'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ModernTheme.error,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            child: Text('Sign Out',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                )),
           ),
         ],
       ),
@@ -547,10 +606,16 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   double _repaid = 0, _overdueAmount = 0;
   double _par30 = 0, _par60 = 0, _par90 = 0; // amounts
   int _activeLoans = 0, _overdueCount = 0, _pendingCount = 0;
-  
+
   // Outstanding breakdown for teller clarity
   double _principalOut = 0, _interestOut = 0, _chargesOut = 0, _arrearsOut = 0;
-  
+
+  // Data quality tracking (active loans only):
+  // "corrected" = LoanMath says the stored fields already match the true position
+  // "uncorrected" = still needs Reconcile all loans / manual review
+  int _correctedLoansCount = 0;
+  int _uncorrectedLoansCount = 0;
+
   final Map<String, int> _statusCounts = {};
   final Map<String, double> _statusAmounts = {};
 
@@ -631,78 +696,106 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
     }
   }
 
+  /// Loads everything straight from Firestore and runs every active loan
+  /// through LoanMath (same brain as Loan Details, Correction and Reconcile),
+  /// so the dashboard never relies on stale stored balances.
   Future<void> _load() async {
     if (mounted) setState(() { _error = null; _loading = true; });
     try {
-      final loans = await FirebaseService.getAllLoansOnce();
+      final db = FirebaseFirestore.instance;
+
+      // Loans straight from Firestore: real Timestamps + document id.
+      final loanSnap = await db.collection(AppConstants.loansCol).get();
+      final loans = loanSnap.docs
+          .map((d) => <String, dynamic>{'id': d.id, ...d.data()})
+          .toList();
+
       final members = await FirebaseService.getAllFarmersOnce();
+
+      // Repayment ledger, grouped by loan.
+      final repSnap = await db.collection(AppConstants.repaymentsCol).get();
+      final byLoan = <String, List<Map<String, dynamic>>>{};
+      for (final d in repSnap.docs) {
+        final m = d.data();
+        (byLoan[(m['loanId'] ?? '').toString()] ??= []).add(m);
+      }
 
       double savings = 0, shares = 0, outstanding = 0, disbursed = 0;
       double repaid = 0, overdueAmt = 0, p30 = 0, p60 = 0, p90 = 0;
       double principalOut = 0, interestOut = 0, chargesOut = 0, arrearsOut = 0;
       int active = 0, overdueCnt = 0, pending = 0;
+      int okLoans = 0, needFix = 0;
       final counts = <String, int>{};
       final amounts = <String, double>{};
-      final now = DateTime.now();
 
       for (final m in members) {
         savings += _n(m['savingsBalance']);
         shares += _n(m['sharesBalance']);
       }
 
-      for (final loan in loans) {
+      for (final raw in loans) {
+        final loan = <String, dynamic>{...raw};
+        final id = (loan['id'] ?? '').toString();
         final status = (loan['status'] ?? '').toString().toLowerCase();
-        final amount = _n(loan['amount'] ?? loan['loanAmount']);
-        
-        // Use corrected totalOutstanding from Loan Data Correction (most accurate)
-        // This is the ONLY source of truth - do not calculate from components
-        double out = _n(loan['totalOutstanding']);
-        if (out == 0) out = _n(loan['remainingBalance']);
-        if (out == 0) out = _n(loan['principalOutstanding']);
+        final amount = LoanMath.principalOf(loan);
+        final reps = byLoan[id] ?? const <Map<String, dynamic>>[];
 
-        final isLive = status == 'active' || status == 'disbursed' || status == 'overdue';
+        final isLive = LoanMath.isActive(loan);
         final isPaid = status == 'paid';
-        if (isLive) { 
-          active++; 
-          outstanding += out;
-          
-          // Use CORRECTED values from Loan Data Correction screen only
-          // These are the manually verified/corrected amounts
-          principalOut += _n(loan['principalOutstanding']);
-          interestOut += _n(loan['interestOutstanding']);
-          // Arrears are separate - not part of outstanding
-          arrearsOut += _n(loan['arrears']);
-        }
-        if (isLive || isPaid || status == 'approved') disbursed += amount;
-        if (status == 'pending') pending++;
 
-        // Repaid: use the recorded total if present, otherwise derive it from
-        // what has been disbursed minus what is still outstanding.
-        if (isLive || isPaid) {
-          final recorded = _n(loan['totalRepaid']);
-          final derived = isPaid ? amount : (amount - out);
-          repaid += recorded > 0 ? recorded : (derived > 0 ? derived : 0);
+        if (isLive) {
+          final plan = LoanMath.plan(loan, reps);
+          final s = plan.after;
+          final review = plan.kind == PlanKind.review;
+
+          if (plan.kind == PlanKind.ok) {
+            okLoans++;
+          } else {
+            needFix++;
+          }
+
+          // Review loans: ledger and stored balances disagree, so keep stored balances.
+          final pOut = review ? _n(loan['principalOutstanding']) : s.pOut;
+          final iOut = review ? _n(loan['interestOutstanding']) : s.iOut;
+          final cOut = review ? 0.0 : s.cOut;
+          final tOut = pOut + iOut + cOut;
+          final arr = review ? _n(loan['arrears']) : s.arrears;
+          final dpd = review ? 0 : s.dpd;
+
+          active++;
+          outstanding += tOut;
+          principalOut += pOut;
+          interestOut += iOut;
+          chargesOut += cOut;
+          arrearsOut += arr;
+          repaid += s.totalPaid;
+
+          if (arr > 0.5 && tOut > 0) {
+            overdueAmt += tOut;
+            overdueCnt++;
+            if (dpd >= 30) p30 += tOut;
+            if (dpd >= 60) p60 += tOut;
+            if (dpd >= 90) p90 += tOut;
+          }
+        } else if (isPaid) {
+          // normalise() works out legacy-paid from the stored balances
+          repaid += LoanMath.computeFor(loan, reps).snap.totalPaid;
         }
+
+        // Only loans actually paid out (approved but not yet disbursed excluded)
+        if (isLive || isPaid) disbursed += amount;
+        if (status == 'pending') pending++;
 
         final bucket = isLive ? 'Active' : isPaid ? 'Paid'
             : status == 'pending' ? 'Pending' : status == 'approved' ? 'Approved'
             : status == 'rejected' ? 'Rejected' : 'Other';
         counts[bucket] = (counts[bucket] ?? 0) + 1;
         amounts[bucket] = (amounts[bucket] ?? 0) + amount;
-
-        final due = _date(loan['dueDate']);
-        if (due != null && out > 0 && due.isBefore(now)) {
-          final days = now.difference(due).inDays;
-          overdueAmt += out; overdueCnt++;
-          if (days > 30) p30 += out;
-          if (days > 60) p60 += out;
-          if (days > 90) p90 += out;
-        }
       }
 
       if (!mounted) return;
       setState(() {
-        _loans = List<Map<String, dynamic>>.from(loans);
+        _loans = loans;
         _members = members.length;
         _savings = savings; _shares = shares; _outstanding = outstanding;
         _disbursed = disbursed; _repaid = repaid; _overdueAmount = overdueAmt;
@@ -710,6 +803,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
         _activeLoans = active; _overdueCount = overdueCnt; _pendingCount = pending;
         _principalOut = principalOut; _interestOut = interestOut;
         _chargesOut = chargesOut; _arrearsOut = arrearsOut;
+        _correctedLoansCount = okLoans;
+        _uncorrectedLoansCount = needFix;
         _statusCounts..clear()..addAll(counts);
         _statusAmounts..clear()..addAll(amounts);
         _lastRefresh = DateTime.now();
@@ -730,8 +825,8 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
       double total = 0;
       for (final l in _loans) {
         final s = (l['status'] ?? '').toString().toLowerCase();
-        if (s == 'pending' || s == 'rejected') continue;
-        final d = _date(l['createdAt']);
+        if (!const ['active', 'disbursed', 'overdue', 'paid'].contains(s)) continue;
+        final d = _date(l['disbursementDate'] ?? l['disbursedAt'] ?? l['createdAt']);
         if (d != null && d.year == month.year && d.month == month.month) {
           total += _n(l['amount'] ?? l['loanAmount']);
         }
@@ -948,94 +1043,166 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
   // ── Summary grid (single bordered block, hairline dividers) ───────────────
   Widget _summaryGrid() {
     final repaymentRate = _disbursed > 0 ? _repaid / _disbursed * 100 : 0.0;
-    
+    final totalActive = _correctedLoansCount + _uncorrectedLoansCount;
+
     final cells = <(String, double, String, bool)>[
       ('Member Funds', _savings + _shares, '$_members members', false),
       ('Savings', _savings, 'Member deposits', false),
       ('Shares', _shares, 'Share capital', false),
-      ('Loan Outstanding', _outstanding, '$_activeLoans active loans', false),
+      ('Loan Outstanding', _outstanding, '= Principal + Interest', false),
+      ('  Principal Due', _principalOut, '$_activeLoans active loans', false),
+      ('  Interest Due', _interestOut, 'Accrued interest', false),
       ('Total Disbursed', _disbursed, 'All loans given out', false),
       ('Total Repaid', _repaid, '${repaymentRate.toStringAsFixed(1)}% recovered', false),
       ('Overdue Loans', _overdueAmount, '$_overdueCount loans past due', _overdueCount > 0),
-      ('Arrears', _arrearsOut, 'Late payment penalties', _arrearsOut > 0),
+      ('Arrears', _arrearsOut, 'Overdue instalments due now', _arrearsOut > 0),
       ('Net Liquidity', _savings - _outstanding, 'Available cash', _savings - _outstanding < 0),
     ];
 
-    return LayoutBuilder(builder: (context, c) {
-      final cols = c.maxWidth > 900 ? 4 : (c.maxWidth >= 300 ? 2 : 1);
-      final rows = (cells.length / cols).ceil();
-      return Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: _C.line),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Column(children: [
-          for (int r = 0; r < rows; r++)
-            IntrinsicHeight(
-              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                for (int k = 0; k < cols; k++)
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: k < cols - 1 ? const BorderSide(color: _C.line) : BorderSide.none,
-                          bottom: r < rows - 1 ? const BorderSide(color: _C.line) : BorderSide.none,
+    return Column(
+      children: [
+        // Data quality banner (only for active loans whose stored fields are stale)
+        if (_uncorrectedLoansCount > 0)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber, color: Color(0xFFD97706), size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Data Quality Notice',
+                        style: _t(13, FontWeight.w600, const Color(0xFF92400E)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$_uncorrectedLoansCount of $totalActive active loans still need reconciling. '
+                        'Figures above are already calculated from the payment ledger. '
+                        'Open Loan Data Correction \u2192 "Reconcile all loans" to save them.',
+                        style: _t(12, FontWeight.w400, const Color(0xFF92400E)),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => widget.onNavigate('loan_correction'),
+                  child: Text('Fix Now', style: _t(13, FontWeight.w600, const Color(0xFFD97706))),
+                ),
+              ],
+            ),
+          ),
+
+        // Summary grid
+        LayoutBuilder(builder: (context, c) {
+          final cols = c.maxWidth > 900 ? 4 : (c.maxWidth >= 300 ? 2 : 1);
+          final rows = (cells.length / cols).ceil();
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: _C.line),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(children: [
+              for (int r = 0; r < rows; r++)
+                IntrinsicHeight(
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    for (int k = 0; k < cols; k++)
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              right: k < cols - 1 ? const BorderSide(color: _C.line) : BorderSide.none,
+                              bottom: r < rows - 1 ? const BorderSide(color: _C.line) : BorderSide.none,
+                            ),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                          child: r * cols + k < cells.length
+                              ? _summaryCell(cells[r * cols + k])
+                              : const SizedBox.shrink(),
                         ),
                       ),
-                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                      child: r * cols + k < cells.length
-                          ? _summaryCell(cells[r * cols + k])
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
-              ]),
-            ),
-        ]),
-      );
-    });
+                  ]),
+                ),
+            ]),
+          );
+        }),
+      ],
+    );
   }
 
   Widget _summaryCell((String, double, String, bool) c) {
     final color = c.$4 ? _C.neg : _C.ink;
     final isBreakdown = c.$1.startsWith('  ');
     final labelText = isBreakdown ? c.$1.trim() : c.$1;
-    
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        if (isBreakdown) ...[
-          const SizedBox(width: 12),
-          Container(
-            width: 3,
-            height: 3,
-            decoration: BoxDecoration(
-              color: _C.muted.withOpacity(0.5),
-              shape: BoxShape.circle,
+
+    // Define explanations for each metric
+    final explanations = {
+      'Total Disbursed': 'Sum of all loan amounts given out to members (active, paid, or approved loans)',
+      'Total Repaid': 'Sum of all payments received from members, including what was paid before the new system',
+      'Loan Outstanding': 'Total amount still owed by members = Principal Due + Interest Due',
+      'Principal Due': 'Original loan amounts that members still owe',
+      'Interest Due': 'Accrued interest that members still owe',
+      'Overdue Loans': 'Total outstanding balance for loans past their due date',
+      'Arrears': 'Amount that should already have been paid by now according to the schedule (not included in outstanding)',
+      'Net Liquidity': 'Available funds = Savings - Loan Outstanding',
+      'Member Funds': 'Total deposits = Savings + Shares',
+    };
+
+    final explanation = explanations[labelText];
+
+    return Tooltip(
+      message: explanation ?? labelText,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          if (isBreakdown) ...[
+            const SizedBox(width: 12),
+            Container(
+              width: 3,
+              height: 3,
+              decoration: BoxDecoration(
+                color: _C.muted.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
             ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(child: _label(labelText)),
+          if (explanation != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Icon(Icons.info_outline, size: 14, color: _C.muted.withOpacity(0.6)),
+            ),
+        ]),
+        const SizedBox(height: 8),
+        Padding(
+          padding: EdgeInsets.only(left: isBreakdown ? 23 : 0),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text.rich(TextSpan(children: [
+              TextSpan(text: 'UGX ', style: _t(12, FontWeight.w500, _C.muted)),
+              TextSpan(text: _fmt(c.$2), style: _t(isBreakdown ? 18 : 21, FontWeight.w700, color, tab: true, ls: -0.3)),
+            ])),
           ),
-          const SizedBox(width: 8),
-        ],
-        Expanded(child: _label(labelText)),
-      ]),
-      const SizedBox(height: 8),
-      Padding(
-        padding: EdgeInsets.only(left: isBreakdown ? 23 : 0),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text.rich(TextSpan(children: [
-            TextSpan(text: 'UGX ', style: _t(12, FontWeight.w500, _C.muted)),
-            TextSpan(text: _fmt(c.$2), style: _t(isBreakdown ? 18 : 21, FontWeight.w700, color, tab: true, ls: -0.3)),
-          ])),
         ),
-      ),
-      const SizedBox(height: 4),
-      Padding(
-        padding: EdgeInsets.only(left: isBreakdown ? 23 : 0),
-        child: Text(c.$3, maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: _t(11.5, FontWeight.w400, _C.muted)),
-      ),
-    ]);
+        const SizedBox(height: 4),
+        Padding(
+          padding: EdgeInsets.only(left: isBreakdown ? 23 : 0),
+          child: Text(c.$3, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: _t(11.5, FontWeight.w400, _C.muted)),
+        ),
+      ]),
+    );
   }
 
   // ── Disbursement chart ────────────────────────────────────────────────────
@@ -1443,7 +1610,7 @@ class _AdminHomeTabState extends State<_AdminHomeTab> {
 
     return _panel(
       title: 'Portfolio at risk',
-      subtitle: 'Overdue principal as a share of loans outstanding',
+      subtitle: 'Overdue balance as a share of loans outstanding',
       scroll: true,
       child: LayoutBuilder(builder: (context, c) {
         final showTarget = c.maxWidth >= 520;

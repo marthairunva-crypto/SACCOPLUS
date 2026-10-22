@@ -25,7 +25,7 @@ class OTPVerificationScreen extends StatefulWidget {
   State<OTPVerificationScreen> createState() => _OTPVerificationScreenState();
 }
 
-class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
+class _OTPVerificationScreenState extends State<OTPVerificationScreen> with WidgetsBindingObserver {
   final List<TextEditingController> _otpControllers = List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
   
@@ -39,11 +39,53 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _tryRestoreOTP();
+  }
+
+  /// Try to restore OTP from Firestore if app restarted
+  Future<void> _tryRestoreOTP() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('otp_verifications')
+          .doc(widget.uid)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data();
+        if (data != null && data['verified'] != true) {
+          final expiresAt = (data['expiresAt'] as Timestamp?)?.toDate();
+          if (expiresAt != null && expiresAt.isAfter(DateTime.now())) {
+            // OTP still valid - restore it
+            setState(() {
+              _generatedOTP = data['otp'] as String?;
+              _otpExpiry = expiresAt;
+            });
+            
+            // Calculate remaining time for resend countdown
+            final sentTime = (data['createdAt'] as Timestamp?)?.toDate();
+            if (sentTime != null) {
+              final elapsed = DateTime.now().difference(sentTime).inSeconds;
+              if (elapsed < 60) {
+                _resendCountdown = 60 - elapsed;
+                _startResendCountdown();
+              }
+            }
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      // Failed to restore - will send new OTP
+    }
+    
+    // No valid OTP found - send new one
     _sendOTP();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
     for (var controller in _otpControllers) {
       controller.dispose();
@@ -52,6 +94,12 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       node.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // App lifecycle changes - state is preserved in memory
   }
 
   /// Generate and send OTP via SMS
@@ -76,29 +124,15 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         'verified': false,
       });
 
-      // ✅ SEND ACTUAL SMS via EHGO
+      // ✅ SEND ACTUAL SMS via Firebase Service
       final smsMessage = 'MBADIFA SACCO\nYour verification code is: $_generatedOTP\nValid for 5 minutes. Do not share this code.';
       await FirebaseService.sendSmsToPhone(widget.phoneNumber, smsMessage);
-
-      // Debug console output
-      debugPrint('');
-      debugPrint('📱 ═══════════════════════════════════════════════');
-      debugPrint('📱 SMS SENT TO: ${widget.phoneNumber}');
-      debugPrint('📱 ═══════════════════════════════════════════════');
-      debugPrint('');
-      debugPrint('MBADIFA SACCO');
-      debugPrint('Your verification code is: $_generatedOTP');
-      debugPrint('Valid for 5 minutes. Do not share this code.');
-      debugPrint('');
-      debugPrint('📱 ═══════════════════════════════════════════════');
-      debugPrint('');
 
       if (mounted) {
         _showSnack('OTP sent to ${_maskPhone(widget.phoneNumber)}', ModernTheme.success);
         _startResendCountdown();
       }
     } catch (e) {
-      debugPrint('Error sending OTP: $e');
       if (mounted) {
         _showSnack('Failed to send OTP. Please try again.', ModernTheme.error);
       }

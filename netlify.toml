@@ -1,7 +1,10 @@
-# Netlify configuration for Flutter Web App
 [build]
   publish = "build/web"
-  
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "18"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

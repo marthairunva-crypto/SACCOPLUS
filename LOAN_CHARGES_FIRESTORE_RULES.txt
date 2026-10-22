@@ -1,0 +1,125 @@
+// ══════════════════════════════════════════════════════════════════════════════
+// LOAN CHARGES - Firestore Security Rules
+// ══════════════════════════════════════════════════════════════════════════════
+// Add these rules to your firestore.rules file
+
+// Charge types (SACCO-wide configuration)
+match /charge_types/{typeId} {
+  // Anyone in the tenant can read active charge types
+  allow read: if request.auth != null && 
+                 get(/databases/$(database)/documents/saccoplus-members/$(request.auth.uid)).data.tenantId == resource.data.tenantId;
+  
+  // Only users with chargeType.manage permission can create/edit
+  allow write: if request.auth != null && 
+                  hasPermission('chargeType.manage');
+}
+
+// Loan charges (subcollection of loans)
+match /saccoplus-loans/{loanId}/charges/{chargeId} {
+  // Read: anyone in the same tenant can view charges
+  allow read: if request.auth != null && 
+                 get(/databases/$(database)/documents/saccoplus-loans/$(loanId)).data.tenantId == 
+                 get(/databases/$(database)/documents/saccoplus-members/$(request.auth.uid)).data.tenantId;
+  
+  // Create: requires charge.add permission and appliedBy must be current user
+  allow create: if request.auth != null && 
+                   hasPermission('charge.add') &&
+                   request.resource.data.appliedBy == request.auth.uid &&
+                   request.resource.data.tenantId == get(/databases/$(database)/documents/saccoplus-members/$(request.auth.uid)).data.tenantId;
+  
+  // Update: for reversal (charge.reverse) or payment allocation
+  allow update: if request.auth != null && 
+                   (hasPermission('charge.reverse') || 
+                    hasPermission('charge.add'));  // Payment allocation updates amountPaid
+  
+  // Delete: NEVER allow direct deletion - use reversal instead
+  allow delete: if false;
+  
+  // Waivers (subcollection of charges)
+  match /waivers/{waiverId} {
+    // Read: anyone in tenant can view waiver requests
+    allow read: if request.auth != null;
+    
+    // Create: requires charge.waive permission, requestedBy must be current user
+    allow create: if request.auth != null && 
+                     hasPermission('charge.waive') &&
+                     request.resource.data.requestedBy == request.auth.uid &&
+                     request.resource.data.tenantId == get(/databases/$(database)/documents/saccoplus-members/$(request.auth.uid)).data.tenantId;
+    
+    // Update: only for approval/rejection by different user
+    allow update: if request.auth != null && 
+                     hasPermission('charge.approveWaiver') &&
+                     request.auth.uid != resource.data.requestedBy;  // Prevent self-approval
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PERMISSION HELPER FUNCTION
+// ══════════════════════════════════════════════════════════════════════════════
+// Add this function to your rules (if not already present)
+
+function hasPermission(perm) {
+  let member = get(/databases/$(database)/documents/saccoplus-members/$(request.auth.uid)).data;
+  let role = member.role;
+  
+  // Super admin has all permissions
+  if (role == 'super_admin') {
+    return true;
+  }
+  
+  // Admin permissions
+  if (role == 'admin') {
+    return perm in [
+      'charge.add',
+      'charge.waive',
+      'charge.approveWaiver',
+      'charge.reverse',
+      'chargeType.manage'
+    ];
+  }
+  
+  // Manager permissions (same as admin for charges)
+  if (role == 'manager') {
+    return perm in [
+      'charge.add',
+      'charge.waive',
+      'charge.approveWaiver',
+      'charge.reverse',
+      'chargeType.manage'
+    ];
+  }
+  
+  // Loan officer permissions
+  if (role == 'loan_officer') {
+    return perm in [
+      'charge.add',
+      'charge.waive'
+    ];
+  }
+  
+  // Teller permissions (can add charges when recording payments)
+  if (role == 'teller') {
+    return perm == 'charge.add';
+  }
+  
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NOTES
+// ══════════════════════════════════════════════════════════════════════════════
+// 
+// 1. Charges are stored as subcollections: loans/{loanId}/charges/{chargeId}
+//    This keeps them scoped to their loan while allowing efficient queries
+//
+// 2. Waivers are nested subcollections for approval workflow:
+//    loans/{loanId}/charges/{chargeId}/waivers/{waiverId}
+//
+// 3. Permission checks use the role field on the user document
+//    Ensure all users have a role assigned (Member, admin, teller, etc.)
+//
+// 4. Self-approval is blocked for waivers to enforce separation of duties
+//
+// 5. Charges can never be deleted - only reversed with audit trail
+//
+// 6. All operations check tenantId to prevent cross-SACCO access

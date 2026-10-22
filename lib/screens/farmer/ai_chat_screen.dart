@@ -47,7 +47,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
     // Greeting
     _msgs.add(_Msg(
       role: 'assistant',
-      text: 'Hi there! 👋 I\'m your SACCOPLUS AI Assistant. I can help you with your wallet, savings, loans, airtime, bill payments, and anything else about the app. What can I help you with today?',
+      text: 'Hi there! 👋 I\'m your MBADIFA SACCO AI Assistant. I can help you with your wallet, savings, loans, airtime, bill payments, and anything else about the app. What can I help you with today?',
     ));
   }
 
@@ -592,7 +592,7 @@ class _InputBar extends StatelessWidget {
               maxLines: 4,
               style: GoogleFonts.poppins(fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Ask me anything about SACCOPLUS...',
+                hintText: 'Ask me anything about MBADIFA SACCO...',
                 hintStyle: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFFAAAAAA)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 border: OutlineInputBorder(

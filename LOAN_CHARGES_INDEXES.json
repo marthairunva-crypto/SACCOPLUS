@@ -1,0 +1,75 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "charges",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "loanId", "order": "ASCENDING"},
+        {"fieldPath": "chargeDate", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "charges",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "loanId", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "chargeDate", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "charges",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "chargeTypeId", "order": "ASCENDING"},
+        {"fieldPath": "scheduleItemId", "order": "ASCENDING"},
+        {"fieldPath": "chargeDate", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "charges",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "tenantId", "order": "ASCENDING"},
+        {"fieldPath": "status", "whereFilter": "ARRAY_CONTAINS"},
+        {"fieldPath": "chargeDate", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "waivers",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "requestedAt", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "waivers",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "tenantId", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "requestedAt", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "charge_types",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "tenantId", "order": "ASCENDING"},
+        {"fieldPath": "isActive", "order": "ASCENDING"},
+        {"fieldPath": "name", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "charge_types",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "tenantId", "order": "ASCENDING"},
+        {"fieldPath": "isActive", "order": "ASCENDING"},
+        {"fieldPath": "code", "order": "ASCENDING"}
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

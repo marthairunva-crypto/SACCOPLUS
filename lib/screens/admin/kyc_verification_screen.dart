@@ -184,123 +184,167 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
   }
 
   Widget _buildMemberCard(String memberId, Map<String, dynamic> member) {
-    final kycStatus = member['idStatus'] ?? 'pending';
-    final statusColor = kycStatus == 'approved'
-        ? Colors.green
-        : kycStatus == 'rejected'
-            ? Colors.red
-            : Colors.orange;
-    
-    final memberName = member['name'] ?? member['fullName'] ?? 'Unknown';
+    try {
+      final kycStatus = member['idStatus'] ?? 'pending';
+      final statusColor = kycStatus == 'approved'
+          ? Colors.green
+          : kycStatus == 'rejected'
+              ? Colors.red
+              : Colors.orange;
+      
+      final memberName = member['name'] ?? member['fullName'] ?? 'Unknown';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        child: ExpansionTile(
-        leading: CircleAvatar(
-          backgroundColor: statusColor.withOpacity(0.2),
-          child: Text(
-            memberName[0].toUpperCase(),
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              color: statusColor,
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          child: ExpansionTile(
+          leading: CircleAvatar(
+            backgroundColor: statusColor.withOpacity(0.2),
+            child: Text(
+              memberName.isNotEmpty ? memberName[0].toUpperCase() : '?',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: statusColor,
+              ),
             ),
           ),
-        ),
-        title: Text(
-          memberName,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          member['nationalId']?.toString() ?? member['phone']?.toString() ?? 'No ID/Phone',
-          style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
+          title: Text(
+            memberName,
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
           ),
-          child: Text(
-            kycStatus.toUpperCase(),
-            style: GoogleFonts.poppins(
-              color: statusColor,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
+          subtitle: Text(
+            member['nationalId']?.toString() ?? member['phone']?.toString() ?? 'No ID/Phone',
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
+          ),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              kycStatus.toUpperCase(),
+              style: GoogleFonts.poppins(
+                color: statusColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildDetailRow('Phone', member['phone'] ?? 'N/A'),
-                _buildDetailRow('National ID', member['nationalId'] ?? 'Not provided'),
-                _buildDetailRow('Village', member['village'] ?? 'N/A'),
-                _buildDetailRow('District', member['district'] ?? 'N/A'),
-                _buildDetailRow('Next of Kin', member['nextOfKin'] ?? 'Not provided'),
-                _buildDetailRow('Next of Kin Phone', member['nextOfKinPhone'] ?? 'Not provided'),
-                
-                if (member['kycNotes'] != null) ...[
-                  const Divider(height: 24),
-                  Text('Notes:', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(member['kycNotes'], style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade700)),
-                ],
-                
-                const Divider(height: 24),
-                
-                Row(
-                  children: [
-                    if (kycStatus != 'approved')
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _updateKYCStatus(memberId, 'approved'),
-                          icon: const Icon(Icons.check_circle, size: 18),
-                          label: const Text('Approve'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    if (kycStatus != 'approved') const SizedBox(width: 12),
-                    if (kycStatus != 'rejected')
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _showRejectDialog(memberId),
-                          icon: const Icon(Icons.cancel, size: 18),
-                          label: const Text('Reject'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailRow('Phone', member['phone']?.toString() ?? 'N/A'),
+                  _buildDetailRow('National ID', member['nationalId']?.toString() ?? 'Not provided'),
+                  _buildDetailRow('Village', member['village']?.toString() ?? 'N/A'),
+                  _buildDetailRow('District', member['district']?.toString() ?? 'N/A'),
+                  _buildDetailRow('Next of Kin', member['nextOfKin']?.toString() ?? 'Not provided'),
+                  _buildDetailRow('Next of Kin Phone', member['nextOfKinPhone']?.toString() ?? 'Not provided'),
+                  
+                  if (member['kycNotes'] != null && member['kycNotes'].toString().isNotEmpty) ...[
+                    const Divider(height: 24),
+                    Text('Notes:', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(member['kycNotes'].toString(), style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade700)),
                   ],
-                ),
-              ],
+                  
+                  const Divider(height: 24),
+                  
+                  Row(
+                    children: [
+                      if (kycStatus != 'approved')
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _updateKYCStatus(memberId, 'approved'),
+                            icon: const Icon(Icons.check_circle, size: 18),
+                            label: const Text('Approve'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      if (kycStatus != 'approved') const SizedBox(width: 12),
+                      if (kycStatus != 'rejected')
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _showRejectDialog(memberId),
+                            icon: const Icon(Icons.cancel, size: 18),
+                            label: const Text('Reject'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
         ),
-    );
+          ),
+      );
+    } catch (e, stackTrace) {
+      print('❌ Error building member card for $memberId: $e');
+      print('Stack trace: $stackTrace');
+      print('Member data: $member');
+      
+      // Return a safe error widget
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade700),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Error loading member',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  Text(
+                    'ID: $memberId',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: Colors.red.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -335,6 +379,8 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
 
   Future<void> _updateKYCStatus(String memberId, String status) async {
     try {
+      print('🔍 Updating KYC status for member: $memberId to status: $status');
+      
       // Update saccoplus-members collection with both fields
       final docRef = FirebaseFirestore.instance
           .collection('saccoplus-members')
@@ -343,6 +389,7 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
       final docSnapshot = await docRef.get();
       
       if (!docSnapshot.exists) {
+        print('❌ Member not found: $memberId');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -354,6 +401,8 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
         return;
       }
       
+      print('✅ Member found, updating status...');
+      
       // Update both kycStatus and idStatus for compatibility
       await docRef.update({
         'kycStatus': status,
@@ -363,6 +412,8 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      print('✅ KYC status updated successfully');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -371,7 +422,9 @@ class _KYCVerificationScreenState extends State<KYCVerificationScreen> with Sing
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error updating KYC: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

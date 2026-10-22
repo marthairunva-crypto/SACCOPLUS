@@ -19,7 +19,7 @@ class TellerService {
   static String get _tenantId => FirebaseService.sessionTenantId;
 
   // ─── Safe runner for non-critical steps ───────────────────────────────────
-  /// Runs a non-critical step (notification, SMS, audit, arrears refresh)
+  /// Runs a non-critical step (notification, audit, arrears refresh)
   /// without letting a failure there turn an already-recorded transaction
   /// into a "failed" one.
   static Future<void> _safe(Future<dynamic> Function() job, String label) async {
@@ -34,6 +34,33 @@ class TellerService {
       print('❌ ========================================');
     }
   }
+
+  // ─── SMS helper (returns whether the SMS was actually accepted) ───────────
+  /// Sends an SMS and returns true only if the gateway accepted it.
+  /// Never throws — an SMS problem must not fail a recorded transaction.
+  /// Failed SMS are also logged to Firestore by FirebaseService.sendSmsToPhone.
+  static Future<bool> _sendSms(String phone, String message, String label) async {
+    if (phone.trim().isEmpty) {
+      print('⚠️ SMS ($label) skipped: member phone number is empty');
+      return false;
+    }
+    try {
+      print('📱 SMS ($label) -> $phone | ${message.length} chars');
+      final ok = await FirebaseService.sendSmsToPhone(phone, message);
+      print(ok
+          ? '✅ SMS ($label) ACCEPTED by gateway for $phone'
+          : '❌ SMS ($label) FAILED for $phone (see EgoSMS log above)');
+      return ok;
+    } catch (e, st) {
+      print('❌ SMS ($label) exception for $phone: $e');
+      print(st);
+      return false;
+    }
+  }
+
+  /// Builds the user-facing message suffix based on SMS result.
+  static String _smsSuffix(bool smsSent) =>
+      smsSent ? ' SMS sent to member.' : ' (SMS could not be delivered.)';
 
   // ─── Process Deposit ──────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> processDeposit({
@@ -91,6 +118,15 @@ class TellerService {
 
       final memberData = memberDoc.data()!;
       Map<String, dynamic> updateData = {};
+
+      // Phone to use for SMS. Falls back to the phone stored on the member
+      // record if the screen passed an empty / missing one.
+      final smsPhone = memberPhone.trim().isNotEmpty
+          ? memberPhone
+          : (memberData['phone'] as String? ?? '');
+
+      // Tracks whether the member's SMS was really accepted by the gateway.
+      bool smsSent = false;
 
       // New balance shown to the member in the notification / SMS.
       // Stays null for loan payments (they send their own messages).
@@ -307,29 +343,17 @@ class TellerService {
             'loan notification',
           );
 
-          // Send SMS notification for loan repayment (non-critical)
-          print('📱 Attempting to send loan payment SMS to: $memberPhone');
+          // Send SMS for loan repayment (non-critical).
+          // FIX: the old message was ~250 chars (2–3 SMS segments) and was
+          // the most likely to be rejected. Kept SHORT (< 160 chars) so it
+          // fits in one segment. The principal/interest split is already in
+          // the in-app notification above.
           final loanSmsMessage =
-              'MBADIFA SACCO\n'
-              'Dear $memberName, your loan payment of UGX ${_formatAmount(amount)} has been received. '
-              'Principal: UGX ${_formatAmount(principalPayment.toInt())}, '
-              'Interest: UGX ${_formatAmount(interestPayment.toInt())}. '
-              'Outstanding balance: UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
-              'Receipt: ${transaction['receiptNumber']}. '
-              'Thank you.';
+              'MBADIFA SACCO: Loan payment UGX ${_formatAmount(amount)} received. '
+              'Balance UGX ${_formatAmount(newTotalOutstanding.toInt())}. '
+              'Rct ${transaction['receiptNumber']}';
 
-          if (memberPhone.isEmpty) {
-            print('⚠️ WARNING: Member phone number is empty! Cannot send SMS.');
-          } else {
-            await _safe(
-              () async {
-                print('📤 Sending loan SMS with length: ${loanSmsMessage.length} chars');
-                await FirebaseService.sendSmsToPhone(memberPhone, loanSmsMessage);
-                print('✅ Loan SMS sent successfully to $memberPhone');
-              },
-              'loan sms',
-            );
-          }
+          smsSent = await _sendSms(smsPhone, loanSmsMessage, 'loan payment');
 
           // Update arrears and penalties after payment (non-critical)
           await _safe(() => ArrearsService.updateLoanArrears(loanId), 'arrears update');
@@ -355,7 +379,10 @@ class TellerService {
       await transactionRef.set(transaction);
 
       // Post till entry if till session provided and payment is cash
-      if (tillSession != null && (paymentMethod ?? 'Cash') == 'Cash') {
+      // (loan payments already posted their own till entry above)
+      if (accountType != 'loan_payment' &&
+          tillSession != null &&
+          (paymentMethod ?? 'Cash') == 'Cash') {
         try {
           final tillEntryInput = TillEntryInput.deposit(
             amount: amount,
@@ -408,10 +435,7 @@ class TellerService {
             'Receipt: ${transaction['receiptNumber']}. '
             'Thank you.';
 
-        await _safe(
-          () => FirebaseService.sendSmsToPhone(memberPhone, smsMessage),
-          'deposit sms',
-        );
+        smsSent = await _sendSms(smsPhone, smsMessage, 'deposit');
       }
 
       // Audit trail
@@ -428,6 +452,7 @@ class TellerService {
             'amount': amount,
             'accountType': accountType,
             'transactionId': transactionId,
+            'smsSent': smsSent,
           },
         ),
         'deposit audit',
@@ -436,7 +461,8 @@ class TellerService {
       return {
         'success': true,
         'transaction': transaction,
-        'message': 'Deposit processed successfully. SMS sent to member.',
+        'smsSent': smsSent,
+        'message': 'Deposit processed successfully.${_smsSuffix(smsSent)}',
       };
     } catch (e, st) {
       print('❌ processDeposit error: $e');
@@ -476,6 +502,10 @@ class TellerService {
       final memberData = memberDoc.data()!;
       Map<String, dynamic> updateData = {};
       int currentBalance = 0;
+
+      final smsPhone = memberPhone.trim().isNotEmpty
+          ? memberPhone
+          : (memberData['phone'] as String? ?? '');
 
       switch (accountType) {
         case 'savings':
@@ -604,10 +634,7 @@ class TellerService {
           'Receipt: ${transaction['receiptNumber']}. '
           'Thank you.';
 
-      await _safe(
-        () => FirebaseService.sendSmsToPhone(memberPhone, smsMessage),
-        'withdrawal sms',
-      );
+      final smsSent = await _sendSms(smsPhone, smsMessage, 'withdrawal');
 
       // Audit trail (FIX: sessionUid instead of currentUser!.uid)
       await _safe(
@@ -621,6 +648,7 @@ class TellerService {
             'amount': amount,
             'accountType': accountType,
             'transactionId': transactionId,
+            'smsSent': smsSent,
           },
         ),
         'withdrawal audit',
@@ -629,7 +657,8 @@ class TellerService {
       return {
         'success': true,
         'transaction': transaction,
-        'message': 'Withdrawal processed successfully. SMS sent to member.',
+        'smsSent': smsSent,
+        'message': 'Withdrawal processed successfully.${_smsSuffix(smsSent)}',
       };
     } catch (e, st) {
       print('❌ processWithdrawal error: $e');
@@ -673,7 +702,7 @@ class TellerService {
       // Deduct from member's savings
       final memberRef = _db.collection('saccoplus-members').doc(memberId);
       final memberSnap = await memberRef.get();
-      
+
       if (memberSnap.exists) {
         final currentSavings = (memberSnap.data()?['savingsBalance'] ?? 0).toDouble();
         await memberRef.update({
@@ -840,10 +869,7 @@ class TellerService {
           'New balance: UGX ${_formatAmount(newSavings)}. '
           'Thank you!';
 
-      await _safe(
-        () => FirebaseService.sendSmsToPhone(memberPhone, smsMessage),
-        'maturity sms',
-      );
+      final smsSent = await _sendSms(memberPhone, smsMessage, 'fd maturity');
 
       // Audit trail (FIX: sessionUid instead of currentUser!.uid)
       await _safe(
@@ -859,6 +885,7 @@ class TellerService {
             'interestEarned': interestEarned,
             'totalPayout': totalPayout,
             'receiptNumber': receiptNumber,
+            'smsSent': smsSent,
           },
         ),
         'maturity audit',
@@ -870,6 +897,7 @@ class TellerService {
         'interestEarned': interestEarned,
         'totalPayout': totalPayout,
         'receiptNumber': receiptNumber,
+        'smsSent': smsSent,
         'message':
             'Fixed deposit matured successfully. Total UGX ${_formatAmount(totalPayout)} transferred to savings.',
       };
@@ -996,13 +1024,13 @@ class TellerService {
             .collection(AppConstants.tillSessionsCol)
             .doc(tillSessionId)
             .get();
-        
+
         if (sessionDoc.exists) {
           final sessionData = sessionDoc.data()!;
           sessionStart = (sessionData['openedAt'] as Timestamp?)?.toDate();
           sessionEnd = (sessionData['closedAt'] as Timestamp?)?.toDate();
           print('🔍   - Till session time range: $sessionStart to ${sessionEnd ?? "NOW (still open)"}');
-          
+
           // Override startDate/endDate with session range
           startDate = sessionStart;
           endDate = sessionEnd; // null if still open
@@ -1072,12 +1100,12 @@ class TellerService {
       for (final doc in snapshot1.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final businessRecordId = data['id']?.toString();
-        
+
         // Track this record
         if (businessRecordId != null) {
           seenBusinessRecords.add(businessRecordId);
         }
-        
+
         results.add({
           'id': doc.id,
           ...data,
@@ -1092,16 +1120,16 @@ class TellerService {
       for (final doc in snapshot2.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final businessRecordId = data['businessRecordId']?.toString();
-        
+
         // Skip if we already have this transaction from teller-transactions collection
         if (businessRecordId != null && seenBusinessRecords.contains(businessRecordId)) {
           print('⚠️ Skipping duplicate till entry for businessRecordId: $businessRecordId');
           continue;
         }
-        
+
         final entryType = data['entryType'] ?? '';
         final notes = (data['notes'] ?? '').toString();
-        
+
         // Map till entry types to transaction types
         String transactionType = entryType;
         if (entryType == 'loan_repayment') {
@@ -1109,12 +1137,12 @@ class TellerService {
         } else if (entryType == 'loan_disbursement') {
           transactionType = 'loan_disbursement';
         }
-        
+
         // For expense/revenue entries, extract description from notes
         // Notes format: "Expense: DATA - Internet Data" or "Revenue: Membership fee - Monthly"
         String description = '';
         String category = '';
-        
+
         if (entryType == 'expense' && notes.startsWith('Expense: ')) {
           final content = notes.substring(9); // Remove "Expense: " prefix
           // If contains " - ", split into category and description
@@ -1138,7 +1166,7 @@ class TellerService {
         }
 
         // Use the most specific name available
-        String displayName = description.isNotEmpty 
+        String displayName = description.isNotEmpty
             ? (category.isNotEmpty ? '$category - $description' : description)
             : (category.isNotEmpty ? category : notes);
 
