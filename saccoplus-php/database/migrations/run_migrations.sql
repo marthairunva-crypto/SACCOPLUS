@@ -4,6 +4,7 @@
 SOURCE schema.sql;
 SOURCE migrations/001_create_members.sql;
 SOURCE migrations/002_create_ledger.sql;
+SOURCE migrations/003_create_loans.sql;
 
 -- Seed test member
 USE saccoplus_v2;

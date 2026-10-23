@@ -17,6 +17,7 @@
         <a href="<?= url('dashboard') ?>">Dashboard</a>
         <a href="<?= url('teller') ?>">Teller</a>
         <a href="<?= url('members') ?>">Members</a>
+        <a href="<?= url('loans') ?>">Loans</a>
         <form method="post" action="<?= url('logout') ?>" class="inline">
           <?= Csrf::field() ?>
           <button class="btn btn-ghost" type="submit">Sign out</button>
