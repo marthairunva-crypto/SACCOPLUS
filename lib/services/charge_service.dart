@@ -599,17 +599,15 @@ class ChargeService {
           final formattedAmount = _formatMoney(amount);
           final newTotalDemanded = _formatMoney(newOutstandingBalance);
           
-          // Build SMS message with personalized greeting
+          // Build concise SMS message
           final memberName = memberDoc.data()?['name'] as String? ?? loanData['memberName'] as String? ?? '';
           final firstName = memberName.split(' ').first;
           
-          final smsMessage = 'Dear $firstName,\n'
-              '$saccoName: A charge has been added to your loan.\n'
-              'Charge: $chargeTypeName\n'
-              'Amount: UGX $formattedAmount\n'
-              '${notes.isNotEmpty ? 'Reason: $notes\n' : ''}'
-              'New balance: UGX $newTotalDemanded\n'
-              'Thank you.';
+          final smsMessage = 'Dear $firstName, '
+              'Loan charge: $chargeTypeName UGX $formattedAmount. '
+              '${notes.isNotEmpty ? '$notes. ' : ''}'
+              'New balance: UGX $newTotalDemanded. '
+              '-$saccoName';
           
           // Send SMS notification
           final smsSent = await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
