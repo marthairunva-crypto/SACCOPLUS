@@ -4,7 +4,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Core\Router;
-use App\Controllers\{HomeController, AuthController, DashboardController, MembersController};
+use App\Controllers\{HomeController, AuthController, DashboardController, MembersController, TellerController};
 
 $router = new Router();
 
@@ -19,5 +19,12 @@ $router->get('dashboard',       [DashboardController::class, 'index']);
 $router->get('members',         [MembersController::class, 'index']);
 $router->get('members/view',    [MembersController::class, 'view']);
 $router->get('members/search',  [MembersController::class, 'search']);
+
+// Teller Operations
+$router->get('teller',          [TellerController::class, 'index']);
+$router->get('teller/deposit',  [TellerController::class, 'showDeposit']);
+$router->post('teller/deposit', [TellerController::class, 'deposit']);
+$router->get('teller/withdraw', [TellerController::class, 'showWithdraw']);
+$router->post('teller/withdraw',[TellerController::class, 'withdraw']);
 
 $router->dispatch();
