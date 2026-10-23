@@ -66,3 +66,67 @@ input:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
   .hero h1{font-size:1.8rem}
   .grid{grid-template-columns:1fr}
 }
+
+/* Member-specific styles */
+.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+.page-header h1{margin:0;font-size:1.8rem}
+.header-actions{display:flex;gap:12px;align-items:center}
+.search-input{max-width:320px;padding:9px 12px}
+.member-count{color:var(--muted);font-size:.9rem}
+
+/* Data tables */
+.data-table{width:100%;border-collapse:collapse;margin-top:12px}
+.data-table th{text-align:left;padding:12px;border-bottom:2px solid var(--line);font-weight:600;font-size:.88rem;color:var(--muted)}
+.data-table td{padding:12px;border-bottom:1px solid var(--line)}
+.data-table tr:hover{background:var(--bg)}
+.data-table .name-cell{font-weight:600}
+.data-table .amount{text-align:right;font-family:ui-monospace,monospace;font-size:.92rem}
+.data-table .amount.debit{color:var(--danger)}
+.data-table .amount.credit{color:var(--ok)}
+.empty-state{text-align:center;padding:32px;color:var(--muted)}
+
+/* Badges */
+.badge{display:inline-block;padding:4px 10px;border-radius:6px;font-size:.82rem;font-weight:600}
+.badge-active{background:#ecfdf3;color:#067647}
+.badge-inactive{background:#f3f4f6;color:#6b7686}
+.badge-suspended{background:#fef3f2;color:#b42318}
+
+/* Info grid (label/value rows) */
+.info-grid{display:grid;gap:1px;background:var(--line);border-radius:var(--radius);overflow:hidden}
+.info-row{display:grid;grid-template-columns:200px 1fr;background:#fff;padding:14px 18px}
+.info-row .label{font-weight:600;color:var(--muted);font-size:.9rem}
+.info-row .value{color:var(--ink)}
+
+/* Summary cards */
+.summary-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:24px}
+.summary-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;gap:14px;align-items:center}
+.summary-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem}
+.summary-icon.savings{background:#ecfdf3}
+.summary-icon.shares{background:#eff8ff}
+.summary-icon.loans{background:#fef3f2}
+.summary-icon.balance{background:#f9f5ff}
+.summary-details{flex:1}
+.summary-label{display:block;color:var(--muted);font-size:.88rem;margin-bottom:4px}
+.summary-value{display:block;font-size:1.3rem;font-weight:700;font-family:ui-monospace,monospace}
+
+/* Card header */
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.card-header h2{margin:0;font-size:1.2rem}
+
+/* Pagination */
+.pagination{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:24px}
+.page-info{color:var(--muted);font-size:.9rem}
+
+/* Button variants */
+.btn-secondary{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn-secondary:hover{background:var(--bg)}
+.btn-link{color:var(--brand);font-weight:600;font-size:.9rem}
+.btn-link:hover{text-decoration:underline}
+
+@media(max-width:860px){
+  .info-row{grid-template-columns:1fr;gap:6px}
+  .summary-cards{grid-template-columns:1fr}
+  .page-header{flex-direction:column;align-items:flex-start;gap:12px}
+  .header-actions{flex-direction:column;width:100%}
+  .search-input{max-width:100%}
+}

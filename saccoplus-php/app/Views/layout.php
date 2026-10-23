@@ -15,6 +15,7 @@
       <a href="<?= url('index') ?>">Home</a>
       <?php if (Auth::check()): ?>
         <a href="<?= url('dashboard') ?>">Dashboard</a>
+        <a href="<?= url('members') ?>">Members</a>
         <form method="post" action="<?= url('logout') ?>" class="inline">
           <?= Csrf::field() ?>
           <button class="btn btn-ghost" type="submit">Sign out</button>
