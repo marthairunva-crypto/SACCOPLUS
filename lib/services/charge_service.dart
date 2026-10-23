@@ -604,9 +604,9 @@ class ChargeService {
           final firstName = memberName.split(' ').first;
           
           final smsMessage = '$saccoName: Dear $firstName, '
-              'Charge of UGX $formattedAmount added to your loan ($chargeTypeName). '
+              'UGX $formattedAmount $chargeTypeName added to your loan. '
               '${notes.isNotEmpty ? '$notes. ' : ''}'
-              'New loan balance: UGX $newTotalDemanded. Thank you!';
+              'New balance: UGX $newTotalDemanded. Thank you!';
           
           // Send SMS notification
           final smsSent = await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
