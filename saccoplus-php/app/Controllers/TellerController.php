@@ -1,144 +1,153 @@
 <?php
-declare(strict_types=1);
 
 namespace App\Controllers;
 
-use App\Core\{Auth, View, Csrf};
+use App\Core\View;
+use App\Core\Auth;
+use App\Core\Csrf;
+use App\Core\Context;
 use App\Services\TellerService;
+use App\Models\Member;
+use Exception;
 
 class TellerController
 {
-    /**
-     * Teller dashboard - today's summary + recent transactions
-     */
-    public function index(): void
+    private $tellerService;
+    
+    public function __construct()
     {
-        Auth::requireAuth(['teller', 'manager', 'admin']);
+        $this->tellerService = new TellerService();
+    }
+    
+    /**
+     * Teller dashboard
+     */
+    public function index()
+    {
+        Auth::require();
         
-        $user = Auth::user();
         $today = date('Y-m-d');
-        
-        $summary = TellerService::getDailySummary($user['sacco_id'], $user['id'], $today);
-        $recentTransactions = TellerService::getRecentTransactions($user['sacco_id'], $user['id'], 10);
+        $summary = $this->tellerService->getDailySummary($today, Auth::user()['id']);
+        $recentTransactions = $this->tellerService->getRecentTransactions(20);
         
         View::render('teller/index', [
             'summary' => $summary,
-            'recent' => $recentTransactions,
-            'date' => $today,
+            'recent_transactions' => $recentTransactions,
+            'date' => $today
         ]);
     }
-
+    
     /**
      * Show deposit form
      */
-    public function showDeposit(): void
+    public function showDeposit()
     {
-        Auth::requireAuth(['teller', 'manager', 'admin']);
-        View::render('teller/deposit');
+        Auth::require();
+        
+        $memberId = $_GET['member_id'] ?? null;
+        $member = null;
+        
+        if ($memberId) {
+            $saccoId = Context::requireSacco();
+            $member = Member::getById($memberId, $saccoId);
+        }
+        
+        View::render('teller/deposit', [
+            'member' => $member,
+            'csrf_token' => Csrf::generate()
+        ]);
     }
-
+    
     /**
      * Process deposit
      */
-    public function deposit(): void
+    public function deposit()
     {
-        Auth::requireAuth(['teller', 'manager', 'admin']);
-        Csrf::validate();
+        Auth::require();
+        Csrf::verify($_POST['csrf_token'] ?? '');
         
-        $memberId = (int) ($_POST['member_id'] ?? 0);
-        $amount = (int) ($_POST['amount'] ?? 0);
-        $paymentMethod = trim($_POST['payment_method'] ?? 'Cash');
-        $referenceNo = !empty($_POST['reference_no']) ? trim($_POST['reference_no']) : null;
-        $notes = trim($_POST['notes'] ?? '');
-        $transactionDate = $_POST['transaction_date'] ?? date('Y-m-d');
-        
-        // Validate transaction date (max 48 hours back)
-        $maxBackdate = date('Y-m-d', strtotime('-48 hours'));
-        if ($transactionDate < $maxBackdate) {
-            flash('error', 'Cannot backdate more than 48 hours');
-            redirect('teller/deposit');
-            return;
-        }
-        
-        if ($transactionDate > date('Y-m-d')) {
-            flash('error', 'Cannot use future date');
-            redirect('teller/deposit');
-            return;
-        }
-        
-        $result = TellerService::deposit(
-            $memberId,
-            $amount,
-            $paymentMethod,
-            $referenceNo,
-            $notes,
-            Auth::user()['id'],
-            $transactionDate
-        );
-        
-        if ($result['success']) {
-            flash('success', $result['message'] . '. New balance: UGX ' . number_format($result['new_balance']));
-            redirect('teller');
-        } else {
-            flash('error', $result['message']);
-            redirect('teller/deposit');
+        try {
+            $memberId = (int)($_POST['member_id'] ?? 0);
+            $amount = (float)($_POST['amount'] ?? 0);
+            $notes = $_POST['notes'] ?? '';
+            $transactionDate = $_POST['transaction_date'] ?? date('Y-m-d');
+            
+            if (!$memberId || $amount <= 0) {
+                throw new Exception("Invalid member or amount");
+            }
+            
+            $result = $this->tellerService->deposit(
+                $memberId,
+                $amount,
+                $notes,
+                Auth::user()['id'],
+                $transactionDate
+            );
+            
+            $_SESSION['success'] = "Deposit successful. New balance: UGX " . number_format($result['new_balance']);
+            redirect('/teller/deposit?member_id=' . $memberId);
+            
+        } catch (Exception $e) {
+            $_SESSION['error'] = $e->getMessage();
+            $_SESSION['old'] = $_POST;
+            redirect('/teller/deposit' . (isset($_POST['member_id']) ? '?member_id=' . $_POST['member_id'] : ''));
         }
     }
-
+    
     /**
      * Show withdrawal form
      */
-    public function showWithdraw(): void
+    public function showWithdraw()
     {
-        Auth::requireAuth(['teller', 'manager', 'admin']);
-        View::render('teller/withdraw');
+        Auth::require();
+        
+        $memberId = $_GET['member_id'] ?? null;
+        $member = null;
+        
+        if ($memberId) {
+            $saccoId = Context::requireSacco();
+            $member = Member::getById($memberId, $saccoId);
+        }
+        
+        View::render('teller/withdraw', [
+            'member' => $member,
+            'csrf_token' => Csrf::generate()
+        ]);
     }
-
+    
     /**
      * Process withdrawal
      */
-    public function withdraw(): void
+    public function withdraw()
     {
-        Auth::requireAuth(['teller', 'manager', 'admin']);
-        Csrf::validate();
+        Auth::require();
+        Csrf::verify($_POST['csrf_token'] ?? '');
         
-        $memberId = (int) ($_POST['member_id'] ?? 0);
-        $amount = (int) ($_POST['amount'] ?? 0);
-        $destination = trim($_POST['destination'] ?? 'Cash');
-        $referenceNo = !empty($_POST['reference_no']) ? trim($_POST['reference_no']) : null;
-        $notes = trim($_POST['notes'] ?? '');
-        $transactionDate = $_POST['transaction_date'] ?? date('Y-m-d');
-        
-        // Validate transaction date
-        $maxBackdate = date('Y-m-d', strtotime('-48 hours'));
-        if ($transactionDate < $maxBackdate) {
-            flash('error', 'Cannot backdate more than 48 hours');
-            redirect('teller/withdraw');
-            return;
-        }
-        
-        if ($transactionDate > date('Y-m-d')) {
-            flash('error', 'Cannot use future date');
-            redirect('teller/withdraw');
-            return;
-        }
-        
-        $result = TellerService::withdraw(
-            $memberId,
-            $amount,
-            $destination,
-            $referenceNo,
-            $notes,
-            Auth::user()['id'],
-            $transactionDate
-        );
-        
-        if ($result['success']) {
-            flash('success', $result['message'] . '. New balance: UGX ' . number_format($result['new_balance']));
-            redirect('teller');
-        } else {
-            flash('error', $result['message']);
-            redirect('teller/withdraw');
+        try {
+            $memberId = (int)($_POST['member_id'] ?? 0);
+            $amount = (float)($_POST['amount'] ?? 0);
+            $notes = $_POST['notes'] ?? '';
+            $transactionDate = $_POST['transaction_date'] ?? date('Y-m-d');
+            
+            if (!$memberId || $amount <= 0) {
+                throw new Exception("Invalid member or amount");
+            }
+            
+            $result = $this->tellerService->withdraw(
+                $memberId,
+                $amount,
+                $notes,
+                Auth::user()['id'],
+                $transactionDate
+            );
+            
+            $_SESSION['success'] = "Withdrawal successful. New balance: UGX " . number_format($result['new_balance']);
+            redirect('/teller/withdraw?member_id=' . $memberId);
+            
+        } catch (Exception $e) {
+            $_SESSION['error'] = $e->getMessage();
+            $_SESSION['old'] = $_POST;
+            redirect('/teller/withdraw' . (isset($_POST['member_id']) ? '?member_id=' . $_POST['member_id'] : ''));
         }
     }
 }

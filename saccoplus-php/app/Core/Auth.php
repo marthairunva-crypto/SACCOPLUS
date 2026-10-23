@@ -9,7 +9,7 @@ final class Auth
 
     public static function attempt(string $email, string $password): bool
     {
-        $st = DB::pdo()->prepare('SELECT * FROM users WHERE email = ? AND is_active = 1 LIMIT 1');
+        $st = DB::pdo()->prepare('SELECT * FROM users WHERE email = ? AND status = "active" LIMIT 1');
         $st->execute([$email]);
         $u = $st->fetch();
 
@@ -20,8 +20,12 @@ final class Auth
 
         session_regenerate_id(true);
         $_SESSION['user'] = [
-            'id' => (int)$u['id'], 'sacco_id' => (int)$u['sacco_id'],
-            'name' => $u['full_name'], 'email' => $u['email'], 'role' => $u['role'],
+            'id' => (int)$u['id'], 
+            'sacco_id' => $u['sacco_id'] ? (int)$u['sacco_id'] : null,
+            'branch_id' => $u['branch_id'] ? (int)$u['branch_id'] : null,
+            'name' => $u['name'], 
+            'email' => $u['email'], 
+            'role' => $u['role'],
         ];
         DB::pdo()->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?')->execute([$u['id']]);
         return true;

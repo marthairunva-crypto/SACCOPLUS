@@ -1,76 +1,88 @@
 <?php
-declare(strict_types=1);
 
 namespace App\Controllers;
 
-use App\Core\{Auth, View};
+use App\Core\View;
+use App\Core\Auth;
+use App\Core\Context;
 use App\Models\Member;
 use App\Services\MemberService;
 
 class MembersController
 {
+    private $memberService;
+    
+    public function __construct()
+    {
+        $this->memberService = new MemberService();
+    }
+    
     /**
      * List all members
      */
-    public function index(): void
+    public function index()
     {
-        Auth::requireAuth();
+        Auth::require();
+        $saccoId = Context::requireSacco();
         
-        $saccoId = Auth::user()['sacco_id'];
-        $page = (int) ($_GET['page'] ?? 1);
-        $limit = 50;
-        $offset = ($page - 1) * $limit;
+        $filters = [
+            'status' => $_GET['status'] ?? '',
+            'branch_id' => $_GET['branch_id'] ?? '',
+            'search' => $_GET['search'] ?? ''
+        ];
         
-        $members = Member::getAll($saccoId, $limit, $offset);
-        $totalMembers = Member::count($saccoId);
-        $totalPages = (int) ceil($totalMembers / $limit);
+        $members = Member::getAll($saccoId, $filters);
         
         View::render('members/index', [
             'members' => $members,
-            'currentPage' => $page,
-            'totalPages' => $totalPages,
-            'totalMembers' => $totalMembers,
+            'filters' => $filters
         ]);
     }
-
+    
     /**
-     * Member 360 view - comprehensive member profile
+     * View member details (Member 360)
      */
-    public function view(): void
+    public function view()
     {
-        Auth::requireAuth();
+        Auth::require();
         
-        $id = (int) ($_GET['id'] ?? 0);
-        $saccoId = Auth::user()['sacco_id'];
-        
-        $member = MemberService::getMemberSummary($id, $saccoId);
-        
-        if (!$member) {
-            http_response_code(404);
-            View::render('404', ['message' => 'Member not found']);
+        $memberId = $_GET['id'] ?? null;
+        if (!$memberId) {
+            $_SESSION['error'] = "Member ID required";
+            redirect('/members');
             return;
         }
         
-        View::render('members/view', ['member' => $member]);
+        try {
+            $summary = $this->memberService->getMemberSummary($memberId);
+            
+            View::render('members/view', $summary);
+            
+        } catch (\Exception $e) {
+            $_SESSION['error'] = $e->getMessage();
+            redirect('/members');
+        }
     }
-
+    
     /**
      * Search members (AJAX)
      */
-    public function search(): void
+    public function search()
     {
-        Auth::requireAuth();
-        header('Content-Type: application/json');
+        Auth::require();
+        $saccoId = Context::requireSacco();
         
-        $query = trim($_GET['q'] ?? '');
-        $saccoId = Auth::user()['sacco_id'];
+        $query = $_GET['q'] ?? '';
         
         if (strlen($query) < 2) {
-            echo json_encode([]);
+            header('Content-Type: application/json');
+            echo json_encode(['members' => []]);
             return;
         }
         
-        $results = Member::search($saccoId, $query);
-        echo json_encode($results);
+        $members = Member::search($saccoId, $query);
+        
+        header('Content-Type: application/json');
+        echo json_encode(['members' => $members]);
     }
 }
