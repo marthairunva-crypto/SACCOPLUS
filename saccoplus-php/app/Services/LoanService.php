@@ -3,140 +3,136 @@
 namespace App\Services;
 
 use App\Core\DB;
+use App\Core\Context;
 use App\Models\Loan;
 use App\Models\Member;
 use Exception;
 
 class LoanService
 {
+    private $journalService;
+    
+    public function __construct()
+    {
+        $this->journalService = new JournalService();
+    }
+    
     /**
      * Apply for a loan
      */
     public function applyForLoan($data, $userId)
     {
+        $saccoId = Context::requireSacco();
+        $branchId = $data['branch_id'] ?? Context::requireBranch();
+        
         // Validate member exists
-        $member = Member::getById($data['member_id']);
+        $member = Member::getById($data['member_id'], $saccoId);
         if (!$member) {
             throw new Exception("Member not found");
         }
         
-        // Check if member has active loans
-        $activeLoans = Loan::getActiveLoansByMember($data['member_id']);
+        // Check active loans
+        $activeLoans = $this->getActiveLoanCount($data['member_id']);
         if ($activeLoans >= 3) {
             throw new Exception("Member already has 3 active loans. Maximum reached.");
         }
         
-        // Generate loan number
-        $data['loan_number'] = Loan::generateLoanNumber();
-        $data['application_date'] = $data['application_date'] ?? date('Y-m-d');
-        $data['applied_by'] = $userId;
+        DB::beginTransaction();
         
-        // Create loan
-        $loanId = Loan::create($data);
-        
-        // Add note
-        Loan::addNote($loanId, "Loan application submitted", 'general', $userId);
-        
-        // Audit log
-        AuditService::log(
-            'loan_application',
-            'loans',
-            $loanId,
-            null,
-            json_encode($data),
-            $userId
-        );
-        
-        return $loanId;
+        try {
+            // Generate loan number
+            $loanNo = $this->generateLoanNumber($saccoId);
+            
+            $sql = "
+                INSERT INTO loans (
+                    sacco_id, branch_id, member_id, product_id, loan_no,
+                    principal, term_months, interest_rate, interest_method,
+                    status, applied_on, purpose
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            ";
+            
+            DB::execute($sql, [
+                $saccoId,
+                $branchId,
+                $data['member_id'],
+                $data['product_id'],
+                $loanNo,
+                $data['principal'],
+                $data['term_months'],
+                $data['interest_rate'],
+                $data['interest_method'] ?? 'reducing',
+                $data['applied_on'] ?? date('Y-m-d'),
+                $data['purpose'] ?? null
+            ]);
+            
+            $loanId = DB::lastInsertId();
+            
+            // Audit log
+            AuditService::log(
+                'loan_application',
+                'loans',
+                (string)$loanId,
+                null,
+                $data,
+                $userId
+            );
+            
+            DB::commit();
+            return $loanId;
+            
+        } catch (Exception $e) {
+            DB::rollback();
+            throw new Exception("Failed to apply for loan: " . $e->getMessage());
+        }
     }
     
     /**
      * Approve loan
      */
-    public function approveLoan($loanId, $approvedAmount, $notes, $userId)
+    public function approveLoan($loanId, $notes, $userId)
     {
-        DB::beginTransaction();
+        $saccoId = Context::requireSacco();
         
-        try {
-            $loan = Loan::getById($loanId);
-            if (!$loan) {
-                throw new Exception("Loan not found");
-            }
-            
-            if ($loan['status'] !== 'pending') {
-                throw new Exception("Only pending loans can be approved");
-            }
-            
-            $oldData = json_encode($loan);
-            
-            // Update loan
-            Loan::update($loanId, [
-                'amount_approved' => $approvedAmount,
-                'status' => 'approved',
-                'approval_date' => date('Y-m-d'),
-                'approved_by' => $userId,
-                'approval_notes' => $notes
-            ]);
-            
-            // Add note
-            Loan::addNote($loanId, "Loan approved: UGX " . number_format($approvedAmount) . ". " . $notes, 'approval', $userId);
-            
-            // Audit log
-            AuditService::log(
-                'loan_approval',
-                'loans',
-                $loanId,
-                $oldData,
-                json_encode(['amount_approved' => $approvedAmount, 'status' => 'approved']),
-                $userId
-            );
-            
-            DB::commit();
-            return true;
-            
-        } catch (Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
-    }
-    
-    /**
-     * Reject loan
-     */
-    public function rejectLoan($loanId, $reason, $userId)
-    {
-        $loan = Loan::getById($loanId);
+        $loan = $this->getLoanById($loanId, $saccoId);
         if (!$loan) {
             throw new Exception("Loan not found");
         }
         
         if ($loan['status'] !== 'pending') {
-            throw new Exception("Only pending loans can be rejected");
+            throw new Exception("Only pending loans can be approved");
         }
         
-        Loan::update($loanId, [
-            'status' => 'rejected',
-            'rejection_reason' => $reason,
-            'approved_by' => $userId,
-            'approval_date' => date('Y-m-d')
-        ]);
+        $sql = "UPDATE loans SET status = 'approved', approved_by = ?, approved_on = ? WHERE id = ? AND sacco_id = ?";
+        DB::execute($sql, [$userId, date('Y-m-d'), $loanId, $saccoId]);
         
-        Loan::addNote($loanId, "Loan rejected: " . $reason, 'approval', $userId);
-        
-        AuditService::log('loan_rejection', 'loans', $loanId, null, $reason, $userId);
+        // Audit log
+        AuditService::log(
+            'loan_approval',
+            'loans',
+            (string)$loanId,
+            ['status' => 'pending'],
+            ['status' => 'approved', 'notes' => $notes],
+            $userId
+        );
         
         return true;
     }
     
     /**
      * Disburse loan
+     * 
+     * DR Loans Receivable - Principal (1100)
+     * CR Member Savings Deposits (2010)
      */
     public function disburseLoan($loanId, $disbursementDate, $userId)
     {
+        $saccoId = Context::requireSacco();
+        $branchId = Context::requireBranch();
+        
         DB::beginTransaction();
         
         try {
-            $loan = Loan::getById($loanId);
+            $loan = $this->getLoanById($loanId, $saccoId);
             if (!$loan) {
                 throw new Exception("Loan not found");
             }
@@ -145,412 +141,458 @@ class LoanService
                 throw new Exception("Only approved loans can be disbursed");
             }
             
-            $amountApproved = $loan['amount_approved'];
+            $principal = $loan['principal'];
             $memberId = $loan['member_id'];
             
-            // Lock member row
-            $member = DB::query(
-                "SELECT * FROM members WHERE id = ? FOR UPDATE",
-                [$memberId]
-            )[0];
+            // Get member savings account
+            $savingsAccount = Member::getAccount($memberId, 'savings');
+            if (!$savingsAccount) {
+                throw new Exception("Member savings account not found");
+            }
             
-            // Calculate first payment date and maturity
-            $firstPaymentDate = date('Y-m-d', strtotime($disbursementDate . ' +1 month'));
-            $maturityDate = date('Y-m-d', strtotime($disbursementDate . ' +' . $loan['term_months'] . ' months'));
+            // Get GL accounts
+            $loansPrincipalGLId = Context::getGLAccount('1100'); // Loans Receivable - Principal
+            $savingsGLId = Context::getGLAccount('2010'); // Member Savings Deposits
             
-            // Update loan
-            Loan::update($loanId, [
-                'status' => 'active',
-                'disbursement_date' => $disbursementDate,
-                'disbursed_by' => $userId,
-                'amount_disbursed' => $amountApproved,
-                'principal_balance' => $amountApproved,
-                'first_payment_date' => $firstPaymentDate,
-                'maturity_date' => $maturityDate
-            ]);
+            if (!$loansPrincipalGLId || !$savingsGLId) {
+                throw new Exception("GL accounts not configured");
+            }
             
-            // Credit member savings (loan disbursed to their account)
-            $newBalance = $member['savings_balance'] + $amountApproved;
-            DB::execute(
-                "UPDATE members SET savings_balance = ? WHERE id = ?",
-                [$newBalance, $memberId]
-            );
+            // Calculate first due date
+            $firstDueDate = date('Y-m-d', strtotime($disbursementDate . ' +1 month'));
             
-            // Ledger entry
-            LedgerService::recordTransaction(
-                $memberId,
+            // Post journal entry
+            $entryId = $this->journalService->postEntry(
+                $saccoId,
+                $branchId,
                 'loan_disbursement',
-                $amountApproved,
-                0,
-                $newBalance,
-                "Loan {$loan['loan_number']} disbursed",
+                "Loan disbursement: {$loan['loan_no']}",
+                [
+                    // DR Loans Receivable - Principal
+                    [
+                        'gl_account_id' => $loansPrincipalGLId,
+                        'debit' => $principal,
+                        'credit' => 0,
+                        'member_account_id' => null,
+                        'loan_id' => $loanId
+                    ],
+                    // CR Member Savings
+                    [
+                        'gl_account_id' => $savingsGLId,
+                        'debit' => 0,
+                        'credit' => $principal,
+                        'member_account_id' => $savingsAccount['id'],
+                        'loan_id' => $loanId
+                    ]
+                ],
                 $userId,
-                null,
-                $loanId,
                 $disbursementDate
             );
             
-            // Generate repayment schedule
-            $this->generateSchedule($loanId, $loan['amount_approved'], $loan['interest_rate'], 
-                                   $loan['term_months'], $firstPaymentDate, $loan['repayment_frequency']);
+            // Update loan
+            $sql = "UPDATE loans SET status = 'active', disbursed_on = ?, first_due_date = ? WHERE id = ?";
+            DB::execute($sql, [$disbursementDate, $firstDueDate, $loanId]);
             
-            // Add note
-            Loan::addNote($loanId, "Loan disbursed: UGX " . number_format($amountApproved), 'disbursement', $userId);
+            // Generate repayment schedule
+            $this->generateSchedule($loanId, $loan, $firstDueDate);
             
             // Audit log
-            AuditService::log('loan_disbursement', 'loans', $loanId, null, 
-                            json_encode(['amount' => $amountApproved, 'date' => $disbursementDate]), $userId);
+            AuditService::log(
+                'loan_disbursement',
+                'loans',
+                (string)$loanId,
+                ['status' => 'approved'],
+                ['status' => 'active', 'disbursed_on' => $disbursementDate, 'entry_id' => $entryId],
+                $userId
+            );
             
             DB::commit();
-            return true;
+            return $entryId;
             
         } catch (Exception $e) {
             DB::rollback();
-            throw $e;
-        }
-    }
-    
-    /**
-     * Generate loan repayment schedule
-     */
-    private function generateSchedule($loanId, $principal, $annualRate, $termMonths, $startDate, $frequency = 'monthly')
-    {
-        // Simple equal installment calculation
-        $monthlyRate = ($annualRate / 100) / 12;
-        $monthlyPayment = 0;
-        
-        if ($monthlyRate > 0) {
-            // PMT formula: P * r * (1 + r)^n / ((1 + r)^n - 1)
-            $monthlyPayment = $principal * $monthlyRate * pow(1 + $monthlyRate, $termMonths) 
-                            / (pow(1 + $monthlyRate, $termMonths) - 1);
-        } else {
-            $monthlyPayment = $principal / $termMonths;
-        }
-        
-        $balance = $principal;
-        $currentDate = $startDate;
-        
-        for ($i = 1; $i <= $termMonths; $i++) {
-            $interestDue = round($balance * $monthlyRate);
-            $principalDue = round($monthlyPayment - $interestDue);
-            
-            // Last payment adjusts for rounding
-            if ($i === $termMonths) {
-                $principalDue = $balance;
-                $totalDue = $principalDue + $interestDue;
-            } else {
-                $totalDue = round($monthlyPayment);
-            }
-            
-            $sql = "
-                INSERT INTO loan_schedules (
-                    loan_id, installment_number, due_date,
-                    principal_due, interest_due, total_due
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            ";
-            
-            DB::execute($sql, [
-                $loanId,
-                $i,
-                $currentDate,
-                $principalDue,
-                $interestDue,
-                $totalDue
-            ]);
-            
-            $balance -= $principalDue;
-            $currentDate = date('Y-m-d', strtotime($currentDate . ' +1 month'));
+            throw new Exception("Disbursement failed: " . $e->getMessage());
         }
     }
     
     /**
      * Record loan repayment
+     * 
+     * DR Member Savings Deposits (2010)
+     * CR Loans Receivable - Principal (1100)
+     * CR Loans Receivable - Interest (1110)
+     * CR Loans Receivable - Penalties (1120)
      */
     public function recordRepayment($loanId, $amount, $paymentDate, $notes, $userId)
     {
+        $saccoId = Context::requireSacco();
+        $branchId = Context::requireBranch();
+        
+        if ($amount <= 0) {
+            throw new Exception("Repayment amount must be positive");
+        }
+        
         DB::beginTransaction();
         
         try {
-            $loan = Loan::getById($loanId);
+            $loan = $this->getLoanById($loanId, $saccoId);
             if (!$loan) {
                 throw new Exception("Loan not found");
             }
             
-            if (!in_array($loan['status'], ['active', 'disbursed'])) {
+            if ($loan['status'] !== 'active') {
                 throw new Exception("Only active loans can receive payments");
             }
             
-            $memberId = $loan['member_id'];
-            
-            // Lock rows
-            $member = DB::query("SELECT * FROM members WHERE id = ? FOR UPDATE", [$memberId])[0];
-            $loanLocked = DB::query("SELECT * FROM loans WHERE id = ? FOR UPDATE", [$loanId])[0];
-            
-            // Check member has sufficient balance
-            if ($member['savings_balance'] < $amount) {
-                throw new Exception("Insufficient savings balance. Member has UGX " . 
-                                  number_format($member['savings_balance']));
+            // Get member savings account
+            $savingsAccount = Member::getAccount($loan['member_id'], 'savings');
+            if (!$savingsAccount) {
+                throw new Exception("Member savings account not found");
             }
             
-            // Apply payment: penalties first, then interest, then principal
-            $remaining = $amount;
-            $penaltiesPaid = 0;
-            $interestPaid = 0;
-            $principalPaid = 0;
-            
-            // 1. Pay penalties
-            if ($loan['penalties_balance'] > 0 && $remaining > 0) {
-                $penaltiesPaid = min($remaining, $loan['penalties_balance']);
-                $remaining -= $penaltiesPaid;
+            // Check balance
+            $balance = $this->journalService->getMemberAccountBalance($saccoId, $savingsAccount['id']);
+            if ($balance < $amount) {
+                throw new Exception("Insufficient savings balance. Available: UGX " . number_format($balance));
             }
             
-            // 2. Pay interest
-            if ($loan['interest_balance'] > 0 && $remaining > 0) {
-                $interestPaid = min($remaining, $loan['interest_balance']);
-                $remaining -= $interestPaid;
-            }
+            // Calculate allocation (penalties → interest → principal)
+            $outstandingBalances = $this->getOutstandingBalances($loanId);
+            $allocation = $this->allocatePayment($amount, $outstandingBalances);
             
-            // 3. Pay principal
-            if ($loan['principal_balance'] > 0 && $remaining > 0) {
-                $principalPaid = min($remaining, $loan['principal_balance']);
-                $remaining -= $principalPaid;
-            }
+            // Get GL accounts
+            $savingsGLId = Context::getGLAccount('2010'); // Member Savings
+            $loansPrincipalGLId = Context::getGLAccount('1100'); // Loans Receivable - Principal
+            $loansInterestGLId = Context::getGLAccount('1110'); // Loans Receivable - Interest
+            $loansPenaltyGLId = Context::getGLAccount('1120'); // Loans Receivable - Penalties
             
-            // Update loan balances
-            $newPrincipalBalance = $loan['principal_balance'] - $principalPaid;
-            $newInterestBalance = $loan['interest_balance'] - $interestPaid;
-            $newPenaltiesBalance = $loan['penalties_balance'] - $penaltiesPaid;
-            $newTotalPaid = $loan['total_paid'] + $amount;
+            // Build journal lines
+            $lines = [];
             
-            $updateData = [
-                'principal_balance' => $newPrincipalBalance,
-                'interest_balance' => $newInterestBalance,
-                'penalties_balance' => $newPenaltiesBalance,
-                'total_paid' => $newTotalPaid
+            // DR Member Savings
+            $lines[] = [
+                'gl_account_id' => $savingsGLId,
+                'debit' => $amount,
+                'credit' => 0,
+                'member_account_id' => $savingsAccount['id'],
+                'loan_id' => $loanId
             ];
             
-            // Close loan if fully paid
-            if ($newPrincipalBalance <= 0 && $newInterestBalance <= 0 && $newPenaltiesBalance <= 0) {
-                $updateData['status'] = 'closed';
-                $updateData['closed_date'] = $paymentDate;
+            // CR Penalties (if any)
+            if ($allocation['penalty'] > 0) {
+                $lines[] = [
+                    'gl_account_id' => $loansPenaltyGLId,
+                    'debit' => 0,
+                    'credit' => $allocation['penalty'],
+                    'member_account_id' => null,
+                    'loan_id' => $loanId
+                ];
             }
             
-            Loan::update($loanId, $updateData);
+            // CR Interest
+            if ($allocation['interest'] > 0) {
+                $lines[] = [
+                    'gl_account_id' => $loansInterestGLId,
+                    'debit' => 0,
+                    'credit' => $allocation['interest'],
+                    'member_account_id' => null,
+                    'loan_id' => $loanId
+                ];
+            }
             
-            // Debit member savings
-            $newMemberBalance = $member['savings_balance'] - $amount;
-            DB::execute("UPDATE members SET savings_balance = ? WHERE id = ?", [$newMemberBalance, $memberId]);
+            // CR Principal
+            if ($allocation['principal'] > 0) {
+                $lines[] = [
+                    'gl_account_id' => $loansPrincipalGLId,
+                    'debit' => 0,
+                    'credit' => $allocation['principal'],
+                    'member_account_id' => null,
+                    'loan_id' => $loanId
+                ];
+            }
             
-            // Ledger entry
-            LedgerService::recordTransaction(
-                $memberId,
+            // Post journal entry
+            $entryId = $this->journalService->postEntry(
+                $saccoId,
+                $branchId,
                 'loan_repayment',
-                0,
-                $amount,
-                $newMemberBalance,
-                "Loan {$loan['loan_number']} repayment. Principal: " . number_format($principalPaid) . 
-                ", Interest: " . number_format($interestPaid) . 
-                ($penaltiesPaid > 0 ? ", Penalties: " . number_format($penaltiesPaid) : "") .
-                ($notes ? ". {$notes}" : ""),
+                "Loan repayment: {$loan['loan_no']} - P: {$allocation['principal']}, I: {$allocation['interest']}" .
+                    ($allocation['penalty'] > 0 ? ", Pen: {$allocation['penalty']}" : "") .
+                    ($notes ? ". {$notes}" : ""),
+                $lines,
                 $userId,
-                null,
-                $loanId,
                 $paymentDate
             );
             
-            // Update schedule (mark installments as paid)
-            $this->updateSchedulePayments($loanId, $principalPaid, $interestPaid, $paymentDate);
+            // Record in loan_repayments table
+            $sql = "
+                INSERT INTO loan_repayments (
+                    sacco_id, branch_id, loan_id, journal_entry_id,
+                    paid_on, amount, to_principal, to_interest, to_penalty, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'savings')
+            ";
             
-            // Add note
-            Loan::addNote($loanId, "Payment received: UGX " . number_format($amount) . 
-                        " (P: " . number_format($principalPaid) . 
-                        ", I: " . number_format($interestPaid) . 
-                        ($penaltiesPaid > 0 ? ", Pen: " . number_format($penaltiesPaid) : "") . ")" .
-                        ($notes ? ". {$notes}" : ""), 
-                        'general', $userId);
+            DB::execute($sql, [
+                $saccoId,
+                $branchId,
+                $loanId,
+                $entryId,
+                $paymentDate,
+                $amount,
+                $allocation['principal'],
+                $allocation['interest'],
+                $allocation['penalty']
+            ]);
+            
+            // Update schedule
+            $this->updateSchedule($loanId, $allocation);
+            
+            // Check if loan is fully paid
+            $newBalances = $this->getOutstandingBalances($loanId);
+            if ($newBalances['total'] <= 0.01) {
+                DB::execute("UPDATE loans SET status = 'cleared' WHERE id = ?", [$loanId]);
+            }
             
             // Audit log
-            AuditService::log('loan_repayment', 'loans', $loanId, 
-                            json_encode(['old_balance' => $loan['principal_balance'] + $loan['interest_balance'] + $loan['penalties_balance']]),
-                            json_encode(['amount' => $amount, 'new_balance' => $newPrincipalBalance + $newInterestBalance + $newPenaltiesBalance]),
-                            $userId);
+            AuditService::log(
+                'loan_repayment',
+                'loan_repayments',
+                (string)$entryId,
+                $outstandingBalances,
+                $allocation,
+                $userId
+            );
             
             DB::commit();
-            return true;
+            return $entryId;
             
         } catch (Exception $e) {
             DB::rollback();
-            throw $e;
+            throw new Exception("Repayment failed: " . $e->getMessage());
         }
     }
     
     /**
-     * Update schedule payments (simplified - marks installments as paid)
+     * Generate repayment schedule
      */
-    private function updateSchedulePayments($loanId, $principalPaid, $interestPaid, $paymentDate)
+    private function generateSchedule($loanId, $loan, $firstDueDate)
     {
-        // Get unpaid/partial installments
+        $saccoId = Context::requireSacco();
+        $principal = $loan['principal'];
+        $annualRate = $loan['interest_rate'] / 100;
+        $termMonths = $loan['term_months'];
+        $method = $loan['interest_method'];
+        
+        if ($method === 'flat') {
+            // Flat interest: Total interest = Principal * Rate * Term
+            $totalInterest = $principal * $annualRate * ($termMonths / 12);
+            $monthlyPrincipal = $principal / $termMonths;
+            $monthlyInterest = $totalInterest / $termMonths;
+            
+            for ($i = 1; $i <= $termMonths; $i++) {
+                $dueDate = date('Y-m-d', strtotime($firstDueDate . ' +' . ($i - 1) . ' month'));
+                
+                $sql = "
+                    INSERT INTO loan_schedule (
+                        sacco_id, loan_id, installment_no, due_date,
+                        principal_due, interest_due
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                ";
+                
+                DB::execute($sql, [
+                    $saccoId,
+                    $loanId,
+                    $i,
+                    $dueDate,
+                    $monthlyPrincipal,
+                    $monthlyInterest
+                ]);
+            }
+        } else {
+            // Reducing balance (amortized)
+            $monthlyRate = $annualRate / 12;
+            $monthlyPayment = $principal * $monthlyRate * pow(1 + $monthlyRate, $termMonths) 
+                            / (pow(1 + $monthlyRate, $termMonths) - 1);
+            
+            $balance = $principal;
+            
+            for ($i = 1; $i <= $termMonths; $i++) {
+                $dueDate = date('Y-m-d', strtotime($firstDueDate . ' +' . ($i - 1) . ' month'));
+                $interestDue = $balance * $monthlyRate;
+                $principalDue = $monthlyPayment - $interestDue;
+                
+                // Last payment adjusts for rounding
+                if ($i === $termMonths) {
+                    $principalDue = $balance;
+                }
+                
+                $sql = "
+                    INSERT INTO loan_schedule (
+                        sacco_id, loan_id, installment_no, due_date,
+                        principal_due, interest_due
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                ";
+                
+                DB::execute($sql, [
+                    $saccoId,
+                    $loanId,
+                    $i,
+                    $dueDate,
+                    $principalDue,
+                    $interestDue
+                ]);
+                
+                $balance -= $principalDue;
+            }
+        }
+    }
+    
+    /**
+     * Get outstanding balances from schedule
+     */
+    private function getOutstandingBalances($loanId)
+    {
+        $sql = "
+            SELECT 
+                SUM(principal_due - principal_paid) as principal,
+                SUM(interest_due - interest_paid) as interest,
+                SUM(penalty_accrued - penalty_paid) as penalty
+            FROM loan_schedule
+            WHERE loan_id = ?
+        ";
+        
+        $result = DB::query($sql, [$loanId]);
+        $balances = $result[0] ?? [];
+        
+        return [
+            'principal' => (float)($balances['principal'] ?? 0),
+            'interest' => (float)($balances['interest'] ?? 0),
+            'penalty' => (float)($balances['penalty'] ?? 0),
+            'total' => (float)(($balances['principal'] ?? 0) + ($balances['interest'] ?? 0) + ($balances['penalty'] ?? 0))
+        ];
+    }
+    
+    /**
+     * Allocate payment: penalties → interest → principal
+     */
+    private function allocatePayment($amount, $balances)
+    {
+        $allocation = ['penalty' => 0, 'interest' => 0, 'principal' => 0];
+        $remaining = $amount;
+        
+        // Pay penalties first
+        if ($balances['penalty'] > 0 && $remaining > 0) {
+            $allocation['penalty'] = min($remaining, $balances['penalty']);
+            $remaining -= $allocation['penalty'];
+        }
+        
+        // Pay interest
+        if ($balances['interest'] > 0 && $remaining > 0) {
+            $allocation['interest'] = min($remaining, $balances['interest']);
+            $remaining -= $allocation['interest'];
+        }
+        
+        // Pay principal
+        if ($balances['principal'] > 0 && $remaining > 0) {
+            $allocation['principal'] = min($remaining, $balances['principal']);
+            $remaining -= $allocation['principal'];
+        }
+        
+        return $allocation;
+    }
+    
+    /**
+     * Update schedule after payment
+     */
+    private function updateSchedule($loanId, $allocation)
+    {
+        // Get unpaid installments
         $installments = DB::query(
-            "SELECT * FROM loan_schedules WHERE loan_id = ? AND status IN ('pending', 'partial', 'overdue') ORDER BY installment_number ASC",
+            "SELECT * FROM loan_schedule 
+             WHERE loan_id = ? 
+             AND (principal_paid < principal_due OR interest_paid < interest_due OR penalty_paid < penalty_accrued)
+             ORDER BY installment_no ASC",
             [$loanId]
         );
         
-        $remainingPrincipal = $principalPaid;
-        $remainingInterest = $interestPaid;
+        $remainingPenalty = $allocation['penalty'];
+        $remainingInterest = $allocation['interest'];
+        $remainingPrincipal = $allocation['principal'];
         
         foreach ($installments as $inst) {
-            if ($remainingPrincipal <= 0 && $remainingInterest <= 0) break;
+            if ($remainingPenalty <= 0 && $remainingInterest <= 0 && $remainingPrincipal <= 0) break;
             
-            $principalToApply = min($remainingInterest, $inst['interest_due'] - $inst['interest_paid']);
-            $interestToApply = min($remainingPrincipal, $inst['principal_due'] - $inst['principal_paid']);
+            // Apply penalty
+            $penaltyToApply = min($remainingPenalty, $inst['penalty_accrued'] - $inst['penalty_paid']);
             
-            $newInterestPaid = $inst['interest_paid'] + $principalToApply;
-            $newPrincipalPaid = $inst['principal_paid'] + $interestToApply;
-            $newTotalPaid = $newInterestPaid + $newPrincipalPaid;
+            // Apply interest
+            $interestToApply = min($remainingInterest, $inst['interest_due'] - $inst['interest_paid']);
             
-            $status = 'partial';
-            $paidDate = null;
+            // Apply principal
+            $principalToApply = min($remainingPrincipal, $inst['principal_due'] - $inst['principal_paid']);
             
-            if ($newTotalPaid >= $inst['total_due']) {
-                $status = 'paid';
-                $paidDate = $paymentDate;
-            }
-            
-            DB::execute(
-                "UPDATE loan_schedules SET interest_paid = ?, principal_paid = ?, total_paid = ?, status = ?, paid_date = ? WHERE id = ?",
-                [$newInterestPaid, $newPrincipalPaid, $newTotalPaid, $status, $paidDate, $inst['id']]
-            );
-            
-            $remainingInterest -= $principalToApply;
-            $remainingPrincipal -= $interestToApply;
-        }
-    }
-    
-    /**
-     * Calculate loan status and arrears (ONE PLACE for all arrears logic)
-     */
-    public function calculateLoanStatus($loan)
-    {
-        $status = [
-            'is_current' => true,
-            'days_overdue' => 0,
-            'arrears_amount' => 0,
-            'next_payment_date' => null,
-            'next_payment_amount' => 0
-        ];
-        
-        // For migrated loans, use opening_date as reference
-        $referenceDate = $loan['is_migrated'] && $loan['opening_date'] 
-                        ? $loan['opening_date'] 
-                        : $loan['first_payment_date'];
-        
-        if (!$referenceDate) {
-            return $status;
-        }
-        
-        $today = new \DateTime();
-        $nextPayment = DB::query(
-            "SELECT * FROM loan_schedules WHERE loan_id = ? AND status IN ('pending', 'partial', 'overdue') ORDER BY due_date ASC LIMIT 1",
-            [$loan['id']]
-        );
-        
-        if (!empty($nextPayment)) {
-            $nextPayment = $nextPayment[0];
-            $dueDate = new \DateTime($nextPayment['due_date']);
-            
-            $status['next_payment_date'] = $nextPayment['due_date'];
-            $status['next_payment_amount'] = $nextPayment['total_due'] - $nextPayment['total_paid'];
-            
-            if ($today > $dueDate) {
-                $interval = $today->diff($dueDate);
-                $status['days_overdue'] = $interval->days;
-                $status['is_current'] = false;
+            if ($penaltyToApply > 0 || $interestToApply > 0 || $principalToApply > 0) {
+                $sql = "
+                    UPDATE loan_schedule 
+                    SET penalty_paid = penalty_paid + ?,
+                        interest_paid = interest_paid + ?,
+                        principal_paid = principal_paid + ?
+                    WHERE id = ?
+                ";
                 
-                // Calculate arrears (all overdue installments)
-                $overdueInstallments = DB::query(
-                    "SELECT SUM(total_due - total_paid) as arrears FROM loan_schedules WHERE loan_id = ? AND due_date < CURDATE() AND status != 'paid'",
-                    [$loan['id']]
-                );
+                DB::execute($sql, [
+                    $penaltyToApply,
+                    $interestToApply,
+                    $principalToApply,
+                    $inst['id']
+                ]);
                 
-                $status['arrears_amount'] = $overdueInstallments[0]['arrears'] ?? 0;
+                $remainingPenalty -= $penaltyToApply;
+                $remainingInterest -= $interestToApply;
+                $remainingPrincipal -= $principalToApply;
             }
-        }
-        
-        return $status;
-    }
-    
-    /**
-     * Add manual charge to loan (MANUAL ONLY - never auto-applied)
-     */
-    public function addCharge($loanId, $chargeType, $amount, $reason, $userId)
-    {
-        DB::beginTransaction();
-        
-        try {
-            $loan = Loan::getById($loanId);
-            if (!$loan) {
-                throw new Exception("Loan not found");
-            }
-            
-            // Add charge to loan_charges table
-            $sql = "INSERT INTO loan_charges (loan_id, member_id, charge_type, amount, reason, added_by) VALUES (?, ?, ?, ?, ?, ?)";
-            DB::execute($sql, [$loanId, $loan['member_id'], $chargeType, $amount, $reason, $userId]);
-            
-            // Update loan penalties balance
-            $newPenaltiesBalance = $loan['penalties_balance'] + $amount;
-            Loan::update($loanId, ['penalties_balance' => $newPenaltiesBalance]);
-            
-            // Add note
-            Loan::addNote($loanId, "Charge added: {$chargeType} - UGX " . number_format($amount) . ". Reason: {$reason}", 'general', $userId);
-            
-            // Audit log
-            AuditService::log('loan_charge_added', 'loan_charges', $loanId,
-                            json_encode(['old_penalties' => $loan['penalties_balance']]),
-                            json_encode(['charge_type' => $chargeType, 'amount' => $amount, 'new_penalties' => $newPenaltiesBalance]),
-                            $userId);
-            
-            DB::commit();
-            return true;
-            
-        } catch (Exception $e) {
-            DB::rollback();
-            throw $e;
         }
     }
     
     /**
-     * Correct loan data (admin only - for migrated loans)
+     * Get loan by ID
      */
-    public function correctLoanData($loanId, $corrections, $reason, $userId)
+    private function getLoanById($loanId, $saccoId)
     {
-        DB::beginTransaction();
+        $sql = "SELECT * FROM loans WHERE id = ? AND sacco_id = ?";
+        $result = DB::query($sql, [$loanId, $saccoId]);
+        return $result[0] ?? null;
+    }
+    
+    /**
+     * Get active loan count
+     */
+    private function getActiveLoanCount($memberId)
+    {
+        $sql = "SELECT COUNT(*) as count FROM loans WHERE member_id = ? AND status IN ('active', 'approved')";
+        $result = DB::query($sql, [$memberId]);
+        return $result[0]['count'] ?? 0;
+    }
+    
+    /**
+     * Generate loan number
+     */
+    private function generateLoanNumber($saccoId)
+    {
+        $prefix = 'LN';
+        $year = date('Y');
+        $month = date('m');
         
-        try {
-            $loan = Loan::getById($loanId);
-            if (!$loan) {
-                throw new Exception("Loan not found");
-            }
-            
-            $oldData = json_encode($loan);
-            
-            // Update loan
-            Loan::update($loanId, $corrections);
-            
-            // Add note
-            Loan::addNote($loanId, "Loan data corrected: {$reason}. Changes: " . json_encode($corrections), 'correction', $userId);
-            
-            // Audit log
-            AuditService::log('loan_data_correction', 'loans', $loanId,
-                            $oldData,
-                            json_encode($corrections),
-                            $userId);
-            
-            DB::commit();
-            return true;
-            
-        } catch (Exception $e) {
-            DB::rollback();
-            throw $e;
+        $sql = "SELECT loan_no FROM loans WHERE sacco_id = ? AND loan_no LIKE ? ORDER BY id DESC LIMIT 1";
+        $result = DB::query($sql, [$saccoId, "{$prefix}{$year}{$month}%"]);
+        
+        if (empty($result)) {
+            $sequence = 1;
+        } else {
+            $lastNumber = $result[0]['loan_no'];
+            $sequence = (int)substr($lastNumber, -4) + 1;
         }
+        
+        return sprintf("%s%s%s%04d", $prefix, $year, $month, $sequence);
     }
 }

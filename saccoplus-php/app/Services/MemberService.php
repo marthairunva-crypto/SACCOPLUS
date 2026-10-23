@@ -1,80 +1,182 @@
 <?php
-declare(strict_types=1);
 
 namespace App\Services;
 
 use App\Core\DB;
-use PDO;
+use App\Core\Context;
+use App\Models\Member;
+use Exception;
 
 class MemberService
 {
-    /**
-     * Get member with calculated summary (loans, recent transactions)
-     */
-    public static function getMemberSummary(int $memberId, int $saccoId): ?array
+    private $journalService;
+    
+    public function __construct()
     {
-        // Get basic member info
-        $stmt = DB::prepare("
-            SELECT *
-            FROM members
-            WHERE id = :id AND sacco_id = :sacco_id
-        ");
-        $stmt->execute([':id' => $memberId, ':sacco_id' => $saccoId]);
-        $member = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$member) {
-            return null;
-        }
-
-        // Get recent transactions (last 5)
-        $stmt = DB::prepare("
-            SELECT type, description, debit, credit, transaction_date, reference_no
-            FROM ledger
-            WHERE member_id = :member_id
-            ORDER BY transaction_date DESC, id DESC
-            LIMIT 5
-        ");
-        $stmt->execute([':member_id' => $memberId]);
-        $member['recent_transactions'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // TODO: Add loan summary when loans table exists
-        $member['active_loans'] = 0;
-        $member['total_loan_balance'] = 0;
-
-        return $member;
+        $this->journalService = new JournalService();
     }
-
+    
     /**
-     * Get member transaction history for statement
+     * Create new member with accounts
      */
-    public static function getTransactionHistory(
-        int $memberId,
-        ?string $fromDate = null,
-        ?string $toDate = null
-    ): array {
-        $sql = "
-            SELECT type, description, debit, credit, transaction_date, 
-                   reference_no, created_at
-            FROM ledger
-            WHERE member_id = :member_id
-        ";
+    public function createMember($data, $userId)
+    {
+        $saccoId = Context::requireSacco();
+        $branchId = $data['branch_id'] ?? Context::requireBranch();
         
-        $params = [':member_id' => $memberId];
+        DB::beginTransaction();
         
-        if ($fromDate) {
-            $sql .= " AND transaction_date >= :from_date";
-            $params[':from_date'] = $fromDate;
+        try {
+            // Generate member number
+            $data['member_no'] = Member::generateMemberNumber($saccoId);
+            $data['sacco_id'] = $saccoId;
+            $data['branch_id'] = $branchId;
+            $data['created_by'] = $userId;
+            
+            // Create member
+            $memberId = Member::create($data);
+            
+            // Get GL accounts for member accounts
+            $savingsGLId = Context::getGLAccount('2010'); // Member Savings Deposits
+            $sharesGLId = Context::getGLAccount('2020');  // Member Shares
+            
+            if (!$savingsGLId || !$sharesGLId) {
+                throw new Exception("GL accounts not found. Please run GL account seeds.");
+            }
+            
+            // Create savings account
+            Member::createAccount($memberId, 'savings', $saccoId, $branchId, $savingsGLId);
+            
+            // Create shares account
+            Member::createAccount($memberId, 'shares', $saccoId, $branchId, $sharesGLId);
+            
+            // Audit log
+            AuditService::log(
+                'member_created',
+                'members',
+                (string)$memberId,
+                null,
+                $data,
+                $userId
+            );
+            
+            DB::commit();
+            return $memberId;
+            
+        } catch (Exception $e) {
+            DB::rollback();
+            throw new Exception("Failed to create member: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Get member summary with balances and recent transactions
+     */
+    public function getMemberSummary($memberId)
+    {
+        $saccoId = Context::requireSacco();
+        
+        $member = Member::getById($memberId, $saccoId);
+        if (!$member) {
+            throw new Exception("Member not found");
         }
         
-        if ($toDate) {
-            $sql .= " AND transaction_date <= :to_date";
-            $params[':to_date'] = $toDate;
+        // Get savings account
+        $savingsAccount = Member::getAccount($memberId, 'savings');
+        $sharesAccount = Member::getAccount($memberId, 'shares');
+        
+        // Get transaction summary
+        $txnSummary = Member::getTransactionSummary($memberId, 30);
+        
+        // Get recent transactions (last 10)
+        $recentTxns = [];
+        if ($savingsAccount) {
+            $recentTxns = $this->journalService->getMemberAccountStatement(
+                $saccoId,
+                $savingsAccount['id'],
+                date('Y-m-d', strtotime('-90 days')),
+                date('Y-m-d'),
+                10,
+                0
+            );
         }
         
-        $sql .= " ORDER BY transaction_date ASC, id ASC";
+        // Get active loans count
+        $loansCount = DB::query(
+            "SELECT COUNT(*) as count FROM loans WHERE member_id = ? AND status IN ('active', 'approved')",
+            [$memberId]
+        )[0]['count'] ?? 0;
         
-        $stmt = DB::prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return [
+            'member' => $member,
+            'savings_account' => $savingsAccount,
+            'shares_account' => $sharesAccount,
+            'transaction_summary' => $txnSummary,
+            'recent_transactions' => $recentTxns,
+            'active_loans_count' => $loansCount
+        ];
+    }
+    
+    /**
+     * Get member account statement
+     */
+    public function getMemberStatement($memberId, $startDate, $endDate, $accountType = 'savings')
+    {
+        $saccoId = Context::requireSacco();
+        
+        $account = Member::getAccount($memberId, $accountType);
+        if (!$account) {
+            throw new Exception("Member {$accountType} account not found");
+        }
+        
+        // Get opening balance
+        $openingBalance = 0;
+        if ($startDate > $account['created_at']) {
+            $openingBalance = $this->journalService->getMemberAccountBalance($saccoId, $account['id']);
+            
+            // Subtract transactions in the statement period
+            $periodTxns = $this->journalService->getMemberAccountStatement(
+                $saccoId,
+                $account['id'],
+                $startDate,
+                $endDate,
+                1000,
+                0
+            );
+            
+            foreach ($periodTxns as $txn) {
+                $openingBalance -= ($txn['credit'] - $txn['debit']);
+            }
+        }
+        
+        // Get transactions
+        $transactions = $this->journalService->getMemberAccountStatement(
+            $saccoId,
+            $account['id'],
+            $startDate,
+            $endDate,
+            1000,
+            0
+        );
+        
+        // Calculate running balance
+        $runningBalance = $openingBalance;
+        foreach ($transactions as &$txn) {
+            $runningBalance += ($txn['credit'] - $txn['debit']);
+            $txn['running_balance'] = $runningBalance;
+        }
+        
+        // Get closing balance
+        $closingBalance = $this->journalService->getMemberAccountBalance($saccoId, $account['id']);
+        
+        return [
+            'member' => Member::getById($memberId, $saccoId),
+            'account' => $account,
+            'opening_balance' => $openingBalance,
+            'transactions' => $transactions,
+            'closing_balance' => $closingBalance,
+            'start_date' => $startDate,
+            'end_date' => $endDate
+        ];
     }
 }

@@ -1,274 +1,309 @@
 <?php
-declare(strict_types=1);
 
 namespace App\Services;
 
 use App\Core\DB;
-use App\Services\AuditService;
-use PDO;
+use App\Core\Context;
+use App\Models\Member;
 use Exception;
 
 class TellerService
 {
-    /**
-     * Record a deposit transaction
-     * Uses DB transaction with row lock to ensure balance accuracy
-     */
-    public static function deposit(
-        int $memberId,
-        int $amount,
-        string $paymentMethod,
-        ?string $referenceNo,
-        string $notes,
-        int $recordedBy,
-        string $transactionDate
-    ): array {
-        if ($amount <= 0) {
-            return ['success' => false, 'message' => 'Amount must be greater than zero'];
-        }
-
-        $pdo = DB::connection();
-        
-        try {
-            $pdo->beginTransaction();
-            
-            // Lock member row for update
-            $stmt = $pdo->prepare("
-                SELECT id, sacco_id, full_name, savings_balance 
-                FROM members 
-                WHERE id = :id 
-                FOR UPDATE
-            ");
-            $stmt->execute([':id' => $memberId]);
-            $member = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$member) {
-                $pdo->rollBack();
-                return ['success' => false, 'message' => 'Member not found'];
-            }
-            
-            // Insert ledger entry (credit = money in)
-            $stmt = $pdo->prepare("
-                INSERT INTO ledger (
-                    sacco_id, member_id, type, description, 
-                    debit, credit, reference_no, recorded_by, transaction_date
-                ) VALUES (
-                    :sacco_id, :member_id, 'deposit', :description,
-                    0, :amount, :reference_no, :recorded_by, :transaction_date
-                )
-            ");
-            $stmt->execute([
-                ':sacco_id' => $member['sacco_id'],
-                ':member_id' => $memberId,
-                ':description' => "Deposit via {$paymentMethod}" . ($notes ? " - {$notes}" : ""),
-                ':amount' => $amount,
-                ':reference_no' => $referenceNo,
-                ':recorded_by' => $recordedBy,
-                ':transaction_date' => $transactionDate,
-            ]);
-            
-            $ledgerId = $pdo->lastInsertId();
-            
-            // Update member balance (cached)
-            $newBalance = $member['savings_balance'] + $amount;
-            $stmt = $pdo->prepare("
-                UPDATE members 
-                SET savings_balance = :balance 
-                WHERE id = :id
-            ");
-            $stmt->execute([':balance' => $newBalance, ':id' => $memberId]);
-            
-            $pdo->commit();
-            
-            // Audit log
-            AuditService::log(
-                'DEPOSIT',
-                'ledger',
-                (string)$ledgerId,
-                null,
-                [
-                    'member_id' => $memberId,
-                    'member_name' => $member['full_name'],
-                    'amount' => $amount,
-                    'method' => $paymentMethod,
-                    'new_balance' => $newBalance,
-                ],
-                $recordedBy
-            );
-            
-            return [
-                'success' => true,
-                'message' => 'Deposit recorded successfully',
-                'new_balance' => $newBalance,
-                'ledger_id' => $ledgerId,
-            ];
-            
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            error_log("Deposit error: " . $e->getMessage());
-            return ['success' => false, 'message' => 'Transaction failed: ' . $e->getMessage()];
-        }
-    }
-
-    /**
-     * Record a withdrawal transaction
-     */
-    public static function withdraw(
-        int $memberId,
-        int $amount,
-        string $destination,
-        ?string $referenceNo,
-        string $notes,
-        int $recordedBy,
-        string $transactionDate
-    ): array {
-        if ($amount <= 0) {
-            return ['success' => false, 'message' => 'Amount must be greater than zero'];
-        }
-
-        $pdo = DB::connection();
-        
-        try {
-            $pdo->beginTransaction();
-            
-            // Lock member row
-            $stmt = $pdo->prepare("
-                SELECT id, sacco_id, full_name, savings_balance 
-                FROM members 
-                WHERE id = :id 
-                FOR UPDATE
-            ");
-            $stmt->execute([':id' => $memberId]);
-            $member = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$member) {
-                $pdo->rollBack();
-                return ['success' => false, 'message' => 'Member not found'];
-            }
-            
-            // Check sufficient balance
-            if ($member['savings_balance'] < $amount) {
-                $pdo->rollBack();
-                return [
-                    'success' => false, 
-                    'message' => 'Insufficient balance. Available: UGX ' . number_format($member['savings_balance'])
-                ];
-            }
-            
-            // Insert ledger entry (debit = money out)
-            $stmt = $pdo->prepare("
-                INSERT INTO ledger (
-                    sacco_id, member_id, type, description, 
-                    debit, credit, reference_no, recorded_by, transaction_date
-                ) VALUES (
-                    :sacco_id, :member_id, 'withdrawal', :description,
-                    :amount, 0, :reference_no, :recorded_by, :transaction_date
-                )
-            ");
-            $stmt->execute([
-                ':sacco_id' => $member['sacco_id'],
-                ':member_id' => $memberId,
-                ':description' => "Withdrawal to {$destination}" . ($notes ? " - {$notes}" : ""),
-                ':amount' => $amount,
-                ':reference_no' => $referenceNo,
-                ':recorded_by' => $recordedBy,
-                ':transaction_date' => $transactionDate,
-            ]);
-            
-            $ledgerId = $pdo->lastInsertId();
-            
-            // Update member balance
-            $newBalance = $member['savings_balance'] - $amount;
-            $stmt = $pdo->prepare("
-                UPDATE members 
-                SET savings_balance = :balance 
-                WHERE id = :id
-            ");
-            $stmt->execute([':balance' => $newBalance, ':id' => $memberId]);
-            
-            $pdo->commit();
-            
-            // Audit log
-            AuditService::log(
-                'WITHDRAWAL',
-                'ledger',
-                (string)$ledgerId,
-                null,
-                [
-                    'member_id' => $memberId,
-                    'member_name' => $member['full_name'],
-                    'amount' => $amount,
-                    'destination' => $destination,
-                    'new_balance' => $newBalance,
-                ],
-                $recordedBy
-            );
-            
-            return [
-                'success' => true,
-                'message' => 'Withdrawal recorded successfully',
-                'new_balance' => $newBalance,
-                'ledger_id' => $ledgerId,
-            ];
-            
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            error_log("Withdrawal error: " . $e->getMessage());
-            return ['success' => false, 'message' => 'Transaction failed: ' . $e->getMessage()];
-        }
-    }
-
-    /**
-     * Get today's teller summary
-     */
-    public static function getDailySummary(int $saccoId, int $tellerId, string $date): array
+    private $journalService;
+    
+    public function __construct()
     {
-        $stmt = DB::prepare("
-            SELECT 
-                COUNT(*) as transaction_count,
-                SUM(CASE WHEN type = 'deposit' THEN credit ELSE 0 END) as total_deposits,
-                SUM(CASE WHEN type = 'withdrawal' THEN debit ELSE 0 END) as total_withdrawals,
-                SUM(credit - debit) as net_cash_flow
-            FROM ledger
-            WHERE sacco_id = :sacco_id
-              AND recorded_by = :teller_id
-              AND transaction_date = :date
-              AND type IN ('deposit', 'withdrawal')
-        ");
-        $stmt->execute([
-            ':sacco_id' => $saccoId,
-            ':teller_id' => $tellerId,
-            ':date' => $date,
-        ]);
-        
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [
-            'transaction_count' => 0,
-            'total_deposits' => 0,
-            'total_withdrawals' => 0,
-            'net_cash_flow' => 0,
-        ];
+        $this->journalService = new JournalService();
     }
-
+    
+    /**
+     * Process deposit
+     * 
+     * DR Cash on Hand (1010)
+     * CR Member Savings Deposits (2010)
+     */
+    public function deposit($memberId, $amount, $notes, $userId, $transactionDate = null, $source = 'cash')
+    {
+        $saccoId = Context::requireSacco();
+        $branchId = Context::requireBranch();
+        
+        if ($amount <= 0) {
+            throw new Exception("Deposit amount must be positive");
+        }
+        
+        $transactionDate = $transactionDate ?? date('Y-m-d');
+        
+        // Validate transaction date (max 48h backdate)
+        $minDate = date('Y-m-d', strtotime('-48 hours'));
+        $maxDate = date('Y-m-d');
+        
+        if ($transactionDate < $minDate || $transactionDate > $maxDate) {
+            throw new Exception("Transaction date must be within the last 48 hours");
+        }
+        
+        DB::beginTransaction();
+        
+        try {
+            // Get member and savings account
+            $member = Member::getById($memberId, $saccoId);
+            if (!$member) {
+                throw new Exception("Member not found");
+            }
+            
+            $savingsAccount = Member::getAccount($memberId, 'savings');
+            if (!$savingsAccount) {
+                throw new Exception("Member savings account not found");
+            }
+            
+            // Get GL accounts
+            $cashGLId = Context::getGLAccount('1010'); // Cash on Hand
+            $savingsGLId = Context::getGLAccount('2010'); // Member Savings Deposits
+            
+            if (!$cashGLId || !$savingsGLId) {
+                throw new Exception("GL accounts not configured");
+            }
+            
+            // Post journal entry
+            $entryId = $this->journalService->postEntry(
+                $saccoId,
+                $branchId,
+                'deposit',
+                "Deposit from {$member['full_name']} ({$member['member_no']})" . 
+                    ($notes ? ". {$notes}" : ""),
+                [
+                    // DR Cash on Hand
+                    [
+                        'gl_account_id' => $cashGLId,
+                        'debit' => $amount,
+                        'credit' => 0,
+                        'member_account_id' => null,
+                        'loan_id' => null
+                    ],
+                    // CR Member Savings
+                    [
+                        'gl_account_id' => $savingsGLId,
+                        'debit' => 0,
+                        'credit' => $amount,
+                        'member_account_id' => $savingsAccount['id'],
+                        'loan_id' => null
+                    ]
+                ],
+                $userId,
+                $transactionDate
+            );
+            
+            // Audit log
+            AuditService::log(
+                'teller_deposit',
+                'journal_entries',
+                (string)$entryId,
+                null,
+                [
+                    'member_id' => $memberId,
+                    'amount' => $amount,
+                    'source' => $source,
+                    'notes' => $notes
+                ],
+                $userId
+            );
+            
+            DB::commit();
+            
+            // Get new balance
+            $newBalance = $this->journalService->getMemberAccountBalance($saccoId, $savingsAccount['id']);
+            
+            return [
+                'entry_id' => $entryId,
+                'new_balance' => $newBalance
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollback();
+            throw new Exception("Deposit failed: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Process withdrawal
+     * 
+     * DR Member Savings Deposits (2010)
+     * CR Cash on Hand (1010)
+     */
+    public function withdraw($memberId, $amount, $notes, $userId, $transactionDate = null)
+    {
+        $saccoId = Context::requireSacco();
+        $branchId = Context::requireBranch();
+        
+        if ($amount <= 0) {
+            throw new Exception("Withdrawal amount must be positive");
+        }
+        
+        $transactionDate = $transactionDate ?? date('Y-m-d');
+        
+        // Validate transaction date
+        $minDate = date('Y-m-d', strtotime('-48 hours'));
+        $maxDate = date('Y-m-d');
+        
+        if ($transactionDate < $minDate || $transactionDate > $maxDate) {
+            throw new Exception("Transaction date must be within the last 48 hours");
+        }
+        
+        DB::beginTransaction();
+        
+        try {
+            // Get member and savings account
+            $member = Member::getById($memberId, $saccoId);
+            if (!$member) {
+                throw new Exception("Member not found");
+            }
+            
+            $savingsAccount = Member::getAccount($memberId, 'savings');
+            if (!$savingsAccount) {
+                throw new Exception("Member savings account not found");
+            }
+            
+            // Check balance
+            $currentBalance = $this->journalService->getMemberAccountBalance($saccoId, $savingsAccount['id']);
+            if ($currentBalance < $amount) {
+                throw new Exception("Insufficient balance. Available: UGX " . number_format($currentBalance));
+            }
+            
+            // Get GL accounts
+            $cashGLId = Context::getGLAccount('1010'); // Cash on Hand
+            $savingsGLId = Context::getGLAccount('2010'); // Member Savings Deposits
+            
+            if (!$cashGLId || !$savingsGLId) {
+                throw new Exception("GL accounts not configured");
+            }
+            
+            // Post journal entry
+            $entryId = $this->journalService->postEntry(
+                $saccoId,
+                $branchId,
+                'withdrawal',
+                "Withdrawal by {$member['full_name']} ({$member['member_no']})" . 
+                    ($notes ? ". {$notes}" : ""),
+                [
+                    // DR Member Savings
+                    [
+                        'gl_account_id' => $savingsGLId,
+                        'debit' => $amount,
+                        'credit' => 0,
+                        'member_account_id' => $savingsAccount['id'],
+                        'loan_id' => null
+                    ],
+                    // CR Cash on Hand
+                    [
+                        'gl_account_id' => $cashGLId,
+                        'debit' => 0,
+                        'credit' => $amount,
+                        'member_account_id' => null,
+                        'loan_id' => null
+                    ]
+                ],
+                $userId,
+                $transactionDate
+            );
+            
+            // Audit log
+            AuditService::log(
+                'teller_withdrawal',
+                'journal_entries',
+                (string)$entryId,
+                ['balance' => $currentBalance],
+                [
+                    'member_id' => $memberId,
+                    'amount' => $amount,
+                    'notes' => $notes
+                ],
+                $userId
+            );
+            
+            DB::commit();
+            
+            // Get new balance
+            $newBalance = $this->journalService->getMemberAccountBalance($saccoId, $savingsAccount['id']);
+            
+            return [
+                'entry_id' => $entryId,
+                'new_balance' => $newBalance
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollback();
+            throw new Exception("Withdrawal failed: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Get daily summary for teller
+     */
+    public function getDailySummary($date, $userId = null)
+    {
+        $saccoId = Context::requireSacco();
+        $branchId = Context::branchId();
+        
+        $sql = "
+            SELECT 
+                je.txn_type,
+                COUNT(*) as count,
+                SUM(CASE WHEN je.txn_type = 'deposit' THEN 
+                    (SELECT SUM(credit) FROM journal_lines WHERE entry_id = je.id AND member_account_id IS NOT NULL)
+                    ELSE 0 END) as total_deposits,
+                SUM(CASE WHEN je.txn_type = 'withdrawal' THEN 
+                    (SELECT SUM(debit) FROM journal_lines WHERE entry_id = je.id AND member_account_id IS NOT NULL)
+                    ELSE 0 END) as total_withdrawals
+            FROM journal_entries je
+            WHERE je.sacco_id = ?
+              AND je.branch_id = ?
+              AND DATE(je.value_date) = ?
+        ";
+        
+        $params = [$saccoId, $branchId, $date];
+        
+        if ($userId) {
+            $sql .= " AND je.posted_by = ?";
+            $params[] = $userId;
+        }
+        
+        $sql .= " GROUP BY je.txn_type";
+        
+        return DB::query($sql, $params);
+    }
+    
     /**
      * Get recent transactions for teller dashboard
      */
-    public static function getRecentTransactions(int $saccoId, int $tellerId, int $limit = 20): array
+    public function getRecentTransactions($limit = 20)
     {
-        $stmt = DB::prepare("
-            SELECT l.*, m.full_name as member_name, m.account_number
-            FROM ledger l
-            JOIN members m ON l.member_id = m.id
-            WHERE l.sacco_id = :sacco_id
-              AND l.recorded_by = :teller_id
-              AND l.type IN ('deposit', 'withdrawal')
-            ORDER BY l.created_at DESC
-            LIMIT :limit
-        ");
-        $stmt->bindValue(':sacco_id', $saccoId, PDO::PARAM_INT);
-        $stmt->bindValue(':teller_id', $tellerId, PDO::PARAM_INT);
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmt->execute();
+        $saccoId = Context::requireSacco();
+        $branchId = Context::branchId();
         
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $sql = "
+            SELECT 
+                je.id,
+                je.txn_ref,
+                je.txn_type,
+                je.description,
+                je.value_date,
+                je.created_at,
+                m.full_name as member_name,
+                m.member_no,
+                u.name as posted_by_name,
+                (SELECT SUM(credit) FROM journal_lines WHERE entry_id = je.id AND member_account_id IS NOT NULL) as amount
+            FROM journal_entries je
+            LEFT JOIN journal_lines jl ON je.id = jl.entry_id AND jl.member_account_id IS NOT NULL
+            LEFT JOIN member_accounts ma ON jl.member_account_id = ma.id
+            LEFT JOIN members m ON ma.member_id = m.id
+            LEFT JOIN users u ON je.posted_by = u.id
+            WHERE je.sacco_id = ?
+              AND je.branch_id = ?
+              AND je.txn_type IN ('deposit', 'withdrawal')
+            GROUP BY je.id
+            ORDER BY je.created_at DESC
+            LIMIT ?
+        ";
+        
+        return DB::query($sql, [$saccoId, $branchId, $limit]);
     }
 }
