@@ -599,15 +599,14 @@ class ChargeService {
           final formattedAmount = _formatMoney(amount);
           final newTotalDemanded = _formatMoney(newOutstandingBalance);
           
-          // Build concise SMS message
+          // Build SMS message matching SACCO format (SACCO name first)
           final memberName = memberDoc.data()?['name'] as String? ?? loanData['memberName'] as String? ?? '';
           final firstName = memberName.split(' ').first;
           
-          final smsMessage = 'Dear $firstName, '
-              'Loan charge: $chargeTypeName UGX $formattedAmount. '
+          final smsMessage = '$saccoName: Dear $firstName, '
+              'Charge of UGX $formattedAmount added to your loan ($chargeTypeName). '
               '${notes.isNotEmpty ? '$notes. ' : ''}'
-              'New balance: UGX $newTotalDemanded. '
-              '-$saccoName';
+              'New loan balance: UGX $newTotalDemanded. Thank you!';
           
           // Send SMS notification
           final smsSent = await FirebaseService.sendSmsToPhone(memberPhone, smsMessage);
