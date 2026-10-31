@@ -1633,33 +1633,552 @@ class _IncomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _PeriodTab(
-      title: 'Income Report',
-      subtitle: 'Interest, fees and penalties earned',
+      title: 'Income Statement',
+      subtitle: 'Comprehensive profit & loss analysis',
       builder: (ctx, r, month, year) {
-        if (r['income'] is! Map) {
-          return const [
-            _EmptyCard(
-              icon: Icons.trending_up,
-              title: 'No income entries posted',
-              message: 'Interest, fee and penalty income is not being posted yet. Until income is recorded, '
-                  'the balance sheet cannot show a true surplus.',
-            ),
-          ];
-        }
-        return _txnReport(
-          ctx,
-          data: _m(r['income']),
-          period: '${r['period'] ?? ''}',
-          month: month,
-          year: year,
-          noun: 'income',
-          groupLabel: 'Source',
-          groupOf: (t) => '${t['source'] ?? 'Other'}',
-          accent: _C.green,
-          icon: Icons.trending_up,
-          fileStem: 'income_report',
-        );
+        return [_IncomeStatement(report: r, month: month, year: year)];
       },
+    );
+  }
+}
+
+// Income Statement with detailed breakdown, comparison & exports
+class _IncomeStatement extends StatelessWidget {
+  final Map<String, dynamic> report;
+  final int month, year;
+
+  const _IncomeStatement({required this.report, required this.month, required this.year});
+
+  @override
+  Widget build(BuildContext context) {
+    final inc = _m(report['incomeData']);
+    final exp = _m(report['expenseData']);
+    final prev = _m(report['previousMonth']);
+    final prevInc = _m(prev['incomeData']);
+    final prevExp = _m(prev['expenseData']);
+
+    final interest = _n(inc['interest']);
+    final charges = _n(inc['loanCharges']);
+    final fees = _n(inc['fees']);
+    final penalties = _n(inc['penalties']);
+    final otherInc = _n(inc['other']);
+    final totalInc = interest + charges + fees + penalties + otherInc;
+
+    final salaries = _n(exp['salaries']);
+    final utilities = _n(exp['utilities']);
+    final office = _n(exp['officeExpenses']);
+    final otherExp = _n(exp['other']);
+    final totalExp = salaries + utilities + office + otherExp;
+
+    final netIncome = totalInc - totalExp;
+
+    // Previous month comparison
+    final prevInterest = _n(prevInc['interest']);
+    final prevCharges = _n(prevInc['loanCharges']);
+    final prevFees = _n(prevInc['fees']);
+    final prevPenalties = _n(prevInc['penalties']);
+    final prevOtherInc = _n(prevInc['other']);
+    final prevTotalInc = prevInterest + prevCharges + prevFees + prevPenalties + prevOtherInc;
+
+    final prevSalaries = _n(prevExp['salaries']);
+    final prevUtilities = _n(prevExp['utilities']);
+    final prevOffice = _n(prevExp['officeExpenses']);
+    final prevOtherExp = _n(prevExp['other']);
+    final prevTotalExp = prevSalaries + prevUtilities + prevOffice + prevOtherExp;
+
+    final prevNetIncome = prevTotalInc - prevTotalExp;
+
+    // Portfolio metrics
+    final loans = _m(report['portfolio']);
+    final outstanding = _n(loans['outstanding']);
+    final overdue = _n(loans['overdueAmount']);
+    final par = outstanding > 0 ? (overdue / outstanding * 100) : 0.0;
+
+    final period = '${DateFormat.MMMM().format(DateTime(year, month))} $year';
+
+    return LayoutBuilder(builder: (context, box) {
+      final pad = _padFor(box.maxWidth);
+      final wide = box.maxWidth > 900;
+
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(pad),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: _maxContentWidth),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Export buttons
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _exportIncomeStatementCsv(context),
+                    icon: const Icon(Icons.download, size: 16),
+                    label: Text('Export CSV', style: _ps(13)),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _exportIncomeStatementPdf(context),
+                    icon: const Icon(Icons.picture_as_pdf, size: 16),
+                    label: Text('Export PDF', style: _ps(13)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Summary cards
+              if (wide)
+                Row(
+                  children: [
+                    Expanded(child: _SummaryCard(label: 'Total Income', amount: totalInc, color: _C.green)),
+                    const SizedBox(width: 16),
+                    Expanded(child: _SummaryCard(label: 'Total Expenses', amount: totalExp, color: _C.red)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                        child: _SummaryCard(
+                            label: 'Net Income', amount: netIncome, color: netIncome >= 0 ? _C.blue : _C.red)),
+                  ],
+                )
+              else ...[
+                _SummaryCard(label: 'Total Income', amount: totalInc, color: _C.green),
+                const SizedBox(height: 12),
+                _SummaryCard(label: 'Total Expenses', amount: totalExp, color: _C.red),
+                const SizedBox(height: 12),
+                _SummaryCard(label: 'Net Income', amount: netIncome, color: netIncome >= 0 ? _C.blue : _C.red),
+              ],
+
+              const SizedBox(height: 24),
+
+              // Income & Expense breakdown
+              if (wide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _IncomeBreakdown(
+                        interest: interest,
+                        charges: charges,
+                        fees: fees,
+                        penalties: penalties,
+                        other: otherInc,
+                        total: totalInc,
+                        prevInterest: prevInterest,
+                        prevCharges: prevCharges,
+                        prevFees: prevFees,
+                        prevPenalties: prevPenalties,
+                        prevOther: prevOtherInc,
+                        prevTotal: prevTotalInc,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _ExpenseBreakdown(
+                        salaries: salaries,
+                        utilities: utilities,
+                        office: office,
+                        other: otherExp,
+                        total: totalExp,
+                        prevSalaries: prevSalaries,
+                        prevUtilities: prevUtilities,
+                        prevOffice: prevOffice,
+                        prevOther: prevOtherExp,
+                        prevTotal: prevTotalExp,
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                _IncomeBreakdown(
+                  interest: interest,
+                  charges: charges,
+                  fees: fees,
+                  penalties: penalties,
+                  other: otherInc,
+                  total: totalInc,
+                  prevInterest: prevInterest,
+                  prevCharges: prevCharges,
+                  prevFees: prevFees,
+                  prevPenalties: prevPenalties,
+                  prevOther: prevOtherInc,
+                  prevTotal: prevTotalInc,
+                ),
+                const SizedBox(height: 16),
+                _ExpenseBreakdown(
+                  salaries: salaries,
+                  utilities: utilities,
+                  office: office,
+                  other: otherExp,
+                  total: totalExp,
+                  prevSalaries: prevSalaries,
+                  prevUtilities: prevUtilities,
+                  prevOffice: prevOffice,
+                  prevOther: prevOtherExp,
+                  prevTotal: prevTotalExp,
+                ),
+              ],
+
+              const SizedBox(height: 24),
+
+              // Portfolio quality
+              _PortfolioQuality(outstanding: outstanding, overdue: overdue, par: par),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  void _exportIncomeStatementCsv(BuildContext context) async {
+    final inc = _m(report['incomeData']);
+    final exp = _m(report['expenseData']);
+
+    final interest = _n(inc['interest']);
+    final charges = _n(inc['loanCharges']);
+    final fees = _n(inc['fees']);
+    final penalties = _n(inc['penalties']);
+    final otherInc = _n(inc['other']);
+    final totalInc = interest + charges + fees + penalties + otherInc;
+
+    final salaries = _n(exp['salaries']);
+    final utilities = _n(exp['utilities']);
+    final office = _n(exp['officeExpenses']);
+    final otherExp = _n(exp['other']);
+    final totalExp = salaries + utilities + office + otherExp;
+
+    final netIncome = totalInc - totalExp;
+    final period = '${DateFormat.MMMM().format(DateTime(year, month))} $year';
+
+    final csv = StringBuffer()
+      ..writeln('MBADIFA SACCO')
+      ..writeln('INCOME STATEMENT')
+      ..writeln('For the month ended $period')
+      ..writeln('Amounts in UGX')
+      ..writeln('')
+      ..writeln('INCOME')
+      ..writeln('Interest on loans,$interest')
+      ..writeln('Loan charges,$charges')
+      ..writeln('Fees,$fees')
+      ..writeln('Penalties,$penalties')
+      ..writeln('Other income,$otherInc')
+      ..writeln('Total Income,$totalInc')
+      ..writeln('')
+      ..writeln('EXPENSES')
+      ..writeln('Salaries & wages,$salaries')
+      ..writeln('Utilities,$utilities')
+      ..writeln('Office expenses,$office')
+      ..writeln('Other expenses,$otherExp')
+      ..writeln('Total Expenses,$totalExp')
+      ..writeln('')
+      ..writeln('NET INCOME,$netIncome');
+
+    final fileName = 'income_statement_${year}_${month.toString().padLeft(2, '0')}.csv';
+    _saveCsv(context, fileName, csv.toString());
+  }
+
+  void _exportIncomeStatementPdf(BuildContext context) async {
+    final inc = _m(report['incomeData']);
+    final exp = _m(report['expenseData']);
+
+    final interest = _n(inc['interest']);
+    final charges = _n(inc['loanCharges']);
+    final fees = _n(inc['fees']);
+    final penalties = _n(inc['penalties']);
+    final otherInc = _n(inc['other']);
+    final totalInc = interest + charges + fees + penalties + otherInc;
+
+    final salaries = _n(exp['salaries']);
+    final utilities = _n(exp['utilities']);
+    final office = _n(exp['officeExpenses']);
+    final otherExp = _n(exp['other']);
+    final totalExp = salaries + utilities + office + otherExp;
+
+    final netIncome = totalInc - totalExp;
+    final period = '${DateFormat.MMMM().format(DateTime(year, month))} $year';
+
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(36),
+        build: (ctx) => [
+          // Header
+          pw.Center(
+            child: pw.Column(children: [
+              pw.Text('MBADIFA SACCO', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 4),
+              pw.Text('INCOME STATEMENT', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 2),
+              pw.Text('For the month ended $period   |   Amounts in UGX',
+                  style: const pw.TextStyle(fontSize: 9)),
+            ]),
+          ),
+          pw.SizedBox(height: 24),
+
+          // Income section
+          pw.Text('INCOME', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 8),
+          _pdfIncomeRow('Interest on loans', interest),
+          _pdfIncomeRow('Loan charges', charges),
+          _pdfIncomeRow('Fees', fees),
+          _pdfIncomeRow('Penalties', penalties),
+          _pdfIncomeRow('Other income', otherInc),
+          pw.Divider(),
+          _pdfIncomeRow('Total Income', totalInc, bold: true),
+          pw.SizedBox(height: 16),
+
+          // Expenses section
+          pw.Text('EXPENSES', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 8),
+          _pdfIncomeRow('Salaries & wages', salaries),
+          _pdfIncomeRow('Utilities', utilities),
+          _pdfIncomeRow('Office expenses', office),
+          _pdfIncomeRow('Other expenses', otherExp),
+          pw.Divider(),
+          _pdfIncomeRow('Total Expenses', totalExp, bold: true),
+          pw.SizedBox(height: 16),
+
+          // Net income
+          pw.Divider(thickness: 2),
+          _pdfIncomeRow('NET INCOME', netIncome, bold: true, large: true),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (PdfPageFormat f) async => pdf.save());
+  }
+
+  pw.Widget _pdfIncomeRow(String label, num amount, {bool bold = false, bool large = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label,
+              style: pw.TextStyle(
+                  fontSize: large ? 13 : 10, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
+          pw.Text(_money(amount, dash: false),
+              style: pw.TextStyle(
+                  fontSize: large ? 13 : 10, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
+        ],
+      ),
+    );
+  }
+}
+
+// Summary card widget
+class _SummaryCard extends StatelessWidget {
+  final String label;
+  final num amount;
+  final Color color;
+
+  const _SummaryCard({required this.label, required this.amount, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _ps(13, c: _C.muted)),
+          const SizedBox(height: 8),
+          Text(_ugx(amount), style: _ps(20, w: FontWeight.w700, c: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// Income breakdown card
+class _IncomeBreakdown extends StatelessWidget {
+  final num interest, charges, fees, penalties, other, total;
+  final num prevInterest, prevCharges, prevFees, prevPenalties, prevOther, prevTotal;
+
+  const _IncomeBreakdown({
+    required this.interest,
+    required this.charges,
+    required this.fees,
+    required this.penalties,
+    required this.other,
+    required this.total,
+    required this.prevInterest,
+    required this.prevCharges,
+    required this.prevFees,
+    required this.prevPenalties,
+    required this.prevOther,
+    required this.prevTotal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.trending_up, color: _C.green, size: 20),
+              const SizedBox(width: 8),
+              Text('INCOME', style: _ps(15, w: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _IncomeStatementRow(label: 'Interest on loans', amount: interest, prev: prevInterest),
+          _IncomeStatementRow(label: 'Loan charges', amount: charges, prev: prevCharges),
+          _IncomeStatementRow(label: 'Fees', amount: fees, prev: prevFees),
+          _IncomeStatementRow(label: 'Penalties', amount: penalties, prev: prevPenalties),
+          _IncomeStatementRow(label: 'Other', amount: other, prev: prevOther),
+          const Divider(height: 24),
+          _IncomeStatementRow(label: 'Total', amount: total, prev: prevTotal, bold: true),
+        ],
+      ),
+    );
+  }
+}
+
+// Expense breakdown card
+class _ExpenseBreakdown extends StatelessWidget {
+  final num salaries, utilities, office, other, total;
+  final num prevSalaries, prevUtilities, prevOffice, prevOther, prevTotal;
+
+  const _ExpenseBreakdown({
+    required this.salaries,
+    required this.utilities,
+    required this.office,
+    required this.other,
+    required this.total,
+    required this.prevSalaries,
+    required this.prevUtilities,
+    required this.prevOffice,
+    required this.prevOther,
+    required this.prevTotal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.trending_down, color: _C.red, size: 20),
+              const SizedBox(width: 8),
+              Text('EXPENSES', style: _ps(15, w: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _IncomeStatementRow(label: 'Salaries & wages', amount: salaries, prev: prevSalaries),
+          _IncomeStatementRow(label: 'Utilities', amount: utilities, prev: prevUtilities),
+          _IncomeStatementRow(label: 'Office expenses', amount: office, prev: prevOffice),
+          _IncomeStatementRow(label: 'Other', amount: other, prev: prevOther),
+          const Divider(height: 24),
+          _IncomeStatementRow(label: 'Total', amount: total, prev: prevTotal, bold: true),
+        ],
+      ),
+    );
+  }
+}
+
+// Income statement row with comparison
+class _IncomeStatementRow extends StatelessWidget {
+  final String label;
+  final num amount, prev;
+  final bool bold;
+
+  const _IncomeStatementRow({required this.label, required this.amount, required this.prev, this.bold = false});
+
+  String get change {
+    if (prev == 0) return amount == 0 ? '-' : '+100%';
+    final pct = ((amount - prev) / prev * 100);
+    if (pct == 0) return '-';
+    return '${pct > 0 ? '+' : ''}${pct.toStringAsFixed(1)}%';
+  }
+
+  Color get changeColor {
+    if (amount == prev) return _C.muted;
+    return amount > prev ? _C.green : _C.red;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(label, style: _ps(13, w: bold ? FontWeight.w600 : FontWeight.w400)),
+          ),
+          Expanded(
+            flex: 2,
+            child: _amount(amount, bold: bold, size: bold ? 14 : 13),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(change,
+                textAlign: TextAlign.right,
+                style: GoogleFonts.robotoMono(fontSize: 11, fontWeight: FontWeight.w500, color: changeColor)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Portfolio quality card
+class _PortfolioQuality extends StatelessWidget {
+  final num outstanding, overdue, par;
+
+  const _PortfolioQuality({required this.outstanding, required this.overdue, required this.par});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.assessment, color: _C.blue, size: 20),
+              const SizedBox(width: 8),
+              Text('PORTFOLIO QUALITY', style: _ps(15, w: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _MetricRow(label: 'Outstanding principal', value: _ugx(outstanding)),
+          _MetricRow(label: 'Overdue amount', value: _ugx(overdue)),
+          _MetricRow(label: 'Portfolio at Risk (PAR)', value: '${par.toStringAsFixed(2)}%'),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  final String label, value;
+
+  const _MetricRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: _ps(13)),
+          Text(value, style: _ps(13, w: FontWeight.w600)),
+        ],
+      ),
     );
   }
 }
