@@ -1634,14 +1634,361 @@ class _IncomeTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return _PeriodTab(
       title: 'Income Statement',
-      subtitle: 'Comprehensive profit & loss analysis',
+      subtitle: 'Complete profit & loss with portfolio snapshot',
       builder: (ctx, r, month, year) {
-        return [_IncomeStatement(report: r, month: month, year: year)];
+        return [_IncomeStatementReport(report: r, month: month, year: year)];
       },
     );
   }
 }
 
+// Complete Income Statement Report with detailed line items
+class _IncomeStatementReport extends StatelessWidget {
+  final Map<String, dynamic> report;
+  final int month, year;
+
+  const _IncomeStatementReport({required this.report, required this.month, required this.year});
+
+  @override
+  Widget build(BuildContext context) {
+    final inc = _m(report['incomeData']);
+    final exp = _m(report['expenseData']);
+    final prev = _m(report['previousMonth']);
+    final prevInc = _m(prev['incomeData']);
+    final prevExp = _m(prev['expenseData']);
+    
+    // Income breakdown
+    final interestIncome = _n(inc['interest']);
+    final loanFees = _n(inc['fees']);
+    final insuranceFees = 0; // Not tracked separately yet
+    final penalties = _n(inc['penalties']);
+    final membershipFees = 0; // Not tracked separately yet
+    final otherIncome = _n(inc['other']);
+    final totalIncome = interestIncome + loanFees + insuranceFees + penalties + membershipFees + otherIncome;
+    
+    // Previous month income
+    final prevInterestIncome = _n(prevInc['interest']);
+    final prevLoanFees = _n(prevInc['fees']);
+    final prevInsuranceFees = 0;
+    final prevPenalties = _n(prevInc['penalties']);
+    final prevMembershipFees = 0;
+    final prevOtherIncome = _n(prevInc['other']);
+    final prevTotalIncome = prevInterestIncome + prevLoanFees + prevInsuranceFees + prevPenalties + prevMembershipFees + prevOtherIncome;
+    
+    // Expenses breakdown
+    final interestPaidSavings = 0; // Not tracked yet
+    final salaries = _n(exp['salaries']);
+    final rentUtilities = _n(exp['utilities']);
+    final transport = 0; // Combine from office expenses if needed
+    final loanLossProvisions = 0; // Not tracked yet
+    final otherExpenses = _n(exp['officeExpenses']) + _n(exp['other']);
+    final totalExpenses = interestPaidSavings + salaries + rentUtilities + transport + loanLossProvisions + otherExpenses;
+    
+    // Previous month expenses
+    final prevInterestPaidSavings = 0;
+    final prevSalaries = _n(prevExp['salaries']);
+    final prevRentUtilities = _n(prevExp['utilities']);
+    final prevTransport = 0;
+    final prevLoanLossProvisions = 0;
+    final prevOtherExpenses = _n(prevExp['officeExpenses']) + _n(prevExp['other']);
+    final prevTotalExpenses = prevInterestPaidSavings + prevSalaries + prevRentUtilities + prevTransport + prevLoanLossProvisions + prevOtherExpenses;
+    
+    final netSurplus = totalIncome - totalExpenses;
+    final prevNetSurplus = prevTotalIncome - prevTotalExpenses;
+    final margin = totalIncome > 0 ? (netSurplus / totalIncome * 100) : 0.0;
+    
+    // Portfolio snapshot
+    final loans = _m(report['loans']);
+    final repayments = _m(report['repayments']);
+    final portfolio = _m(report['portfolio']);
+    final loansDisb = _n(loans['amount']);
+    final repaymentsCol = _n(repayments['amount']);
+    final outstanding = _n(portfolio['outstanding']);
+    final arrears = _n(portfolio['overdueAmount']);
+    
+    final period = DateFormat.MMMM().format(DateTime(year, month));
+    
+    return LayoutBuilder(builder: (context, box) {
+      final pad = _padFor(box.maxWidth);
+      
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(pad),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Export buttons
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _exportIncomeStatementPdf(context),
+                    icon: const Icon(Icons.picture_as_pdf, size: 16),
+                    label: Text('Export PDF', style: _ps(13)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // Header summary box
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _C.border, width: 2),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _SummaryCol('Total income', totalIncome),
+                    ),
+                    Container(width: 1, height: 40, color: _C.border),
+                    Expanded(
+                      child: _SummaryCol('Total expenses', totalExpenses),
+                    ),
+                    Container(width: 1, height: 40, color: _C.border),
+                    Expanded(
+                      child: _SummaryCol('Net surplus', netSurplus),
+                    ),
+                    Container(width: 1, height: 40, color: _C.border),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Text('Margin', style: _ps(12, c: _C.muted)),
+                          const SizedBox(height: 4),
+                          Text('${margin.toStringAsFixed(1)}%', style: _ps(18, w: FontWeight.w700, c: _C.blue)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // 1. Income section
+              Container(
+                decoration: _cardDeco(),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('1. Income', style: _ps(16, w: FontWeight.w700)),
+                    const SizedBox(height: 16),
+                    _buildIncomeExpenseTable([
+                      _IncomeStatementLine('Interest on loans', interestIncome, prevInterestIncome),
+                      _IncomeStatementLine('Loan processing fees', loanFees, prevLoanFees),
+                      _IncomeStatementLine('Insurance and appraisal fees', insuranceFees, prevInsuranceFees),
+                      _IncomeStatementLine('Penalties and late fees', penalties, prevPenalties),
+                      _IncomeStatementLine('Membership and registration fees', membershipFees, prevMembershipFees),
+                      _IncomeStatementLine('Other income', otherIncome, prevOtherIncome),
+                    ]),
+                    const Divider(height: 24),
+                    _buildIncomeExpenseTable([
+                      _IncomeStatementLine('Total income', totalIncome, prevTotalIncome, bold: true),
+                    ]),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // 2. Expenses section
+              Container(
+                decoration: _cardDeco(),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('2. Expenses', style: _ps(16, w: FontWeight.w700)),
+                    const SizedBox(height: 16),
+                    _buildIncomeExpenseTable([
+                      _IncomeStatementLine('Interest paid on member savings', interestPaidSavings, prevInterestPaidSavings),
+                      _IncomeStatementLine('Salaries and wages', salaries, prevSalaries),
+                      _IncomeStatementLine('Rent and utilities', rentUtilities, prevRentUtilities),
+                      _IncomeStatementLine('Transport and communication', transport, prevTransport),
+                      _IncomeStatementLine('Loan loss provisions / write-offs', loanLossProvisions, prevLoanLossProvisions),
+                      _IncomeStatementLine('Other operating expenses', otherExpenses, prevOtherExpenses),
+                    ]),
+                    const Divider(height: 24),
+                    _buildIncomeExpenseTable([
+                      _IncomeStatementLine('Total expenses', totalExpenses, prevTotalExpenses, bold: true),
+                    ]),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Net surplus banner
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: netSurplus >= 0 ? _C.green : _C.red,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('NET SURPLUS / (DEFICIT)', style: _ps(14, w: FontWeight.w700, c: Colors.white)),
+                    Text(_ugx(netSurplus), style: _ps(18, w: FontWeight.w700, c: Colors.white)),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // 3. Loan portfolio snapshot
+              Container(
+                decoration: _cardDeco(),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('3. Loan portfolio snapshot', style: _ps(16, w: FontWeight.w700)),
+                    const SizedBox(height: 16),
+                    _buildPortfolioTable([
+                      ['Loans disbursed this month', _ugx(loansDisb)],
+                      ['Repayments collected', _ugx(repaymentsCol)],
+                    ]),
+                    const SizedBox(height: 12),
+                    _buildPortfolioTable([
+                      ['Outstanding loan book (month end)', _ugx(outstanding)],
+                      ['Loans in arrears', _ugx(arrears)],
+                    ]),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+  
+  Widget _buildIncomeExpenseTable(List<_IncomeStatementLine> lines) {
+    return Table(
+      columnWidths: const {
+        0: FlexColumnWidth(3),
+        1: FlexColumnWidth(2),
+        2: FlexColumnWidth(2),
+        3: FlexColumnWidth(1),
+      },
+      children: [
+        TableRow(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('Item', style: _ps(12, w: FontWeight.w600, c: _C.muted)),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('This month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.muted)),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('Last month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.muted)),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('Change %', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.muted)),
+            ),
+          ],
+        ),
+        ...lines.map((line) => TableRow(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(line.label, style: _ps(13, w: line.bold ? FontWeight.w600 : FontWeight.w400)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(_money(line.current, dash: false), textAlign: TextAlign.right, 
+                  style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: line.bold ? FontWeight.w600 : FontWeight.w400)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(_money(line.previous, dash: false), textAlign: TextAlign.right,
+                  style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: line.bold ? FontWeight.w600 : FontWeight.w400, color: _C.muted)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(line.changePercent, textAlign: TextAlign.right,
+                  style: GoogleFonts.robotoMono(fontSize: 12, fontWeight: FontWeight.w500, color: line.changeColor)),
+            ),
+          ],
+        )),
+      ],
+    );
+  }
+  
+  Widget _buildPortfolioTable(List<List<String>> rows) {
+    return Table(
+      border: TableBorder.all(color: _C.border),
+      columnWidths: const {
+        0: FlexColumnWidth(3),
+        1: FlexColumnWidth(2),
+      },
+      children: rows.map((row) => TableRow(
+        children: row.map((cell) => Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(cell, 
+              textAlign: row.indexOf(cell) == 1 ? TextAlign.right : TextAlign.left,
+              style: _ps(13, w: FontWeight.w500)),
+        )).toList(),
+      )).toList(),
+    );
+  }
+  
+  void _exportIncomeStatementPdf(BuildContext context) async {
+    // Will implement detailed PDF export to match the screenshot
+    _toast(context, 'PDF export coming soon with detailed format');
+  }
+}
+
+class _IncomeStatementLine {
+  final String label;
+  final num current, previous;
+  final bool bold;
+  
+  _IncomeStatementLine(this.label, this.current, this.previous, {this.bold = false});
+  
+  String get changePercent {
+    if (previous == 0 && current == 0) return '-';
+    if (previous == 0) return '∞';
+    final pct = ((current - previous) / previous * 100);
+    return '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(0)}%';
+  }
+  
+  Color get changeColor {
+    if (current == previous) return _C.muted;
+    return current > previous ? _C.green : _C.red;
+  }
+}
+
+class _SummaryCol extends StatelessWidget {
+  final String label;
+  final num amount;
+  
+  const _SummaryCol(this.label, this.amount);
+  
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(label, style: _ps(12, c: _C.muted)),
+        const SizedBox(height: 4),
+        Text(_ugx(amount), style: _ps(18, w: FontWeight.w700, c: _C.navy)),
+      ],
+    );
+  }
+}
+
+// Old widgets to remove later
 // Income Statement with detailed breakdown, comparison & exports
 class _IncomeStatement extends StatelessWidget {
   final Map<String, dynamic> report;
@@ -1651,11 +1998,14 @@ class _IncomeStatement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print('📊 Income Statement - Report keys: ${report.keys.toList()}');
     final inc = _m(report['incomeData']);
     final exp = _m(report['expenseData']);
     final prev = _m(report['previousMonth']);
     final prevInc = _m(prev['incomeData']);
     final prevExp = _m(prev['expenseData']);
+    print('📊 Income: $inc');
+    print('📊 Expense: $exp');
 
     final interest = _n(inc['interest']);
     final charges = _n(inc['loanCharges']);
