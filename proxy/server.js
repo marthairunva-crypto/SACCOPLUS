@@ -1,12 +1,20 @@
 const express = require('express');
 const axios = require('axios');
+require('dotenv').config(); // Load environment variables from .env file
+
 const app = express();
 app.use(express.json());
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const MARZPAY_BASE  = 'https://wallet.wearemarz.com/api/v1';
-const MARZPAY_AUTH  = process.env.MARZPAY_AUTH  || 'bWFyel9TTmdZMHRwb1FVcFk1WmNoOndIRWdTT0lhUjhCUjNMMDV2NlZFUHFzMTBOZFdNZzU4';
-const GROQ_API_KEY  = process.env.GROQ_API_KEY  || ['gsk_9itbXFJZ4jNKYBKCJW99WGdy', 'b3FYGe8MtzOGrf9NTa7p2qZOKXHu'].join('');
+const MARZPAY_BASE  = process.env.MARZPAY_BASE || 'https://wallet.wearemarz.com/api/v1';
+const MARZPAY_AUTH  = process.env.MARZPAY_AUTH;
+const GROQ_API_KEY  = process.env.GROQ_API_KEY;
+
+if (!MARZPAY_AUTH) {
+  console.error('❌ MARZPAY_AUTH is not set in environment variables!');
+  console.error('   Set it in .env file or as environment variable');
+  process.exit(1);
+}
 
 // Accept BOTH the old key (rutooma_agro_2025_proxy_key) and the new SACCOPLUS key
 // so existing installs keep working while new ones use the new key
@@ -80,9 +88,12 @@ app.get('/', (_, res) => {
 // Optional: currency (DRC only: 'CDF' | 'USD'), description, callback_url
 app.post('/collect', async (req, res) => {
   try {
+    console.log('[COLLECT] Request:', JSON.stringify(req.body));
     const r = await axios.post(`${MARZPAY_BASE}/collect-money`, req.body, { headers: marzHeaders });
+    console.log('[COLLECT] Success:', r.data.status || r.data);
     res.json(r.data);
   } catch (e) {
+    console.log('[COLLECT] Error:', e.response?.data || e.message);
     res.json(e.response?.data ?? { status: 'error', message: e.message });
   }
 });
