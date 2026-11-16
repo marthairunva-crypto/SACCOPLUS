@@ -588,61 +588,60 @@ class _CashAndBankScreenState extends State<CashAndBankScreen> {
   }
 
   /// Syncs till balances in real-time whenever till data changes
-  /// Groups all sessions by teller and sums their COUNTED balances (actual physical cash)
+  /// Uses only the CURRENT (most recent) session per teller
   void _syncTillBalancesFromSnapshot(QuerySnapshot<Map<String, dynamic>> tillSnapshot) async {
     try {
-      print('📊 Syncing ${tillSnapshot.docs.length} till sessions (all statuses)...');
+      print('📊 Syncing ${tillSnapshot.docs.length} till sessions...');
 
-      // Group sessions by teller and calculate totals
-      final Map<String, Map<String, dynamic>> tellerTotals = {};
+      // Find the CURRENT (most recent) session per teller
+      final Map<String, Map<String, dynamic>> currentSessions = {};
 
       for (final tillDoc in tillSnapshot.docs) {
         final data = tillDoc.data();
         final tellerId = data['tellerId'] as String?;
         final tellerName = data['tellerName'] as String?;
         final status = data['status'] as String? ?? 'unknown';
-        final openingFloat = (data['openingFloat'] ?? 0) as int;
-        final totalIn = (data['totalIn'] ?? 0) as int;
-        final totalOut = (data['totalOut'] ?? 0) as int;
-        final expectedCash = openingFloat + totalIn - totalOut;
+        final openedAt = (data['openedAt'] as Timestamp?)?.toDate() ?? 
+                        (data['createdAt'] as Timestamp?)?.toDate() ?? 
+                        DateTime.now();
 
-        // Use actualCash if available (actual physical count), otherwise use expected
-        final countedCash = (data['actualCash'] ?? expectedCash) as int;
+        if (tellerId == null || tellerName == null) continue;
 
-        print('  💰 $tellerName ($status): Expected=$expectedCash | Counted=$countedCash');
+        // Only keep the most recent session per teller
+        if (!currentSessions.containsKey(tellerId) ||
+            openedAt.isAfter((currentSessions[tellerId]!['openedAt'] as DateTime))) {
+          
+          final openingFloat = (data['openingFloat'] as num?)?.toInt() ?? 0;
+          final totalIn = (data['totalIn'] as num?)?.toInt() ?? 0;
+          final totalOut = (data['totalOut'] as num?)?.toInt() ?? 0;
+          final expectedCash = openingFloat + totalIn - totalOut;
 
-        if (tellerId != null && tellerName != null) {
-          // Accumulate totals per teller
-          if (!tellerTotals.containsKey(tellerId)) {
-            tellerTotals[tellerId] = {
-              'name': tellerName,
-              'balance': 0,
-              'sessionCount': 0,
-              'hasOpen': false,
-            };
-          }
+          // For open sessions: show expected cash
+          // For closed sessions: show 0 (cash should be moved to vault)
+          final balance = status == 'open' ? expectedCash : 0;
 
-          tellerTotals[tellerId]!['balance'] =
-              (tellerTotals[tellerId]!['balance'] as int) + countedCash;
-          tellerTotals[tellerId]!['sessionCount'] =
-              (tellerTotals[tellerId]!['sessionCount'] as int) + 1;
-          if (status == 'open') {
-            tellerTotals[tellerId]!['hasOpen'] = true;
-          }
+          currentSessions[tellerId] = {
+            'name': tellerName,
+            'status': status,
+            'balance': balance,
+            'openedAt': openedAt,
+            'expectedCash': expectedCash,
+          };
+
+          print('  💰 $tellerName ($status): Current session balance=$balance (expected=$expectedCash)');
         }
       }
 
-      // Now create/update one account per teller with their total
-      for (final entry in tellerTotals.entries) {
+      // Update one account per teller with their CURRENT session only
+      for (final entry in currentSessions.entries) {
         final tellerId = entry.key;
         final data = entry.value;
         final tellerName = data['name'] as String;
-        final totalBalance = data['balance'] as int;
-        final sessionCount = data['sessionCount'] as int;
-        final hasOpen = data['hasOpen'] as bool;
+        final status = data['status'] as String;
+        final balance = data['balance'] as int;
 
         final accountId = 'till_$tellerId';
-        final statusLabel = hasOpen ? 'Open' : 'Closed';
+        final statusLabel = status == 'open' ? 'Open' : 'Closed';
 
         await FirebaseFirestore.instance
             .collection('accounts')
@@ -652,20 +651,19 @@ class _CashAndBankScreenState extends State<CashAndBankScreen> {
           'tenantId': FirebaseService.sessionTenantId,
           'name': '$tellerName\'s Till ($statusLabel)',
           'type': 'till',
-          'balance': totalBalance.toDouble(),
+          'balance': balance.toDouble(),
           'currency': 'UGX',
           'isActive': true,
           'active': true,
-          'sessionCount': sessionCount,
-          'hasOpenSession': hasOpen,
+          'currentSessionStatus': status,
           'lastSynced': FieldValue.serverTimestamp(),
           'lastMovementAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
-        print('  ✅ Updated $accountId: $sessionCount sessions, total COUNTED balance: $totalBalance');
+        print('  ✅ Updated $accountId: $statusLabel, balance=$balance');
       }
 
-      print('✅ Till sync complete - ${tellerTotals.length} teller account(s) updated');
+      print('✅ Till sync complete - ${currentSessions.length} teller account(s) updated');
     } catch (e) {
       print('⚠️ Could not sync till balances: $e');
     }

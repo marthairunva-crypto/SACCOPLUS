@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -6,6 +10,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../services/report_service.dart';
 import '../../utils/file_saver.dart';
+import '../../core/firebase_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Design tokens & helpers
@@ -16,6 +21,7 @@ class _C {
   static const bg = Color(0xFFF4F6FA);
   static const border = Color(0xFFE3E8EF);
   static const text = Color(0xFF111827);
+  static const ink = Color(0xFF111827); // Alias for text
   static const muted = Color(0xFF6B7280);
   static const green = Color(0xFF15803D);
   static const red = Color(0xFFB91C1C);
@@ -31,6 +37,12 @@ TextStyle _ps(double size, {FontWeight w = FontWeight.w400, Color c = _C.text, d
 
 num _n(dynamic v) => v is num ? v : (num.tryParse('${v ?? ''}') ?? 0);
 Map _m(dynamic v) => v is Map ? v : const {};
+
+DateTime? _dt(dynamic v) {
+  if (v is DateTime) return v;
+  if (v is String) return DateTime.tryParse(v);
+  return null;
+}
 
 String _cap(String s) {
   final t = s.trim();
@@ -163,7 +175,7 @@ class _Position {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Statement rows (shared by screen, CSV and PDF)
 // ═══════════════════════════════════════════════════════════════════════════════
-enum _K { header, sub, item, total, grand }
+enum _K { header, sub, item, total, grand, warning }
 
 class _Row {
   final _K kind;
@@ -171,13 +183,16 @@ class _Row {
   final num? amount;
   final String? hint;
   final bool showZero;
-  const _Row(this.kind, this.label, [this.amount, this.hint, this.showZero = false]);
+  final bool isFirst;
+  final bool isGrand;
+  const _Row(this.kind, this.label, [this.amount, this.hint, this.showZero = false, this.isFirst = false, this.isGrand = false]);
   const _Row.header(String label) : this(_K.header, label);
   const _Row.sub(String label) : this(_K.sub, label);
-  const _Row.item(String label, num amount, {String? hint, bool showZero = false})
-      : this(_K.item, label, amount, hint, showZero);
+  const _Row.item(String label, num amount, {String? hint, bool showZero = false, bool isFirst = false, bool isGrand = false})
+      : this(_K.item, label, amount, hint, showZero, isFirst, isGrand);
   const _Row.total(String label, num amount) : this(_K.total, label, amount);
   const _Row.grand(String label, num amount) : this(_K.grand, label, amount);
+  const _Row.warning(String label, String hint) : this(_K.warning, label, null, hint);
 }
 
 String _rowsToCsv(String title, DateTime asOf, List<_Row> rows) {
@@ -323,7 +338,18 @@ class _ReportLoaderState<T> extends State<_ReportLoader<T>> {
   @override
   void initState() {
     super.initState();
+    print('🔵 _ReportLoader initState - loading data...');
     _run();
+  }
+  
+  @override
+  void didUpdateWidget(_ReportLoader<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If key changed (which it does when refresh is triggered), reload data
+    if (widget.key != oldWidget.key) {
+      print('🔄 _ReportLoader didUpdateWidget - key changed, reloading...');
+      _run();
+    }
   }
 
   Future<void> _run({bool silent = false}) async {
@@ -1301,7 +1327,7 @@ List<Widget> _txnReport(
   final topPct = total == 0 ? 0 : top.value / total * 100;
   final nounCap = _cap(noun);
 
-  Future<void> export() async {
+  Future<void> exportCsv() async {
     final b = StringBuffer()
       ..writeln('MBADIFA SACCO')
       ..writeln('$nounCap Report - $period')
@@ -1314,10 +1340,188 @@ List<Widget> _txnReport(
     await _saveCsv(ctx, '${fileStem}_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
   }
 
+  Future<void> exportPdf() async {
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (context) => [
+          // Header
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text('MBADIFA SACCO', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Mbarara District Farmers Association', style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 20),
+          pw.Divider(thickness: 2),
+          pw.SizedBox(height: 10),
+          pw.Text('$nounCap Report', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 4),
+          pw.Text('Period: $period', style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+          pw.SizedBox(height: 20),
+          
+          // Summary
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              border: pw.Border.all(color: PdfColors.grey400),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('Total $nounCap:', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                pw.Text('UGX ${_nf.format(total.round())}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 20),
+          
+          // Transactions Table
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey400),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(2),
+              1: const pw.FlexColumnWidth(4),
+              2: const pw.FlexColumnWidth(2),
+              3: const pw.FlexColumnWidth(2),
+              4: const pw.FlexColumnWidth(2),
+            },
+            children: [
+              // Header
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('Date', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('Description', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(groupLabel, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('Receipt', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('Amount (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                ],
+              ),
+              // Data rows
+              for (final t in txns)
+                pw.TableRow(
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        t.date != null ? DateFormat('MMM d, yyyy').format(t.date!) : 'N/A',
+                        style: const pw.TextStyle(fontSize: 8),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(_cap(t.description), style: const pw.TextStyle(fontSize: 8)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(_cap(t.group), style: const pw.TextStyle(fontSize: 8)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(t.receipt.isEmpty ? '-' : t.receipt, style: const pw.TextStyle(fontSize: 8)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        _nf.format(t.amount.round()),
+                        textAlign: pw.TextAlign.right,
+                        style: const pw.TextStyle(fontSize: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              // Total row
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(''),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(''),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(''),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text('TOTAL', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Text(
+                      _nf.format(total.round()),
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          
+          pw.SizedBox(height: 20),
+          pw.Text(
+            'Generated: ${DateFormat('d MMMM yyyy, HH:mm').format(DateTime.now())}',
+            style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+          ),
+        ],
+      ),
+    );
+
+    try {
+      final bytes = await pdf.save();
+      await FileSaver.saveFile(
+        fileName: '${fileStem}_${year}_${month.toString().padLeft(2, '0')}.pdf',
+        content: base64Encode(bytes),
+        mimeType: 'application/pdf',
+      );
+      _toast(ctx, 'PDF exported successfully');
+    } catch (e) {
+      _toast(ctx, 'PDF export failed: $e', error: true);
+    }
+  }
+
   return [
     Align(
       alignment: Alignment.centerRight,
-      child: _btn('Export CSV', Icons.file_download_outlined, export, primary: true),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _btn('Export CSV', Icons.file_download_outlined, exportCsv, primary: false),
+          const SizedBox(width: 8),
+          _btn('Export PDF', Icons.picture_as_pdf_outlined, exportPdf, primary: true),
+        ],
+      ),
     ),
     const SizedBox(height: 14),
     _KpiGrid(children: [
@@ -1378,6 +1582,7 @@ class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen>
     with SingleTickerProviderStateMixin {
   static const _tabs = <_TabDef>[
     _TabDef(Icons.calendar_month, 'Monthly'),
+    _TabDef(Icons.assessment, 'Income Statement'),
     _TabDef(Icons.trending_up, 'Income'),
     _TabDef(Icons.trending_down, 'Expense'),
     _TabDef(Icons.account_balance_wallet, 'Trial Balance'),
@@ -1423,6 +1628,7 @@ class _ComprehensiveReportsScreenState extends State<ComprehensiveReportsScreen>
       controller: _ctrl,
       children: const [
         _MonthlyTab(),
+        _IncomeStatementTab(),
         _IncomeTab(),
         _ExpenseTab(),
         _TrialBalanceTab(),
@@ -1470,6 +1676,7 @@ class _PeriodTab extends StatefulWidget {
 class _PeriodTabState extends State<_PeriodTab> {
   int _month = DateTime.now().month;
   int _year = DateTime.now().year;
+  int _refreshKey = 0; // Add refresh key for manual rebuilds
 
   Widget _picker() {
     Widget dd(int value, List<DropdownMenuItem<int>> items, ValueChanged<int> onChanged) {
@@ -1524,7 +1731,7 @@ class _PeriodTabState extends State<_PeriodTab> {
         _PageHeader(title: widget.title, subtitle: widget.subtitle, trailing: _picker()),
         Expanded(
           child: _ReportLoader<Map<String, dynamic>>(
-            key: ValueKey('$_month-$_year-${widget.title}'),
+            key: ValueKey('$_month-$_year-${widget.title}-$_refreshKey'), // Include refresh key
             load: () => ReportService.generateMonthlyReport(year: _year, month: _month),
             builder: (ctx, r) => widget.builder(ctx, r, _month, _year),
           ),
@@ -1532,97 +1739,2366 @@ class _PeriodTabState extends State<_PeriodTab> {
       ],
     );
   }
+  
+  // Public method to trigger refresh from descendants
+  void refresh() {
+    setState(() {
+      _refreshKey++;
+    });
+  }
 }
 
 class _MonthlyTab extends StatelessWidget {
+  static final _db = FirebaseFirestore.instance;
   const _MonthlyTab();
 
   @override
   Widget build(BuildContext context) {
     return _PeriodTab(
       title: 'Monthly Report',
-      subtitle: 'Cash movement from lending, savings and share activity',
+      subtitle: 'Complete cash movement, income, expenses and portfolio snapshot',
       builder: (ctx, r, month, year) {
+        // Extract data with proper fallbacks
         final loans = _m(r['loans']);
         final rep = _m(r['repayments']);
         final sav = _m(r['savings']);
+        final savWd = _m(r['savingsWithdrawals']);
         final sh = _m(r['shares']);
-        final inflow = _n(rep['amount']) + _n(sav['amount']) + _n(sh['amount']);
-        final outflow = _n(loans['amount']);
-        final net = inflow - outflow;
-        String tx(Map m) => '${_n(m['count']).toInt()} transactions';
+        final fd = _m(r['fixedDeposits']);
+        final topups = _m(r['walletTopups']);
+        final payouts = _m(r['walletPayouts']);
+        final income = _m(r['income']);
+        final expense = _m(r['expenses']);
+        final cash = _m(r['cash']);
+        final prev = _m(r['previous']);
+        final port = _m(r['portfolio']);
+        final memb = _m(r['members']);
 
+        final totalInflows = _n(r['totalInflows']);
+        final totalOutflows = _n(r['totalOutflows']);
+        final net = _n(r['netCashFlow']);
+        
+        String tx(Map m, [String label = 'transactions']) => 
+            '${_n(m['count']).toInt()} $label';
+        
+        String change(String key) {
+          final c = _n(prev[key]);
+          final cur = _n(r[key] ?? (key == 'income' ? income['total'] : (key == 'expenses' ? expense['total'] : 0)));
+          if (c == 0) return '';
+          final pct = ((cur - c) / c * 100);
+          final sign = pct > 0 ? '+' : '';
+          return '$sign${pct.toStringAsFixed(1)}% vs last month';
+        }
+
+        String changeAmt(num current, String prevKey) {
+          final p = _n(prev[prevKey]);
+          if (p == 0) return '';
+          final pct = ((current - p) / p * 100);
+          final sign = pct > 0 ? '+' : '';
+          return '$sign${pct.toStringAsFixed(1)}%';
+        }
+
+        // Build cash movement statement rows
         final rows = <_Row>[
+          _Row.item(
+            'Opening cash balance', 
+            cash['hasManualOpening'] == true ? _n(cash['opening']) : 0, 
+            isFirst: true, 
+            hint: cash['hasManualOpening'] == true 
+              ? 'Manually set' 
+              : 'Not set (auto-calculated: ${_ugx(_n(cash['opening']))})',
+            showZero: true
+          ),
           const _Row.header('CASH INFLOWS'),
-          _Row.item('Loan repayments received', _n(rep['amount']), hint: tx(rep)),
+          _Row.item('Loan repayments — principal', _n(rep['principal']), hint: tx(rep)),
+          _Row.item('Loan repayments — interest', _n(rep['interest'])),
+          _Row.item('Loan repayments — charges', _n(rep['charges'])),
           _Row.item('Savings deposits', _n(sav['amount']), hint: tx(sav)),
           _Row.item('Share purchases', _n(sh['amount']), hint: tx(sh)),
-          _Row.total('Total inflows', inflow),
+          _Row.item('Fixed deposits received', _n(fd['amount']), hint: tx(fd)),
+          _Row.item('Mobile money deposits (MTN & Airtel)', _n(topups['amount']), hint: tx(topups, 'deposits')),
+          _Row.item('Fees & penalties', _n(income['fees']) + _n(income['penalties'])),
+          _Row.item('Other income', _n(income['other'])),
+          _Row.total('Total inflows', totalInflows),
           const _Row.header('CASH OUTFLOWS'),
           _Row.item('Loans disbursed', _n(loans['amount']), hint: tx(loans)),
-          _Row.total('Total outflows', outflow),
+          _Row.item('Savings withdrawals', _n(savWd['amount']), hint: tx(savWd, 'withdrawals')),
+          _Row.item('Mobile money withdrawals (MTN & Airtel)', _n(payouts['amount']), hint: tx(payouts, 'withdrawals')),
+          _Row.item('Salaries & allowances', _n(expense['salaries'])),
+          _Row.item('Utilities & transport', _n(expense['utilities'])),
+          _Row.item('Office expenses', _n(expense['officeExpenses'])),
+          _Row.item('Other expenses', _n(expense['other'])),
+          _Row.total('Total outflows', totalOutflows),
           _Row.grand('Net cash flow', net),
+          _Row.item('Closing cash balance (bank & cash)', _n(cash['closing'])),
+          _Row.item('Cash with tellers', _n(cash['tillsNow'])),
+          _Row.grand('Total closing cash', _n(cash['totalClosing'])),
         ];
 
-        Future<void> export() async {
+        // Add appropriate reconciliation message
+        final hasManualOpening = cash['hasManualOpening'] == true;
+        final hasNoCashAccounts = cash['hasNoCashAccounts'] == true;
+        final unexplained = _n(cash['unexplained']);
+        
+        if (!hasManualOpening) {
+          rows.add(_Row.warning(
+            'Opening balance not set',
+            'Set the opening balance for this month to enable cash reconciliation.'
+          ));
+        } else if (hasNoCashAccounts) {
+          rows.add(_Row.warning(
+            'Cash accounts not set up',
+            'Add your bank and cash accounts in Finance > Cash & Bank to track balances.'
+          ));
+        } else if (unexplained.abs() > 100) {
+          rows.add(_Row.warning(
+            'Unexplained difference: ${_ugx(unexplained)}',
+            'Cash moved without being recorded (till sessions, manual adjustments, or missing entries).'
+          ));
+        }
+
+        // CSV Export
+        Future<void> exportCsv() async {
           final b = StringBuffer()
             ..writeln('MBADIFA SACCO')
             ..writeln('Monthly Report - ${r['period'] ?? '$month/$year'}')
-            ..writeln('Category,Count,Amount (UGX)')
-            ..writeln('Loans Disbursed,${_n(loans['count'])},${_n(loans['amount'])}')
-            ..writeln('Loan Repayments,${_n(rep['count'])},${_n(rep['amount'])}')
+            ..writeln()
+            ..writeln('Category,Count,Amount (UGX)');
+
+          // Opening balance display
+          if (cash['hasNoCashAccounts'] == true) {
+            b.writeln('Opening Cash Balance,,"Cash accounts not set up"');
+          } else if (cash['hasManualOpening'] != true) {
+            b.writeln('Opening Cash Balance,,"Opening balance not set"');
+          } else {
+            b.writeln('Opening Cash Balance,,${_n(cash['opening'])}');
+          }
+
+          b..writeln()
+            ..writeln('CASH INFLOWS')
+            ..writeln('Loan Repayments - Principal,${_n(rep['count'])},${_n(rep['principal'])}')
+            ..writeln('Loan Repayments - Interest,,${_n(rep['interest'])}')
+            ..writeln('Loan Repayments - Charges,,${_n(rep['charges'])}')
             ..writeln('Savings Deposits,${_n(sav['count'])},${_n(sav['amount'])}')
             ..writeln('Share Purchases,${_n(sh['count'])},${_n(sh['amount'])}')
-            ..writeln('Net Cash Flow,,$net');
+            ..writeln('Fixed Deposits,${_n(fd['count'])},${_n(fd['amount'])}');
+          
+          // Only show MTN row if there are actual top-ups
+          if (_n(topups['amount']) > 0) {
+            b.writeln('MTN Mobile Money & Airtel Money Top-ups,${_n(topups['count'])},${_n(topups['amount'])}');
+          }
+          
+          b..writeln('Fees & Penalties,,${_n(income['fees']) + _n(income['penalties'])}')
+            ..writeln('Other Income,,${_n(income['other'])}')
+            ..writeln('Total Inflows,,$totalInflows')
+            ..writeln()
+            ..writeln('CASH OUTFLOWS')
+            ..writeln('Loans Disbursed,${_n(loans['count'])},${_n(loans['amount'])}')
+            ..writeln('Savings Withdrawals,${_n(savWd['count'])},${_n(savWd['amount'])}');
+          
+          // Only show MTN payouts row if there are actual payouts
+          if (_n(payouts['amount']) > 0) {
+            b.writeln('MTN Mobile Money & Airtel Money Payouts,${_n(payouts['count'])},${_n(payouts['amount'])}');
+          }
+          
+          b..writeln('Salaries,,${_n(expense['salaries'])}')
+            ..writeln('Utilities,,${_n(expense['utilities'])}')
+            ..writeln('Office Expenses,,${_n(expense['officeExpenses'])}')
+            ..writeln('Other Expenses,,${_n(expense['other'])}')
+            ..writeln('Total Outflows,,$totalOutflows')
+            ..writeln()
+            ..writeln('Net Cash Flow,,$net')
+            ..writeln('Closing Cash Balance (Bank & Cash),,${_n(cash['closing'])}')
+            ..writeln('Cash with Tellers,,${_n(cash['tillsNow'])}')
+            ..writeln('Total Closing Cash,,${_n(cash['totalClosing'])}');
+
+          // Unexplained difference display
+          if (cash['hasNoCashAccounts'] != true && cash['hasManualOpening'] == true && unexplained.abs() > 100) {
+            b.writeln('Unexplained Difference,,$unexplained');
+          }
+
+          b..writeln()
+            ..writeln('PORTFOLIO SNAPSHOT')
+            ..writeln('Live Loans,${_n(port['liveLoans'])},${_n(port['outstanding'])}')
+            ..writeln('Overdue Loans,${_n(port['overdueLoans'])},${_n(port['overdueAmount'])}')
+            ..writeln('PAR %,,${_n(port['parPercent']).toStringAsFixed(1)}%')
+            ..writeln('Total Members,${_n(memb['total'])}')
+            ..writeln('New Members This Month,${_n(memb['newThisMonth'])}');
+          
           await _saveCsv(ctx, 'monthly_report_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
         }
 
+        // PDF Export
+        Future<void> exportPdf() async {
+          try {
+            final pdf = pw.Document();
+            
+            // Build PDF content with professional layout
+            pdf.addPage(
+              pw.MultiPage(
+                pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(32),
+                build: (pw.Context pdfContext) => [
+                  // Header with logo area and title
+                  pw.Container(
+                    padding: const pw.EdgeInsets.only(bottom: 16),
+                    decoration: const pw.BoxDecoration(
+                      border: pw.Border(bottom: pw.BorderSide(width: 2, color: PdfColors.blue900)),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              'MBADIFA SACCO',
+                              style: pw.TextStyle(
+                                fontSize: 22,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.blue900,
+                              ),
+                            ),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              'Monthly Financial Report',
+                              style: const pw.TextStyle(
+                                fontSize: 11,
+                                color: PdfColors.grey700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.end,
+                          children: [
+                            pw.Text(
+                              r['period'] ?? '$month/$year',
+                              style: pw.TextStyle(
+                                fontSize: 16,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              'All amounts in UGX',
+                              style: const pw.TextStyle(
+                                fontSize: 9,
+                                color: PdfColors.grey700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+
+                  // Executive Summary KPIs in colored boxes
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      _pdfKpiBox('Total Inflows', _ugx(totalInflows), PdfColors.green700),
+                      _pdfKpiBox('Total Outflows', _ugx(totalOutflows), PdfColors.red700),
+                    ],
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      _pdfKpiBox('Net Cash Flow', _ugx(net), net >= 0 ? PdfColors.blue700 : PdfColors.orange700),
+                      _pdfKpiBox('Total Closing Cash', _ugx(_n(cash['totalClosing'])), PdfColors.teal700),
+                    ],
+                  ),
+                  pw.SizedBox(height: 24),
+
+                  // Cash Movement Statement Table
+                  pw.Text(
+                    'CASH MOVEMENT STATEMENT',
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.blue900,
+                    ),
+                  ),
+                  pw.SizedBox(height: 12),
+                  
+                  // Opening balance with conditional display
+                  if (cash['hasNoCashAccounts'] == true)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(10),
+                      margin: const pw.EdgeInsets.only(bottom: 12),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.blue50,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      ),
+                      child: pw.Text(
+                        'NOTE: Cash accounts not set up',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          color: PdfColors.blue900,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else if (cash['hasManualOpening'] != true)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(10),
+                      margin: const pw.EdgeInsets.only(bottom: 12),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.orange50,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      ),
+                      child: pw.Text(
+                        'WARNING: Opening balance not set for this month',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          color: PdfColors.orange900,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      decoration: const pw.BoxDecoration(
+                        color: PdfColors.grey100,
+                      ),
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Opening cash balance',
+                            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                          ),
+                          pw.Text(
+                            _ugx(_n(cash['opening'])),
+                            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  pw.SizedBox(height: 8),
+                  
+                  // INFLOWS TABLE
+                  _pdfSectionHeader('CASH INFLOWS'),
+                  _pdfTable([
+                    ['Loan repayments — principal', _ugx(_n(rep['principal']))],
+                    ['Loan repayments — interest', _ugx(_n(rep['interest']))],
+                    ['Loan repayments — charges', _ugx(_n(rep['charges']))],
+                    ['Savings deposits', _ugx(_n(sav['amount']))],
+                    ['Share purchases', _ugx(_n(sh['amount']))],
+                    ['Fixed deposits received', _ugx(_n(fd['amount']))],
+                    ['MTN Mobile Money & Airtel Money top-ups', _ugx(_n(topups['amount']))],
+                    ['Fees & penalties', _ugx(_n(income['fees']) + _n(income['penalties']))],
+                    ['Other income', _ugx(_n(income['other']))],
+                  ]),
+                  _pdfTableTotal('Total inflows', _ugx(totalInflows), PdfColors.green700),
+                  pw.SizedBox(height: 16),
+                  
+                  // OUTFLOWS TABLE
+                  _pdfSectionHeader('CASH OUTFLOWS'),
+                  _pdfTable([
+                    ['Loans disbursed', _ugx(_n(loans['amount']))],
+                    ['Savings withdrawals', _ugx(_n(savWd['amount']))],
+                    ['MTN Mobile Money & Airtel Money payouts', _ugx(_n(payouts['amount']))],
+                    ['Salaries & allowances', _ugx(_n(expense['salaries']))],
+                    ['Utilities & transport', _ugx(_n(expense['utilities']))],
+                    ['Office expenses', _ugx(_n(expense['officeExpenses']))],
+                    ['Other expenses', _ugx(_n(expense['other']))],
+                  ]),
+                  _pdfTableTotal('Total outflows', _ugx(totalOutflows), PdfColors.red700),
+                  pw.SizedBox(height: 16),
+                  
+                  // NET CASH FLOW SUMMARY
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: net >= 0 ? PdfColors.green50 : PdfColors.red50,
+                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'NET CASH FLOW',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            fontWeight: pw.FontWeight.bold,
+                            color: net >= 0 ? PdfColors.green900 : PdfColors.red900,
+                          ),
+                        ),
+                        pw.Text(
+                          _ugx(net),
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: net >= 0 ? PdfColors.green900 : PdfColors.red900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 12),
+                  
+                  // CLOSING BALANCE TABLE
+                  _pdfTable([
+                    ['Closing cash balance (Bank & Cash)', _ugx(_n(cash['closing']))],
+                    if (_n(cash['tillsNow']) > 0)
+                      ['Cash with tellers', _ugx(_n(cash['tillsNow']))]
+                    else if (_n(cash['nonTillAccounts']) == 0)
+                      ['Cash with tellers', 'No open till sessions'],
+                  ]),
+                  
+                  // Total closing cash - with helpful messages
+                  if (_n(cash['hasNoCashAccounts']) == true)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(12),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.orange50,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'TOTAL CLOSING CASH: Not set up',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.orange900,
+                            ),
+                          ),
+                          pw.SizedBox(height: 4),
+                          pw.Text(
+                            'Add cash/bank/mobile money accounts in Finance > Cash & Bank',
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              color: PdfColors.orange800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(12),
+                      decoration: const pw.BoxDecoration(
+                        color: PdfColors.blue900,
+                      ),
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'TOTAL CLOSING CASH',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.white,
+                            ),
+                          ),
+                          pw.Text(
+                            _ugx(_n(cash['totalClosing'])),
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  // Unexplained difference with conditional display
+                  if (cash['hasNoCashAccounts'] != true && cash['hasManualOpening'] == true && unexplained.abs() > 100) ...[
+                    pw.SizedBox(height: 12),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(10),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.amber50,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      ),
+                      child: pw.Row(
+                        children: [
+                          pw.Text(
+                            'Unexplained difference: ',
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              color: PdfColors.amber900,
+                            ),
+                          ),
+                          pw.Text(
+                            _ugx(unexplained),
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.amber900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  pw.SizedBox(height: 24),
+
+                  // Portfolio Snapshot Section
+                  pw.Text(
+                    'PORTFOLIO SNAPSHOT',
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.blue900,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'As of ${DateFormat('d MMMM yyyy').format(_dt(port['asOf']) ?? DateTime.now())}',
+                    style: const pw.TextStyle(
+                      fontSize: 9,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
+                  pw.SizedBox(height: 12),
+                  _pdfTable([
+                    ['Live loans', '${_n(port['liveLoans']).toInt()}'],
+                    ['Outstanding principal', _ugx(_n(port['outstanding']))],
+                    ['Overdue loans', '${_n(port['overdueLoans']).toInt()}'],
+                    ['Overdue amount', _ugx(_n(port['overdueAmount']))],
+                    ['Portfolio at Risk (PAR %)', '${_n(port['parPercent']).toStringAsFixed(1)}%'],
+                  ]),
+                  pw.SizedBox(height: 12),
+                  pw.Divider(thickness: 0.5),
+                  pw.SizedBox(height: 12),
+                  _pdfTable([
+                    ['Total members', '${_n(memb['total']).toInt()}'],
+                    ['New members this month', '${_n(memb['newThisMonth']).toInt()}'],
+                  ]),
+
+                  // Footer
+                  pw.SizedBox(height: 32),
+                  pw.Divider(),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Generated on ${DateFormat('d MMMM yyyy, HH:mm').format(DateTime.now())}',
+                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                      ),
+                      pw.Text(
+                        'MBADIFA SACCO',
+                        style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, fontWeight: pw.FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+
+            // Show PDF
+            await Printing.layoutPdf(
+              onLayout: (PdfPageFormat format) async => pdf.save(),
+              name: 'monthly_report_${year}_${month.toString().padLeft(2, '0')}.pdf',
+            );
+          } catch (e) {
+            if (ctx.mounted) {
+              _toast(ctx, 'PDF export failed: $e', error: true);
+            }
+          }
+        }
+
+        // Build the UI
         return [
+          // Opening balance status - clean and professional
+          if (cash['hasManualOpening'] == true)
+            Container(
+              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF0EA5E9), Color(0xFF06B6D4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xFF0EA5E9).withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.account_balance_wallet, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Opening Balance',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white.withOpacity(0.9),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _ugx(_n(cash['opening'])),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final result = await showDialog<int>(
+                        context: ctx,
+                        builder: (dialogCtx) => _SetOpeningBalanceDialog(
+                          year: year,
+                          month: month,
+                          currentValue: cash['hasManualOpening'] == true ? _n(cash['opening']).toInt() : null,
+                        ),
+                      );
+                      if (result != null && ctx.mounted) {
+                        try {
+                          final monthKey = '$year-${month.toString().padLeft(2, '0')}';
+                          await _db
+                              .collection('account_snapshots')
+                              .doc('${FirebaseService.sessionTenantId}-$monthKey')
+                              .set({
+                            'tenantId': FirebaseService.sessionTenantId,
+                            'month': monthKey,
+                            'opening': result,
+                            'hasManualOpening': true,
+                            'setAt': FieldValue.serverTimestamp(),
+                            'setBy': FirebaseService.currentUser?.displayName ??
+                                FirebaseService.currentUser?.email ??
+                                'Unknown',
+                          }, SetOptions(merge: true));
+                          
+                          print('✅ Opening balance saved: $result for $monthKey');
+                          print('📝 Document: ${FirebaseService.sessionTenantId}-$monthKey');
+                          
+                          _toast(ctx, 'Opening balance updated to ${_ugx(result)}');
+                          // Trigger rebuild by calling refresh method on parent state
+                          final periodState = ctx.findAncestorStateOfType<_PeriodTabState>();
+                          if (periodState != null) {
+                            print('🔄 Triggering refresh...');
+                            periodState.refresh();
+                          } else {
+                            print('⚠️ Could not find _PeriodTabState for refresh');
+                          }
+                        } catch (e) {
+                          print('❌ Failed to set opening balance: $e');
+                          _toast(ctx, 'Failed to set opening balance: $e', error: true);
+                        }
+                      }
+                    },
+                    icon: Icon(Icons.edit, size: 16),
+                    label: Text('Edit'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Color(0xFF0EA5E9),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Color(0xFFFDE047), width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Color(0xFFFDE047),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.info_outline, color: Color(0xFF92400E), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Opening balance not set',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Set the starting cash balance for accurate reconciliation',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFFA16207)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final result = await showDialog<int>(
+                        context: ctx,
+                        builder: (dialogCtx) => _SetOpeningBalanceDialog(
+                          year: year,
+                          month: month,
+                          currentValue: null,
+                        ),
+                      );
+                      if (result != null && ctx.mounted) {
+                        try {
+                          final monthKey = '$year-${month.toString().padLeft(2, '0')}';
+                          await _db
+                              .collection('account_snapshots')
+                              .doc('${FirebaseService.sessionTenantId}-$monthKey')
+                              .set({
+                            'tenantId': FirebaseService.sessionTenantId,
+                            'month': monthKey,
+                            'opening': result,
+                            'hasManualOpening': true,
+                            'setAt': FieldValue.serverTimestamp(),
+                            'setBy': FirebaseService.currentUser?.displayName ??
+                                FirebaseService.currentUser?.email ??
+                                'Unknown',
+                          }, SetOptions(merge: true));
+                          
+                          print('✅ Opening balance saved: $result for $monthKey');
+                          print('📝 Document: ${FirebaseService.sessionTenantId}-$monthKey');
+                          
+                          _toast(ctx, 'Opening balance set to ${_ugx(result)}');
+                          // Trigger rebuild
+                          final periodState = ctx.findAncestorStateOfType<_PeriodTabState>();
+                          if (periodState != null) {
+                            print('🔄 Triggering refresh...');
+                            periodState.refresh();
+                          } else {
+                            print('⚠️ Could not find _PeriodTabState for refresh');
+                          }
+                        } catch (e) {
+                          print('❌ Failed to set opening balance: $e');
+                          _toast(ctx, 'Failed to set opening balance: $e', error: true);
+                        }
+                      }
+                    },
+                    icon: Icon(Icons.add_circle_outline, size: 18),
+                    label: Text('Set Balance'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFFFBBF24),
+                      foregroundColor: Color(0xFF92400E),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
+          // Export buttons row
           Align(
             alignment: Alignment.centerRight,
-            child: _btn('Export CSV', Icons.file_download_outlined, export, primary: true),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                _btn('Export CSV', Icons.file_download_outlined, exportCsv),
+                _btn('Export PDF', Icons.picture_as_pdf_outlined, exportPdf, primary: true),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
+          
+          // KPI Cards with comparisons
           _KpiGrid(children: [
-            _Kpi(label: 'Loans disbursed', value: _ugx(_n(loans['amount'])), sub: tx(loans), icon: Icons.credit_card, color: _C.blue),
-            _Kpi(label: 'Loan repayments', value: _ugx(_n(rep['amount'])), sub: tx(rep), icon: Icons.payments_outlined, color: _C.green),
-            _Kpi(label: 'Savings deposits', value: _ugx(_n(sav['amount'])), sub: tx(sav), icon: Icons.savings_outlined, color: _C.teal),
-            _Kpi(label: 'Share purchases', value: _ugx(_n(sh['amount'])), sub: tx(sh), icon: Icons.pie_chart_outline, color: _C.purple),
+            _Kpi(
+              label: 'Total inflows',
+              value: _ugx(totalInflows),
+              sub: changeAmt(totalInflows, 'totalInflows'),
+              icon: Icons.arrow_downward,
+              color: _C.green,
+            ),
+            _Kpi(
+              label: 'Total outflows',
+              value: _ugx(totalOutflows),
+              sub: changeAmt(totalOutflows, 'totalOutflows'),
+              icon: Icons.arrow_upward,
+              color: _C.blue,
+            ),
+            _Kpi(
+              label: 'Net cash flow',
+              value: _ugx(net),
+              sub: changeAmt(net, 'netCashFlow'),
+              icon: net >= 0 ? Icons.trending_up : Icons.trending_down,
+              color: net >= 0 ? _C.green : _C.red,
+            ),
+            _Kpi(
+              label: 'Total closing cash',
+              value: _n(cash['hasNoCashAccounts']) == true 
+                  ? 'Not set up' 
+                  : _ugx(_n(cash['totalClosing'])),
+              sub: _n(cash['hasNoCashAccounts']) == true
+                  ? 'Add accounts in Finance > Cash & Bank'
+                  : (_n(cash['tillsNow']) > 0 
+                      ? 'Incl. ${_ugx(_n(cash['tillsNow']))} with tellers'
+                      : _n(cash['nonTillAccounts']) > 0
+                          ? 'Bank & cash accounts'
+                          : 'No open till sessions'),
+              icon: Icons.account_balance_wallet,
+              color: _C.navy,
+            ),
           ]),
           const SizedBox(height: 16),
+          
+          // Charts Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Cash Flow Breakdown Pie Chart
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: _cardDeco(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Cash flow breakdown', style: _ps(13.5, w: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text('Inflows vs outflows', style: _ps(10.5, c: _C.muted)),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 140,
+                        child: PieChart(
+                          PieChartData(
+                            sections: [
+                              PieChartSectionData(
+                                value: totalInflows.toDouble(),
+                                title: '${((totalInflows / (totalInflows + totalOutflows)) * 100).toStringAsFixed(1)}%',
+                                color: const Color(0xFF059669), // Professional teal-green
+                                radius: 50,
+                                titleStyle: _ps(11, c: Colors.white, w: FontWeight.w600),
+                              ),
+                              PieChartSectionData(
+                                value: totalOutflows.toDouble(),
+                                title: '${((totalOutflows / (totalInflows + totalOutflows)) * 100).toStringAsFixed(1)}%',
+                                color: const Color(0xFFDC2626), // Professional red
+                                radius: 50,
+                                titleStyle: _ps(11, c: Colors.white, w: FontWeight.w600),
+                              ),
+                            ],
+                            sectionsSpace: 2,
+                            centerSpaceRadius: 30,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _legendItem('Inflows', const Color(0xFF059669), _ugx(totalInflows)),
+                          _legendItem('Outflows', const Color(0xFFDC2626), _ugx(totalOutflows)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              
+              // Arrears Aging Bar Chart
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: _cardDeco(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Arrears aging', style: _ps(13.5, w: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text('Outstanding by days overdue', style: _ps(10.5, c: _C.muted)),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 140,
+                        child: BarChart(
+                          BarChartData(
+                            alignment: BarChartAlignment.spaceAround,
+                            maxY: [
+                              _n(port['arrears1_30']),
+                              _n(port['arrears31_60']),
+                              _n(port['arrears61_90']),
+                              _n(port['arrears90Plus']),
+                            ].reduce((a, b) => a > b ? a : b).toDouble() * 1.2,
+                            barGroups: [
+                              _barGroup(0, _n(port['arrears1_30']).toDouble(), const Color(0xFFF59E0B)), // Amber
+                              _barGroup(1, _n(port['arrears31_60']).toDouble(), const Color(0xFFEA580C)), // Orange  
+                              _barGroup(2, _n(port['arrears61_90']).toDouble(), const Color(0xFFDC2626)), // Red
+                              _barGroup(3, _n(port['arrears90Plus']).toDouble(), const Color(0xFF991B1B)), // Dark red
+                            ],
+                            titlesData: FlTitlesData(
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 42,
+                                  getTitlesWidget: (value, meta) {
+                                    if (value == 0) return const SizedBox();
+                                    return Text(
+                                      '${(value / 1000000).toStringAsFixed(0)}M',
+                                      style: _ps(9, c: _C.muted),
+                                    );
+                                  },
+                                ),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  getTitlesWidget: (value, meta) {
+                                    final labels = ['1-30', '31-60', '61-90', '90+'];
+                                    if (value.toInt() >= 0 && value.toInt() < labels.length) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: Text(labels[value.toInt()], style: _ps(10, c: _C.muted)),
+                                      );
+                                    }
+                                    return const SizedBox();
+                                  },
+                                ),
+                              ),
+                              rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            ),
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: 1000000,
+                              getDrawingHorizontalLine: (value) {
+                                return FlLine(
+                                  color: _C.border,
+                                  strokeWidth: 1,
+                                );
+                              },
+                            ),
+                            borderData: FlBorderData(show: false),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: Text('Days overdue', style: _ps(10.5, c: _C.muted)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Main content split
           _Split(
-            main: _StatementCard(title: 'Cash movement - ${r['period'] ?? ''}', rows: rows),
+            main: _StatementCard(
+              title: 'Cash movement - ${r['period'] ?? ''}',
+              rows: rows,
+            ),
             side: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Inflows vs Outflows
                 _BarsCard(
-                  title: 'Inflow mix',
-                  subtitle: 'Where the cash came from',
+                  title: 'Inflows vs outflows',
+                  subtitle: 'Net: ${_ugx(net)}',
                   items: [
-                    _BarItem('Loan repayments', _n(rep['amount']), _C.green, sub: tx(rep)),
-                    _BarItem('Savings deposits', _n(sav['amount']), _C.teal, sub: tx(sav)),
-                    _BarItem('Share purchases', _n(sh['amount']), _C.purple, sub: tx(sh)),
+                    _BarItem('Total inflows', totalInflows, _C.green),
+                    _BarItem('Total outflows', totalOutflows, _C.blue),
                   ],
                 ),
                 const SizedBox(height: 16),
-                _BarsCard(
-                  title: 'Inflows vs outflows',
-                  subtitle: 'Net cash flow: ${_ugx(net)}',
-                  items: [
-                    _BarItem('Total inflows', inflow, _C.green),
-                    _BarItem('Total outflows', outflow, _C.blue),
-                  ],
+                
+                // Portfolio snapshot
+                _Panel(
+                  title: 'Portfolio snapshot',
+                  subtitle: 'As of ${DateFormat('d MMM yyyy').format(_dt(port['asOf']) ?? DateTime.now())}',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _statRow('Live loans', '${_n(port['liveLoans']).toInt()}'),
+                      _statRow('Outstanding principal', _ugx(_n(port['outstanding']))),
+                      _statRow('Overdue loans', '${_n(port['overdueLoans']).toInt()}'),
+                      _statRow('Overdue amount', _ugx(_n(port['overdueAmount']))),
+                      _statRow('PAR %', '${_n(port['parPercent']).toStringAsFixed(1)}%'),
+                      const Divider(height: 20),
+                      _statRow('Total members', '${_n(memb['total']).toInt()}'),
+                      _statRow('New members this month', '${_n(memb['newThisMonth']).toInt()}'),
+                      if (_n(port['overdueLoans']) > 0) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Note: Migrated loans may show inaccurate arrears',
+                          style: _ps(10.5, c: _C.muted),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 10),
           Center(
-            child: Text('Based on loan, repayment, savings and share transactions recorded in the period.',
-                style: _ps(11, c: _C.muted), textAlign: TextAlign.center),
+            child: Text(
+              'Complete cash movement report including all income, expenses, and portfolio metrics. '
+              'Tills show current balance only (historical rollback not available).',
+              style: _ps(11, c: _C.muted),
+              textAlign: TextAlign.center,
+            ),
           ),
         ];
       },
+    );
+  }
+
+  Widget _statRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: _ps(12.5, c: _C.muted)),
+          Text(value, style: _ps(13, w: FontWeight.w600, c: _C.ink)),
+        ],
+      ),
+    );
+  }
+
+}
+
+// Set Opening Balance Dialog
+class _SetOpeningBalanceDialog extends StatefulWidget {
+  final int year, month;
+  final int? currentValue;
+  const _SetOpeningBalanceDialog({
+    required this.year, 
+    required this.month,
+    this.currentValue,
+  });
+  
+  @override
+  State<_SetOpeningBalanceDialog> createState() => _SetOpeningBalanceDialogState();
+}
+
+class _SetOpeningBalanceDialogState extends State<_SetOpeningBalanceDialog> {
+  final _controller = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill with current value if exists
+    if (widget.currentValue != null) {
+      _controller.text = widget.currentValue.toString();
+    }
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    final monthName = DateFormat.yMMMM().format(DateTime(widget.year, widget.month));
+    final isEditing = widget.currentValue != null;
+    
+    return AlertDialog(
+      title: Text('${isEditing ? 'Edit' : 'Set'} Opening Cash Balance'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'For $monthName',
+              style: _ps(14, w: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isEditing 
+                ? 'Update the opening cash position for this month.'
+                : 'This is a one-time manual entry for the starting cash position. '
+                  'Use this when migrating from another system or correcting historical data.',
+              style: _ps(12, c: _C.muted),
+            ),
+            if (isEditing) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 16, color: Colors.amber.shade700),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Current: UGX ${_nf.format(widget.currentValue!)}',
+                        style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Opening Balance (UGX)',
+                hintText: '0',
+                prefixText: 'UGX ',
+                border: const OutlineInputBorder(),
+                helperText: 'Enter the total cash + bank balance at start of month',
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter an amount';
+                }
+                final amount = int.tryParse(value.trim().replaceAll(',', ''));
+                if (amount == null) {
+                  return 'Please enter a valid number';
+                }
+                if (amount < 0) {
+                  return 'Amount cannot be negative';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (_formKey.currentState!.validate()) {
+              final amount = int.parse(_controller.text.trim().replaceAll(',', ''));
+              Navigator.pop(context, amount);
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _C.navy,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+// Helper for _Panel widget (add if not exists)
+class _Panel extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final Widget child;
+  
+  const _Panel({
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _C.border),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: _ps(14, w: FontWeight.w600, c: _C.ink)),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle!, style: _ps(11.5, c: _C.muted)),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Padding(padding: const EdgeInsets.all(16), child: child),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Income Statement Tab (Professional SACCO Template)
+// ═══════════════════════════════════════════════════════════════════════════════
+class _IncomeStatementTab extends StatelessWidget {
+  const _IncomeStatementTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return _PeriodTab(
+      title: 'Income Statement',
+      subtitle: 'Comprehensive income and expenses with comparison',
+      builder: (ctx, r, month, year) {
+        final income = _m(r['income']);
+        final expense = _m(r['expenses']);
+        final prev = _m(r['previous']);
+        final port = _m(r['portfolio']);
+        final loans = _m(r['loans']);
+        final rep = _m(r['repayments']);
+        final cash = _m(r['cash']);
+        
+        // Cash position
+        final openingCash = _n(cash['opening']);
+        final closingCash = _n(cash['closing']);
+        final tillsNow = _n(cash['tillsNow']);
+        final totalClosingCash = closingCash + tillsNow;
+        
+        // Interest income comes from loan repayments
+        final interestIncome = _n(rep['interest']);
+        final feesIncome = _n(income['fees']);
+        final penaltiesIncome = _n(income['penalties']);
+        final otherIncome = _n(income['other']);
+        
+        final totalIncome = interestIncome + feesIncome + penaltiesIncome + otherIncome;
+        final totalExpenses = _n(expense['total']);
+        final netSurplus = totalIncome - totalExpenses;
+        final margin = totalIncome > 0 ? (netSurplus / totalIncome * 100) : 0.0;
+        
+        // Previous month values
+        final prevInterest = _n(prev['repayments'] is Map ? prev['repayments']['interest'] : 0);
+        final prevFees = _n(prev['feesIncome']);
+        final prevPenalties = _n(prev['penaltiesIncome']);
+        final prevOther = _n(prev['otherIncome']);
+        final prevTotalIncome = prevInterest + prevFees + prevPenalties + prevOther;
+        final prevExpenses = _n(prev['expenses']);
+        
+        String changePercent(num current, num previous) {
+          if (previous == 0) return '-';
+          final change = ((current - previous) / previous * 100);
+          final sign = change > 0 ? '+' : '';
+          return '$sign${change.toStringAsFixed(1)}%';
+        }
+        
+        // PDF helper functions
+        pw.TableRow _pdfIncomeRow(String label, num thisMonth, num lastMonth, String Function(num, num) changePercent) {
+          return pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(6),
+                child: pw.Text(label, style: pw.TextStyle(fontSize: 9)),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(6),
+                child: pw.Text(_nf.format(thisMonth), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9)),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(6),
+                child: pw.Text(_nf.format(lastMonth), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9)),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(6),
+                child: pw.Text(changePercent(thisMonth, lastMonth), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9)),
+              ),
+            ],
+          );
+        }
+        
+        pw.TableRow _pdfPortfolioRow(String label, String value) {
+          return pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(8),
+                child: pw.Text(label, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(8),
+                child: pw.Text(value, textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 10)),
+              ),
+            ],
+          );
+        }
+        
+        // CSV Export
+        Future<void> exportCsv() async {
+          final b = StringBuffer()
+            ..writeln('MBADIFA SACCO')
+            ..writeln('Monthly Financial Report')
+            ..writeln('Month: ${DateFormat.yMMMM().format(DateTime(year, month))}')
+            ..writeln('Prepared by: ${FirebaseService.currentUser?.displayName ?? FirebaseService.currentUser?.email ?? ""}')
+            ..writeln('Date: ${DateFormat('d MMMM yyyy').format(DateTime.now())}')
+            ..writeln()
+            ..writeln('Summary')
+            ..writeln('Total income,${totalIncome}')
+            ..writeln('Total expenses,${totalExpenses}')
+            ..writeln('Net surplus / (deficit),${netSurplus}')
+            ..writeln('Margin,${margin.toStringAsFixed(1)}%')
+            ..writeln()
+            ..writeln('1. Income')
+            ..writeln('Item,This month (UGX),Last month (UGX),Change %')
+            ..writeln('Interest on loans,${interestIncome},${prevInterest},${changePercent(interestIncome, prevInterest)}')
+            ..writeln('Loan processing fees,${feesIncome},${prevFees},${changePercent(feesIncome, prevFees)}')
+            ..writeln('Insurance and appraisal fees,0,0,-')
+            ..writeln('Penalties and late fees,${penaltiesIncome},${prevPenalties},${changePercent(penaltiesIncome, prevPenalties)}')
+            ..writeln('Membership and registration fees,0,0,-')
+            ..writeln('Other income,${otherIncome},${prevOther},${changePercent(otherIncome, prevOther)}')
+            ..writeln('Total income,${totalIncome},${prevTotalIncome},${changePercent(totalIncome, prevTotalIncome)}')
+            ..writeln()
+            ..writeln('2. Expenses')
+            ..writeln('Item,This month (UGX),Last month (UGX),Change %')
+            ..writeln('Interest paid on member savings,0,0,-')
+            ..writeln('Salaries and wages,${_n(expense['salaries'])},${_n(prev['salaries'])},${changePercent(_n(expense['salaries']), _n(prev['salaries']))}')
+            ..writeln('Rent and utilities,${_n(expense['utilities'])},${_n(prev['utilities'])},${changePercent(_n(expense['utilities']), _n(prev['utilities']))}')
+            ..writeln('Transport and communication,0,0,-')
+            ..writeln('Loan loss provisions / write-offs,0,0,-')
+            ..writeln('Other operating expenses,${_n(expense['officeExpenses']) + _n(expense['other'])},${_n(prev['officeExpenses']) + _n(prev['other'])},-')
+            ..writeln('Total expenses,${totalExpenses},${prevExpenses},${changePercent(totalExpenses, prevExpenses)}')
+            ..writeln()
+            ..writeln('NET SURPLUS / (DEFICIT),${netSurplus}')
+            ..writeln()
+            ..writeln('3. Cash Position')
+            ..writeln('Opening cash balance,${openingCash}')
+            ..writeln('Net surplus / (deficit),${netSurplus}')
+            ..writeln('Closing cash (bank/safe),${closingCash}')
+            ..writeln('Cash with tellers,${tillsNow}')
+            ..writeln('Total closing cash,${totalClosingCash}')
+            ..writeln()
+            ..writeln('4. Loan portfolio snapshot')
+            ..writeln('Loans disbursed this month,${_n(loans['amount'])}')
+            ..writeln('Repayments collected,${_n(rep['amount'])}')
+            ..writeln('Outstanding loan book (month end),${_n(port['outstanding'])}')
+            ..writeln('Loans in arrears,${_n(port['overdueAmount'])}')
+            ..writeln('Portfolio at risk (arrears / outstanding),${_n(port['parPercent']).toStringAsFixed(1)}%')
+            ..writeln('Active borrowers,${_n(port['liveLoans'])}')
+            ..writeln()
+            ..writeln('Basis: cash. Interest income is counted when a repayment is recorded. Amounts in Uganda Shillings (UGX).');
+          
+          await _saveCsv(ctx, 'income_statement_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
+        }
+        
+        // PDF Export - Professional template matching
+        Future<void> exportPdf() async {
+          try {
+            final pdf = pw.Document();
+            final monthName = DateFormat.yMMMM().format(DateTime(year, month));
+            
+            // Load logo
+            final logoData = await rootBundle.load('assets/images/mbadifa-logo.png');
+            final logoImage = pw.MemoryImage(logoData.buffer.asUint8List());
+            
+            pdf.addPage(
+              pw.MultiPage(
+                pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(40),
+                build: (ctx) => [
+                  // Professional Header with Logo
+                  pw.Container(
+                    padding: const pw.EdgeInsets.only(bottom: 20),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border(bottom: pw.BorderSide(width: 2, color: PdfColors.grey800)),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        // Logo and SACCO name
+                        pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            pw.Container(
+                              width: 60,
+                              height: 60,
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                              ),
+                              child: pw.Padding(
+                                padding: const pw.EdgeInsets.all(6),
+                                child: pw.Image(logoImage),
+                              ),
+                            ),
+                            pw.SizedBox(width: 12),
+                            pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Text(
+                                  'MBADIFA SACCO',
+                                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900),
+                                ),
+                                pw.SizedBox(height: 2),
+                                pw.Text(
+                                  'Mbarara District Farmers Association',
+                                  style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                                ),
+                                pw.SizedBox(height: 4),
+                                pw.Text(
+                                  'Monthly Financial Report',
+                                  style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        // Report details
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.end,
+                          children: [
+                            pw.Text('Period', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                            pw.Text(monthName, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                            pw.SizedBox(height: 8),
+                            pw.Text('Prepared by', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                            pw.Text(
+                              FirebaseService.currentUser?.displayName ?? FirebaseService.currentUser?.email ?? '__________',
+                              style: pw.TextStyle(fontSize: 10),
+                            ),
+                            pw.SizedBox(height: 4),
+                            pw.Text('Date: ${DateFormat('d MMM yyyy').format(DateTime.now())}', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+                  
+                  // Summary box
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(14),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey100,
+                      border: pw.Border.all(width: 1.5, color: PdfColors.grey800),
+                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                      children: [
+                        pw.Column(children: [
+                          pw.Text('Total income', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                          pw.SizedBox(height: 2),
+                          pw.Text('UGX ${_nf.format(totalIncome)}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                        ]),
+                        pw.Container(width: 1, height: 30, color: PdfColors.grey400),
+                        pw.Column(children: [
+                          pw.Text('Total expenses', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                          pw.SizedBox(height: 2),
+                          pw.Text('UGX ${_nf.format(totalExpenses)}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                        ]),
+                        pw.Container(width: 1, height: 30, color: PdfColors.grey400),
+                        pw.Column(children: [
+                          pw.Text(netSurplus >= 0 ? 'Net surplus' : 'Net deficit', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                          pw.SizedBox(height: 2),
+                          pw.Text('UGX ${_nf.format(netSurplus.abs())}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                        ]),
+                        pw.Container(width: 1, height: 30, color: PdfColors.grey400),
+                        pw.Column(children: [
+                          pw.Text('Margin', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                          pw.SizedBox(height: 2),
+                          pw.Text('${margin.toStringAsFixed(1)}%', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                        ]),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 24),
+                  
+                  // Income table
+                  pw.Text('1. Income', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 8),
+                  pw.Table(
+                    border: pw.TableBorder.all(),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(3),
+                      1: const pw.FlexColumnWidth(2),
+                      2: const pw.FlexColumnWidth(2),
+                      3: const pw.FlexColumnWidth(1),
+                    },
+                    children: [
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                        children: [
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Item', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('This month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Last month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Change %', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                        ],
+                      ),
+                      _pdfIncomeRow('Interest on loans', interestIncome, prevInterest, changePercent),
+                      _pdfIncomeRow('Loan processing fees', feesIncome, prevFees, changePercent),
+                      _pdfIncomeRow('Insurance and appraisal fees', 0, 0, changePercent),
+                      _pdfIncomeRow('Penalties and late fees', penaltiesIncome, prevPenalties, changePercent),
+                      _pdfIncomeRow('Membership and registration fees', 0, 0, changePercent),
+                      _pdfIncomeRow('Other income', otherIncome, prevOther, changePercent),
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.grey200),
+                        children: [
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Total income', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(totalIncome), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(prevTotalIncome), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(changePercent(totalIncome, prevTotalIncome), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
+                        ],
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 20),
+                  
+                  // Expenses table (similar structure)
+                  pw.Text('2. Expenses', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 8),
+                  pw.Table(
+                    border: pw.TableBorder.all(),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(3),
+                      1: const pw.FlexColumnWidth(2),
+                      2: const pw.FlexColumnWidth(2),
+                      3: const pw.FlexColumnWidth(1),
+                    },
+                    children: [
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                        children: [
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Item', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('This month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Last month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Change %', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                        ],
+                      ),
+                      _pdfIncomeRow('Interest paid on member savings', 0, 0, changePercent),
+                      _pdfIncomeRow('Salaries and wages', _n(expense['salaries']), _n(prev['salaries']), changePercent),
+                      _pdfIncomeRow('Rent and utilities', _n(expense['utilities']), _n(prev['utilities']), changePercent),
+                      _pdfIncomeRow('Transport and communication', 0, 0, changePercent),
+                      _pdfIncomeRow('Loan loss provisions / write-offs', 0, 0, changePercent),
+                      _pdfIncomeRow('Other operating expenses', _n(expense['officeExpenses']) + _n(expense['other']), _n(prev['officeExpenses']) + _n(prev['other']), changePercent),
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.grey200),
+                        children: [
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Total expenses', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(totalExpenses), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(prevExpenses), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
+                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(changePercent(totalExpenses, prevExpenses), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
+                        ],
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 16),
+                  
+                  // Net surplus/deficit
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey800,
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('NET SURPLUS / (DEFICIT)', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+                        pw.Text('UGX ${_nf.format(netSurplus)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+                      ],
+                    ),
+                  ),
+                  
+                  pw.SizedBox(height: 24),
+                  
+                  // Cash Position
+                  pw.Text('3. Cash Position', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 8),
+                  pw.Table(
+                    border: pw.TableBorder.all(),
+                    children: [
+                      _pdfPortfolioRow('Opening cash balance', 'UGX ${_nf.format(openingCash)}'),
+                      _pdfPortfolioRow('Net surplus / (deficit)', 'UGX ${_nf.format(netSurplus)}'),
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.grey200),
+                        children: [
+                          pw.Container(height: 8, child: pw.SizedBox()),
+                          pw.Container(height: 8, child: pw.SizedBox()),
+                        ],
+                      ),
+                      _pdfPortfolioRow('Closing cash (bank/safe)', 'UGX ${_nf.format(closingCash)}'),
+                      _pdfPortfolioRow('Cash with tellers', 'UGX ${_nf.format(tillsNow)}'),
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(color: PdfColors.green100),
+                        children: [
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(10),
+                            child: pw.Text('Total closing cash', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(10),
+                            child: pw.Text('UGX ${_nf.format(totalClosingCash)}', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  
+                  pw.SizedBox(height: 24),
+                  
+                  // Loan portfolio snapshot
+                  pw.Text('4. Loan portfolio snapshot', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 8),
+                  pw.Table(
+                    border: pw.TableBorder.all(),
+                    children: [
+                      _pdfPortfolioRow('Loans disbursed this month', 'UGX ${_nf.format(_n(loans['amount']))}'),
+                      _pdfPortfolioRow('Repayments collected', 'UGX ${_nf.format(_n(rep['amount']))}'),
+                      _pdfPortfolioRow('Outstanding loan book (month end)', 'UGX ${_nf.format(_n(port['outstanding']))}'),
+                      _pdfPortfolioRow('Loans in arrears', 'UGX ${_nf.format(_n(port['overdueAmount']))}'),
+                      _pdfPortfolioRow('Portfolio at risk (arrears / outstanding)', '${_n(port['parPercent']).toStringAsFixed(1)}%'),
+                      _pdfPortfolioRow('Active borrowers', '${_n(port['liveLoans'])} No.'),
+                    ],
+                  ),
+                  
+                  pw.SizedBox(height: 32),
+                  
+                  // Sign-off
+                  pw.Text('5. Sign-off', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 20),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.all(12),
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(color: PdfColors.grey400, width: 1),
+                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text('Prepared by', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                              pw.SizedBox(height: 30),
+                              pw.Container(
+                                padding: const pw.EdgeInsets.only(bottom: 2),
+                                decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 1.5))),
+                                child: pw.Text(
+                                  FirebaseService.currentUser?.displayName ?? FirebaseService.currentUser?.email ?? '',
+                                  style: pw.TextStyle(fontSize: 10),
+                                ),
+                              ),
+                              pw.SizedBox(height: 6),
+                              pw.Text('Date: ${DateFormat('d/M/yyyy').format(DateTime.now())}', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(width: 12),
+                      pw.Expanded(
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.all(12),
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(color: PdfColors.grey400, width: 1),
+                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text('Checked by (Manager)', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                              pw.SizedBox(height: 30),
+                              pw.Container(
+                                padding: const pw.EdgeInsets.only(bottom: 2),
+                                decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 1.5))),
+                                child: pw.Text('', style: pw.TextStyle(fontSize: 10)),
+                              ),
+                              pw.SizedBox(height: 6),
+                              pw.Text('Date: ____________', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(width: 12),
+                      pw.Expanded(
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.all(12),
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(color: PdfColors.grey400, width: 1),
+                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text('Approved by (Chairperson)', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                              pw.SizedBox(height: 30),
+                              pw.Container(
+                                padding: const pw.EdgeInsets.only(bottom: 2),
+                                decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 1.5))),
+                                child: pw.Text('', style: pw.TextStyle(fontSize: 10)),
+                              ),
+                              pw.SizedBox(height: 6),
+                              pw.Text('Date: ____________', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  pw.SizedBox(height: 16),
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey200,
+                      border: pw.Border.all(color: PdfColors.grey300),
+                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                    ),
+                    child: pw.Text(
+                      'Basis: cash. Interest income is counted when a repayment is recorded. Amounts in Uganda Shillings (UGX). Change % = (this month - last month) / last month.',
+                      style: pw.TextStyle(fontSize: 8),
+                    ),
+                  ),
+                  
+                  // Footer
+                  pw.SizedBox(height: 20),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('MBADIFA SACCO | Monthly Report', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                      pw.Text('Page 1', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                    ],
+                  ),
+                ],
+              ),
+            );
+            
+            await Printing.layoutPdf(
+              onLayout: (PdfPageFormat format) async => pdf.save(),
+              name: 'income_statement_${year}_${month.toString().padLeft(2, '0')}.pdf',
+            );
+          } catch (e) {
+            if (ctx.mounted) {
+              _toast(ctx, 'PDF export failed: $e', error: true);
+            }
+          }
+        }
+        
+        return [
+          // Clean Professional Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Color(0xFF1E293B), width: 2)),
+            ),
+            child: Row(
+              children: [
+                // Logo
+                Container(
+                  width: 65,
+                  height: 65,
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Image.asset('assets/images/mbadifa-logo.png'),
+                ),
+                const SizedBox(width: 18),
+                // SACCO Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('MBADIFA SACCO', style: _ps(18, w: FontWeight.w700, c: _C.navy)),
+                      const SizedBox(height: 2),
+                      Text('Mbarara District Farmers Association', style: _ps(10.5, c: Color(0xFF6B7280))),
+                      const SizedBox(height: 6),
+                      Text('Monthly Financial Report', style: _ps(13, w: FontWeight.w600, c: Color(0xFF1E40AF))),
+                    ],
+                  ),
+                ),
+                // Period & Date
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('Period', style: _ps(9.5, c: Color(0xFF6B7280))),
+                    Text(DateFormat.yMMMM().format(DateTime(year, month)), style: _ps(14, w: FontWeight.w700, c: _C.navy)),
+                    const SizedBox(height: 8),
+                    Text('Prepared: ${DateFormat('d MMM yyyy').format(DateTime.now())}', style: _ps(10, c: Color(0xFF6B7280))),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          
+          // Export buttons
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              spacing: 8,
+              children: [
+                _btn('Export CSV', Icons.file_download_outlined, exportCsv),
+                _btn('Export PDF', Icons.picture_as_pdf_outlined, exportPdf, primary: true),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Clean Summary Box
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _SummaryKpi('Total Income', _ugx(totalIncome), Color(0xFF059669)),
+                ),
+                Container(width: 1, height: 50, color: Color(0xFFE5E7EB)),
+                Expanded(
+                  child: _SummaryKpi('Total Expenses', _ugx(totalExpenses), Color(0xFFDC2626)),
+                ),
+                Container(width: 1, height: 50, color: Color(0xFFE5E7EB)),
+                Expanded(
+                  child: _SummaryKpi(
+                    netSurplus >= 0 ? 'Net Surplus' : 'Net Deficit',
+                    _ugx(netSurplus.abs()),
+                    netSurplus >= 0 ? Color(0xFF059669) : Color(0xFFDC2626),
+                  ),
+                ),
+                Container(width: 1, height: 50, color: Color(0xFFE5E7EB)),
+                Expanded(
+                  child: _SummaryKpi('Margin', '${margin.toStringAsFixed(1)}%', Color(0xFF0B2545)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // Income Table
+          _IncomeStatementSection(
+            title: '1. Income',
+            rows: [
+              _IncomeStatementRow('Interest on loans', interestIncome, prevInterest),
+              _IncomeStatementRow('Loan processing fees', feesIncome, prevFees),
+              _IncomeStatementRow('Insurance and appraisal fees', 0, 0), // Not tracked separately
+              _IncomeStatementRow('Penalties and late fees', penaltiesIncome, prevPenalties),
+              _IncomeStatementRow('Membership and registration fees', 0, 0), // Not tracked
+              _IncomeStatementRow('Other income', otherIncome, prevOther),
+            ],
+            total: _IncomeStatementRow('Total income', totalIncome, prevTotalIncome),
+          ),
+          const SizedBox(height: 24),
+          
+          // Expenses Table
+          _IncomeStatementSection(
+            title: '2. Expenses',
+            rows: [
+              _IncomeStatementRow('Interest paid on member savings', 0, 0), // Not tracked yet
+              _IncomeStatementRow('Salaries and wages', _n(expense['salaries']), _n(prev['salaries'])),
+              _IncomeStatementRow('Rent and utilities', _n(expense['utilities']), _n(prev['utilities'])),
+              _IncomeStatementRow('Transport and communication', 0, 0), // Not separated
+              _IncomeStatementRow('Loan loss provisions / write-offs', 0, 0), // Not tracked
+              _IncomeStatementRow('Other operating expenses', _n(expense['officeExpenses']) + _n(expense['other']), _n(prev['officeExpenses']) + _n(prev['other'])),
+            ],
+            total: _IncomeStatementRow('Total expenses', totalExpenses, prevExpenses),
+          ),
+          const SizedBox(height: 24),
+          
+          // Net Surplus/Deficit
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: netSurplus >= 0 ? Color(0xFFECFDF5) : Color(0xFFFEF2F2),
+              border: Border.all(
+                color: netSurplus >= 0 ? Color(0xFF10B981) : Color(0xFFEF4444),
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'NET SURPLUS / (DEFICIT)',
+                  style: _ps(15, w: FontWeight.w700, c: _C.navy),
+                ),
+                Text(
+                  _ugx(netSurplus),
+                  style: GoogleFonts.robotoMono(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: netSurplus >= 0 ? Color(0xFF10B981) : Color(0xFFEF4444),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          
+          // Cash Position
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('3. Cash Position', style: _ps(15, w: FontWeight.w700, c: _C.navy)),
+                const SizedBox(height: 16),
+                _PortfolioRow('Opening cash balance', _ugx(openingCash), ''),
+                _PortfolioRow('Net surplus / (deficit)', _ugx(netSurplus), ''),
+                const Divider(height: 24),
+                _PortfolioRow('Closing cash balance (bank/safe)', _ugx(closingCash), ''),
+                _PortfolioRow('Cash with tellers (open tills)', _ugx(tillsNow), ''),
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Color(0xFFF0FDF4),
+                    border: Border.all(color: Color(0xFF059669)),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total closing cash',
+                        style: _ps(14, w: FontWeight.w700, c: Color(0xFF065F46)),
+                      ),
+                      Text(
+                        _ugx(totalClosingCash),
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF065F46),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          
+          // Loan Portfolio Snapshot
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('4. Loan Portfolio Snapshot', style: _ps(15, w: FontWeight.w700, c: _C.navy)),
+                const SizedBox(height: 16),
+                _PortfolioRow('Loans disbursed this month', _ugx(_n(loans['amount'])), '${_n(loans['count'])} loans'),
+                _PortfolioRow('Repayments collected', _ugx(_n(rep['amount'])), '${_n(rep['count'])} payments'),
+                _PortfolioRow('Outstanding loan book (month end)', _ugx(_n(port['outstanding'])), ''),
+                _PortfolioRow('Loans in arrears', _ugx(_n(port['overdueAmount'])), '${_n(port['overdueLoans'])} loans'),
+                _PortfolioRow('Portfolio at risk (PAR)', '${_n(port['parPercent']).toStringAsFixed(1)}%', ''),
+                _PortfolioRow('Active borrowers', '${_n(port['liveLoans'])}', 'members'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          
+          // Sign-off Section
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('5. Sign-off', style: _ps(15, w: FontWeight.w700, c: _C.navy)),
+                const SizedBox(height: 28),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _SignatureBox(
+                        title: 'Prepared by',
+                        name: FirebaseService.currentUser?.displayName ?? 
+                              FirebaseService.currentUser?.email ?? 
+                              '',
+                        date: DateFormat('d/M/yyyy').format(DateTime.now()),
+                        showName: true,
+                      ),
+                    ),
+                    const SizedBox(width: 32),
+                    Expanded(
+                      child: _SignatureBox(
+                        title: 'Checked by (Manager)',
+                        name: '',
+                        date: '',
+                      ),
+                    ),
+                    const SizedBox(width: 32),
+                    Expanded(
+                      child: _SignatureBox(
+                        title: 'Approved by (Chairperson)',
+                        name: '',
+                        date: '',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Color(0xFFFAFAFA),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: Color(0xFF6B7280)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Basis: cash. Interest income is counted when a repayment is recorded. '
+                          'Amounts in Uganda Shillings (UGX). Change % = (this month - last month) / last month.',
+                          style: _ps(9.5, c: Color(0xFF6B7280)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ];
+      },
+    );
+  }
+}
+
+Widget _SummaryKpi(String label, String value, Color color) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: Column(
+      children: [
+        Text(label, style: _ps(10.5, c: Color(0xFF6B7280))),
+        const SizedBox(height: 8),
+        Text(value, style: GoogleFonts.robotoMono(
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: color,
+        )),
+      ],
+    ),
+  );
+}
+
+class _IncomeStatementRow {
+  final String label;
+  final num thisMonth;
+  final num lastMonth;
+  
+  const _IncomeStatementRow(this.label, this.thisMonth, this.lastMonth);
+  
+  String get change {
+    if (lastMonth == 0) return '-';
+    final pct = ((thisMonth - lastMonth) / lastMonth * 100);
+    final sign = pct > 0 ? '+' : '';
+    return '$sign${pct.toStringAsFixed(1)}%';
+  }
+}
+
+class _IncomeStatementSection extends StatelessWidget {
+  final String title;
+  final List<_IncomeStatementRow> rows;
+  final _IncomeStatementRow total;
+  
+  const _IncomeStatementSection({
+    required this.title,
+    required this.rows,
+    required this.total,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+            ),
+            child: Text(title, style: _ps(15, w: FontWeight.w700, c: _C.navy)),
+          ),
+          // Table
+          Table(
+            border: TableBorder.all(color: Color(0xFFD1D5DB), width: 1),
+            columnWidths: const {
+              0: FlexColumnWidth(3),
+              1: FlexColumnWidth(2),
+              2: FlexColumnWidth(2),
+              3: FlexColumnWidth(1),
+            },
+            children: [
+              // Header
+              TableRow(
+                decoration: BoxDecoration(color: Color(0xFFF9FAFB)),
+                children: [
+                  _TableCell('Item', isHeader: true),
+                  _TableCell('This month (UGX)', isHeader: true, alignRight: true),
+                  _TableCell('Last month (UGX)', isHeader: true, alignRight: true),
+                  _TableCell('Change %', isHeader: true, alignRight: true),
+                ],
+              ),
+              // Data rows
+              for (final row in rows)
+                TableRow(
+                  children: [
+                    _TableCell(row.label),
+                    _TableCell(_ugx(row.thisMonth), alignRight: true, isMono: true),
+                    _TableCell(_ugx(row.lastMonth), alignRight: true, isMuted: true, isMono: true),
+                    _TableCell(row.change, alignRight: true, changeColor: _getChangeColor(row.change)),
+                  ],
+                ),
+              // Total row
+              TableRow(
+                decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
+                children: [
+                  _TableCell(total.label, isBold: true),
+                  _TableCell(_ugx(total.thisMonth), alignRight: true, isBold: true, isMono: true),
+                  _TableCell(_ugx(total.lastMonth), alignRight: true, isMono: true),
+                  _TableCell(total.change, alignRight: true, isBold: true, changeColor: _getChangeColor(total.change)),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _TableHeader() {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+    child: Row(
+      children: [
+        Expanded(flex: 3, child: Text('Item', style: _ps(12, w: FontWeight.w600, c: _C.navy))),
+        Expanded(flex: 2, child: Text('This month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.navy))),
+        Expanded(flex: 2, child: Text('Last month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.navy))),
+        Expanded(flex: 1, child: Text('Change %', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.navy))),
+      ],
+    ),
+  );
+}
+
+Widget _TableRow(_IncomeStatementRow row) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+    child: Row(
+      children: [
+        Expanded(flex: 3, child: Text(row.label, style: _ps(13, c: _C.text))),
+        Expanded(
+          flex: 2,
+          child: Text(
+            _ugx(row.thisMonth),
+            textAlign: TextAlign.right,
+            style: GoogleFonts.robotoMono(fontSize: 13, color: _C.ink),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Text(
+            _ugx(row.lastMonth),
+            textAlign: TextAlign.right,
+            style: GoogleFonts.robotoMono(fontSize: 12.5, color: _C.muted),
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: Text(
+            row.change,
+            textAlign: TextAlign.right,
+            style: _ps(12.5, w: FontWeight.w500, c: _getChangeColor(row.change)),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _TableCell(
+  String text, {
+  bool isHeader = false,
+  bool isBold = false,
+  bool alignRight = false,
+  bool isMono = false,
+  bool isMuted = false,
+  Color? changeColor,
+}) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    child: Text(
+      text,
+      textAlign: alignRight ? TextAlign.right : TextAlign.left,
+      style: isMono
+          ? GoogleFonts.robotoMono(
+              fontSize: isHeader || isBold ? 12 : 12,
+              fontWeight: isHeader || isBold ? FontWeight.w600 : FontWeight.w400,
+              color: changeColor ?? (isMuted ? Color(0xFF6B7280) : _C.ink),
+            )
+          : _ps(
+              isHeader || isBold ? 12 : 12,
+              w: isHeader || isBold ? FontWeight.w600 : FontWeight.w400,
+              c: changeColor ?? (isMuted ? Color(0xFF6B7280) : _C.ink),
+            ),
+    ),
+  );
+}
+
+Color _getChangeColor(String change) {
+  if (change == '-') return _C.muted;
+  if (change.startsWith('+')) return Color(0xFF10B981);
+  if (change.startsWith('-')) return Color(0xFFEF4444);
+  return _C.muted;
+}
+
+Widget _PortfolioRow(String label, String value, String subtitle) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: _ps(13, c: _C.text)),
+        Row(
+          children: [
+            if (subtitle.isNotEmpty) ...[
+              Text(subtitle, style: _ps(11, c: _C.muted)),
+              const SizedBox(width: 12),
+            ],
+            Text(
+              value,
+              style: GoogleFonts.robotoMono(fontSize: 13.5, fontWeight: FontWeight.w600, color: _C.navy),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _SignatureBox extends StatelessWidget {
+  final String title;
+  final String name;
+  final String date;
+  final bool showName;
+  
+  const _SignatureBox({
+    required this.title,
+    required this.name,
+    required this.date,
+    this.showName = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: _ps(11, w: FontWeight.w600, c: Color(0xFF475569)),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          height: 60,
+          alignment: Alignment.bottomCenter,
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Color(0xFF334155), width: 1.5),
+            ),
+          ),
+          child: showName && name.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    name,
+                    style: GoogleFonts.dancingScript(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: _C.navy,
+                    ),
+                  ),
+                )
+              : null,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          date.isNotEmpty ? 'Date: $date' : 'Date: ___________',
+          style: _ps(10, c: Color(0xFF64748B)),
+        ),
+      ],
     );
   }
 }
@@ -1633,902 +4109,33 @@ class _IncomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _PeriodTab(
-      title: 'Income Statement',
-      subtitle: 'Complete profit & loss with portfolio snapshot',
+      title: 'Income Report',
+      subtitle: 'Interest, fees and penalties earned',
       builder: (ctx, r, month, year) {
-        return [_IncomeStatementReport(report: r, month: month, year: year)];
+        if (r['income'] is! Map) {
+          return const [
+            _EmptyCard(
+              icon: Icons.trending_up,
+              title: 'No income entries posted',
+              message: 'Interest, fee and penalty income is not being posted yet. Until income is recorded, '
+                  'the balance sheet cannot show a true surplus.',
+            ),
+          ];
+        }
+        return _txnReport(
+          ctx,
+          data: _m(r['income']),
+          period: '${r['period'] ?? ''}',
+          month: month,
+          year: year,
+          noun: 'income',
+          groupLabel: 'Source',
+          groupOf: (t) => '${t['source'] ?? 'Other'}',
+          accent: _C.green,
+          icon: Icons.trending_up,
+          fileStem: 'income_report',
+        );
       },
-    );
-  }
-}
-
-// Complete Income Statement Report with detailed line items
-class _IncomeStatementReport extends StatelessWidget {
-  final Map<String, dynamic> report;
-  final int month, year;
-
-  const _IncomeStatementReport({required this.report, required this.month, required this.year});
-
-  @override
-  Widget build(BuildContext context) {
-    final inc = _m(report['incomeData']);
-    final exp = _m(report['expenseData']);
-    final prev = _m(report['previousMonth']);
-    final prevInc = _m(prev['incomeData']);
-    final prevExp = _m(prev['expenseData']);
-    
-    // Income breakdown
-    final interestIncome = _n(inc['interest']);
-    final loanFees = _n(inc['fees']);
-    final insuranceFees = 0; // Not tracked separately yet
-    final penalties = _n(inc['penalties']);
-    final membershipFees = 0; // Not tracked separately yet
-    final otherIncome = _n(inc['other']);
-    final totalIncome = interestIncome + loanFees + insuranceFees + penalties + membershipFees + otherIncome;
-    
-    // Previous month income
-    final prevInterestIncome = _n(prevInc['interest']);
-    final prevLoanFees = _n(prevInc['fees']);
-    final prevInsuranceFees = 0;
-    final prevPenalties = _n(prevInc['penalties']);
-    final prevMembershipFees = 0;
-    final prevOtherIncome = _n(prevInc['other']);
-    final prevTotalIncome = prevInterestIncome + prevLoanFees + prevInsuranceFees + prevPenalties + prevMembershipFees + prevOtherIncome;
-    
-    // Expenses breakdown
-    final interestPaidSavings = 0; // Not tracked yet
-    final salaries = _n(exp['salaries']);
-    final rentUtilities = _n(exp['utilities']);
-    final transport = 0; // Combine from office expenses if needed
-    final loanLossProvisions = 0; // Not tracked yet
-    final otherExpenses = _n(exp['officeExpenses']) + _n(exp['other']);
-    final totalExpenses = interestPaidSavings + salaries + rentUtilities + transport + loanLossProvisions + otherExpenses;
-    
-    // Previous month expenses
-    final prevInterestPaidSavings = 0;
-    final prevSalaries = _n(prevExp['salaries']);
-    final prevRentUtilities = _n(prevExp['utilities']);
-    final prevTransport = 0;
-    final prevLoanLossProvisions = 0;
-    final prevOtherExpenses = _n(prevExp['officeExpenses']) + _n(prevExp['other']);
-    final prevTotalExpenses = prevInterestPaidSavings + prevSalaries + prevRentUtilities + prevTransport + prevLoanLossProvisions + prevOtherExpenses;
-    
-    final netSurplus = totalIncome - totalExpenses;
-    final prevNetSurplus = prevTotalIncome - prevTotalExpenses;
-    final margin = totalIncome > 0 ? (netSurplus / totalIncome * 100) : 0.0;
-    
-    // Portfolio snapshot
-    final loans = _m(report['loans']);
-    final repayments = _m(report['repayments']);
-    final portfolio = _m(report['portfolio']);
-    final loansDisb = _n(loans['amount']);
-    final repaymentsCol = _n(repayments['amount']);
-    final outstanding = _n(portfolio['outstanding']);
-    final arrears = _n(portfolio['overdueAmount']);
-    
-    final period = DateFormat.MMMM().format(DateTime(year, month));
-    
-    return LayoutBuilder(builder: (context, box) {
-      final pad = _padFor(box.maxWidth);
-      
-      return SingleChildScrollView(
-        padding: EdgeInsets.all(pad),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 1200),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Export buttons
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.end,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () => _exportIncomeStatementPdf(context),
-                    icon: const Icon(Icons.picture_as_pdf, size: 16),
-                    label: Text('Export PDF', style: _ps(13)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              
-              // Header summary box
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _C.border, width: 2),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _SummaryCol('Total income', totalIncome),
-                    ),
-                    Container(width: 1, height: 40, color: _C.border),
-                    Expanded(
-                      child: _SummaryCol('Total expenses', totalExpenses),
-                    ),
-                    Container(width: 1, height: 40, color: _C.border),
-                    Expanded(
-                      child: _SummaryCol('Net surplus', netSurplus),
-                    ),
-                    Container(width: 1, height: 40, color: _C.border),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Text('Margin', style: _ps(12, c: _C.muted)),
-                          const SizedBox(height: 4),
-                          Text('${margin.toStringAsFixed(1)}%', style: _ps(18, w: FontWeight.w700, c: _C.blue)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // 1. Income section
-              Container(
-                decoration: _cardDeco(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('1. Income', style: _ps(16, w: FontWeight.w700)),
-                    const SizedBox(height: 16),
-                    _buildIncomeExpenseTable([
-                      _IncomeStatementLine('Interest on loans', interestIncome, prevInterestIncome),
-                      _IncomeStatementLine('Loan processing fees', loanFees, prevLoanFees),
-                      _IncomeStatementLine('Insurance and appraisal fees', insuranceFees, prevInsuranceFees),
-                      _IncomeStatementLine('Penalties and late fees', penalties, prevPenalties),
-                      _IncomeStatementLine('Membership and registration fees', membershipFees, prevMembershipFees),
-                      _IncomeStatementLine('Other income', otherIncome, prevOtherIncome),
-                    ]),
-                    const Divider(height: 24),
-                    _buildIncomeExpenseTable([
-                      _IncomeStatementLine('Total income', totalIncome, prevTotalIncome, bold: true),
-                    ]),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              // 2. Expenses section
-              Container(
-                decoration: _cardDeco(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('2. Expenses', style: _ps(16, w: FontWeight.w700)),
-                    const SizedBox(height: 16),
-                    _buildIncomeExpenseTable([
-                      _IncomeStatementLine('Interest paid on member savings', interestPaidSavings, prevInterestPaidSavings),
-                      _IncomeStatementLine('Salaries and wages', salaries, prevSalaries),
-                      _IncomeStatementLine('Rent and utilities', rentUtilities, prevRentUtilities),
-                      _IncomeStatementLine('Transport and communication', transport, prevTransport),
-                      _IncomeStatementLine('Loan loss provisions / write-offs', loanLossProvisions, prevLoanLossProvisions),
-                      _IncomeStatementLine('Other operating expenses', otherExpenses, prevOtherExpenses),
-                    ]),
-                    const Divider(height: 24),
-                    _buildIncomeExpenseTable([
-                      _IncomeStatementLine('Total expenses', totalExpenses, prevTotalExpenses, bold: true),
-                    ]),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              // Net surplus banner
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: netSurplus >= 0 ? _C.green : _C.red,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('NET SURPLUS / (DEFICIT)', style: _ps(14, w: FontWeight.w700, c: Colors.white)),
-                    Text(_ugx(netSurplus), style: _ps(18, w: FontWeight.w700, c: Colors.white)),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // 3. Loan portfolio snapshot
-              Container(
-                decoration: _cardDeco(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('3. Loan portfolio snapshot', style: _ps(16, w: FontWeight.w700)),
-                    const SizedBox(height: 16),
-                    _buildPortfolioTable([
-                      ['Loans disbursed this month', _ugx(loansDisb)],
-                      ['Repayments collected', _ugx(repaymentsCol)],
-                    ]),
-                    const SizedBox(height: 12),
-                    _buildPortfolioTable([
-                      ['Outstanding loan book (month end)', _ugx(outstanding)],
-                      ['Loans in arrears', _ugx(arrears)],
-                    ]),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-  
-  Widget _buildIncomeExpenseTable(List<_IncomeStatementLine> lines) {
-    return Table(
-      columnWidths: const {
-        0: FlexColumnWidth(3),
-        1: FlexColumnWidth(2),
-        2: FlexColumnWidth(2),
-        3: FlexColumnWidth(1),
-      },
-      children: [
-        TableRow(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text('Item', style: _ps(12, w: FontWeight.w600, c: _C.muted)),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text('This month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.muted)),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text('Last month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.muted)),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text('Change %', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.muted)),
-            ),
-          ],
-        ),
-        ...lines.map((line) => TableRow(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(line.label, style: _ps(13, w: line.bold ? FontWeight.w600 : FontWeight.w400)),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(_money(line.current, dash: false), textAlign: TextAlign.right, 
-                  style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: line.bold ? FontWeight.w600 : FontWeight.w400)),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(_money(line.previous, dash: false), textAlign: TextAlign.right,
-                  style: GoogleFonts.robotoMono(fontSize: 13, fontWeight: line.bold ? FontWeight.w600 : FontWeight.w400, color: _C.muted)),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(line.changePercent, textAlign: TextAlign.right,
-                  style: GoogleFonts.robotoMono(fontSize: 12, fontWeight: FontWeight.w500, color: line.changeColor)),
-            ),
-          ],
-        )),
-      ],
-    );
-  }
-  
-  Widget _buildPortfolioTable(List<List<String>> rows) {
-    return Table(
-      border: TableBorder.all(color: _C.border),
-      columnWidths: const {
-        0: FlexColumnWidth(3),
-        1: FlexColumnWidth(2),
-      },
-      children: rows.map((row) => TableRow(
-        children: row.map((cell) => Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(cell, 
-              textAlign: row.indexOf(cell) == 1 ? TextAlign.right : TextAlign.left,
-              style: _ps(13, w: FontWeight.w500)),
-        )).toList(),
-      )).toList(),
-    );
-  }
-  
-  void _exportIncomeStatementPdf(BuildContext context) async {
-    // Will implement detailed PDF export to match the screenshot
-    _toast(context, 'PDF export coming soon with detailed format');
-  }
-}
-
-class _IncomeStatementLine {
-  final String label;
-  final num current, previous;
-  final bool bold;
-  
-  _IncomeStatementLine(this.label, this.current, this.previous, {this.bold = false});
-  
-  String get changePercent {
-    if (previous == 0 && current == 0) return '-';
-    if (previous == 0) return '∞';
-    final pct = ((current - previous) / previous * 100);
-    return '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(0)}%';
-  }
-  
-  Color get changeColor {
-    if (current == previous) return _C.muted;
-    return current > previous ? _C.green : _C.red;
-  }
-}
-
-class _SummaryCol extends StatelessWidget {
-  final String label;
-  final num amount;
-  
-  const _SummaryCol(this.label, this.amount);
-  
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(label, style: _ps(12, c: _C.muted)),
-        const SizedBox(height: 4),
-        Text(_ugx(amount), style: _ps(18, w: FontWeight.w700, c: _C.navy)),
-      ],
-    );
-  }
-}
-
-// Old widgets to remove later
-// Income Statement with detailed breakdown, comparison & exports
-class _IncomeStatement extends StatelessWidget {
-  final Map<String, dynamic> report;
-  final int month, year;
-
-  const _IncomeStatement({required this.report, required this.month, required this.year});
-
-  @override
-  Widget build(BuildContext context) {
-    print('📊 Income Statement - Report keys: ${report.keys.toList()}');
-    final inc = _m(report['incomeData']);
-    final exp = _m(report['expenseData']);
-    final prev = _m(report['previousMonth']);
-    final prevInc = _m(prev['incomeData']);
-    final prevExp = _m(prev['expenseData']);
-    print('📊 Income: $inc');
-    print('📊 Expense: $exp');
-
-    final interest = _n(inc['interest']);
-    final charges = _n(inc['loanCharges']);
-    final fees = _n(inc['fees']);
-    final penalties = _n(inc['penalties']);
-    final otherInc = _n(inc['other']);
-    final totalInc = interest + charges + fees + penalties + otherInc;
-
-    final salaries = _n(exp['salaries']);
-    final utilities = _n(exp['utilities']);
-    final office = _n(exp['officeExpenses']);
-    final otherExp = _n(exp['other']);
-    final totalExp = salaries + utilities + office + otherExp;
-
-    final netIncome = totalInc - totalExp;
-
-    // Previous month comparison
-    final prevInterest = _n(prevInc['interest']);
-    final prevCharges = _n(prevInc['loanCharges']);
-    final prevFees = _n(prevInc['fees']);
-    final prevPenalties = _n(prevInc['penalties']);
-    final prevOtherInc = _n(prevInc['other']);
-    final prevTotalInc = prevInterest + prevCharges + prevFees + prevPenalties + prevOtherInc;
-
-    final prevSalaries = _n(prevExp['salaries']);
-    final prevUtilities = _n(prevExp['utilities']);
-    final prevOffice = _n(prevExp['officeExpenses']);
-    final prevOtherExp = _n(prevExp['other']);
-    final prevTotalExp = prevSalaries + prevUtilities + prevOffice + prevOtherExp;
-
-    final prevNetIncome = prevTotalInc - prevTotalExp;
-
-    // Portfolio metrics
-    final loans = _m(report['portfolio']);
-    final outstanding = _n(loans['outstanding']);
-    final overdue = _n(loans['overdueAmount']);
-    final par = outstanding > 0 ? (overdue / outstanding * 100) : 0.0;
-
-    final period = '${DateFormat.MMMM().format(DateTime(year, month))} $year';
-
-    return LayoutBuilder(builder: (context, box) {
-      final pad = _padFor(box.maxWidth);
-      final wide = box.maxWidth > 900;
-
-      return SingleChildScrollView(
-        padding: EdgeInsets.all(pad),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: _maxContentWidth),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Export buttons
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.end,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () => _exportIncomeStatementCsv(context),
-                    icon: const Icon(Icons.download, size: 16),
-                    label: Text('Export CSV', style: _ps(13)),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () => _exportIncomeStatementPdf(context),
-                    icon: const Icon(Icons.picture_as_pdf, size: 16),
-                    label: Text('Export PDF', style: _ps(13)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Summary cards
-              if (wide)
-                Row(
-                  children: [
-                    Expanded(child: _SummaryCard(label: 'Total Income', amount: totalInc, color: _C.green)),
-                    const SizedBox(width: 16),
-                    Expanded(child: _SummaryCard(label: 'Total Expenses', amount: totalExp, color: _C.red)),
-                    const SizedBox(width: 16),
-                    Expanded(
-                        child: _SummaryCard(
-                            label: 'Net Income', amount: netIncome, color: netIncome >= 0 ? _C.blue : _C.red)),
-                  ],
-                )
-              else ...[
-                _SummaryCard(label: 'Total Income', amount: totalInc, color: _C.green),
-                const SizedBox(height: 12),
-                _SummaryCard(label: 'Total Expenses', amount: totalExp, color: _C.red),
-                const SizedBox(height: 12),
-                _SummaryCard(label: 'Net Income', amount: netIncome, color: netIncome >= 0 ? _C.blue : _C.red),
-              ],
-
-              const SizedBox(height: 24),
-
-              // Income & Expense breakdown
-              if (wide)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _IncomeBreakdown(
-                        interest: interest,
-                        charges: charges,
-                        fees: fees,
-                        penalties: penalties,
-                        other: otherInc,
-                        total: totalInc,
-                        prevInterest: prevInterest,
-                        prevCharges: prevCharges,
-                        prevFees: prevFees,
-                        prevPenalties: prevPenalties,
-                        prevOther: prevOtherInc,
-                        prevTotal: prevTotalInc,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _ExpenseBreakdown(
-                        salaries: salaries,
-                        utilities: utilities,
-                        office: office,
-                        other: otherExp,
-                        total: totalExp,
-                        prevSalaries: prevSalaries,
-                        prevUtilities: prevUtilities,
-                        prevOffice: prevOffice,
-                        prevOther: prevOtherExp,
-                        prevTotal: prevTotalExp,
-                      ),
-                    ),
-                  ],
-                )
-              else ...[
-                _IncomeBreakdown(
-                  interest: interest,
-                  charges: charges,
-                  fees: fees,
-                  penalties: penalties,
-                  other: otherInc,
-                  total: totalInc,
-                  prevInterest: prevInterest,
-                  prevCharges: prevCharges,
-                  prevFees: prevFees,
-                  prevPenalties: prevPenalties,
-                  prevOther: prevOtherInc,
-                  prevTotal: prevTotalInc,
-                ),
-                const SizedBox(height: 16),
-                _ExpenseBreakdown(
-                  salaries: salaries,
-                  utilities: utilities,
-                  office: office,
-                  other: otherExp,
-                  total: totalExp,
-                  prevSalaries: prevSalaries,
-                  prevUtilities: prevUtilities,
-                  prevOffice: prevOffice,
-                  prevOther: prevOtherExp,
-                  prevTotal: prevTotalExp,
-                ),
-              ],
-
-              const SizedBox(height: 24),
-
-              // Portfolio quality
-              _PortfolioQuality(outstanding: outstanding, overdue: overdue, par: par),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-
-  void _exportIncomeStatementCsv(BuildContext context) async {
-    final inc = _m(report['incomeData']);
-    final exp = _m(report['expenseData']);
-
-    final interest = _n(inc['interest']);
-    final charges = _n(inc['loanCharges']);
-    final fees = _n(inc['fees']);
-    final penalties = _n(inc['penalties']);
-    final otherInc = _n(inc['other']);
-    final totalInc = interest + charges + fees + penalties + otherInc;
-
-    final salaries = _n(exp['salaries']);
-    final utilities = _n(exp['utilities']);
-    final office = _n(exp['officeExpenses']);
-    final otherExp = _n(exp['other']);
-    final totalExp = salaries + utilities + office + otherExp;
-
-    final netIncome = totalInc - totalExp;
-    final period = '${DateFormat.MMMM().format(DateTime(year, month))} $year';
-
-    final csv = StringBuffer()
-      ..writeln('MBADIFA SACCO')
-      ..writeln('INCOME STATEMENT')
-      ..writeln('For the month ended $period')
-      ..writeln('Amounts in UGX')
-      ..writeln('')
-      ..writeln('INCOME')
-      ..writeln('Interest on loans,$interest')
-      ..writeln('Loan charges,$charges')
-      ..writeln('Fees,$fees')
-      ..writeln('Penalties,$penalties')
-      ..writeln('Other income,$otherInc')
-      ..writeln('Total Income,$totalInc')
-      ..writeln('')
-      ..writeln('EXPENSES')
-      ..writeln('Salaries & wages,$salaries')
-      ..writeln('Utilities,$utilities')
-      ..writeln('Office expenses,$office')
-      ..writeln('Other expenses,$otherExp')
-      ..writeln('Total Expenses,$totalExp')
-      ..writeln('')
-      ..writeln('NET INCOME,$netIncome');
-
-    final fileName = 'income_statement_${year}_${month.toString().padLeft(2, '0')}.csv';
-    _saveCsv(context, fileName, csv.toString());
-  }
-
-  void _exportIncomeStatementPdf(BuildContext context) async {
-    final inc = _m(report['incomeData']);
-    final exp = _m(report['expenseData']);
-
-    final interest = _n(inc['interest']);
-    final charges = _n(inc['loanCharges']);
-    final fees = _n(inc['fees']);
-    final penalties = _n(inc['penalties']);
-    final otherInc = _n(inc['other']);
-    final totalInc = interest + charges + fees + penalties + otherInc;
-
-    final salaries = _n(exp['salaries']);
-    final utilities = _n(exp['utilities']);
-    final office = _n(exp['officeExpenses']);
-    final otherExp = _n(exp['other']);
-    final totalExp = salaries + utilities + office + otherExp;
-
-    final netIncome = totalInc - totalExp;
-    final period = '${DateFormat.MMMM().format(DateTime(year, month))} $year';
-
-    final pdf = pw.Document();
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(36),
-        build: (ctx) => [
-          // Header
-          pw.Center(
-            child: pw.Column(children: [
-              pw.Text('MBADIFA SACCO', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 4),
-              pw.Text('INCOME STATEMENT', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 2),
-              pw.Text('For the month ended $period   |   Amounts in UGX',
-                  style: const pw.TextStyle(fontSize: 9)),
-            ]),
-          ),
-          pw.SizedBox(height: 24),
-
-          // Income section
-          pw.Text('INCOME', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 8),
-          _pdfIncomeRow('Interest on loans', interest),
-          _pdfIncomeRow('Loan charges', charges),
-          _pdfIncomeRow('Fees', fees),
-          _pdfIncomeRow('Penalties', penalties),
-          _pdfIncomeRow('Other income', otherInc),
-          pw.Divider(),
-          _pdfIncomeRow('Total Income', totalInc, bold: true),
-          pw.SizedBox(height: 16),
-
-          // Expenses section
-          pw.Text('EXPENSES', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 8),
-          _pdfIncomeRow('Salaries & wages', salaries),
-          _pdfIncomeRow('Utilities', utilities),
-          _pdfIncomeRow('Office expenses', office),
-          _pdfIncomeRow('Other expenses', otherExp),
-          pw.Divider(),
-          _pdfIncomeRow('Total Expenses', totalExp, bold: true),
-          pw.SizedBox(height: 16),
-
-          // Net income
-          pw.Divider(thickness: 2),
-          _pdfIncomeRow('NET INCOME', netIncome, bold: true, large: true),
-        ],
-      ),
-    );
-
-    await Printing.layoutPdf(onLayout: (PdfPageFormat f) async => pdf.save());
-  }
-
-  pw.Widget _pdfIncomeRow(String label, num amount, {bool bold = false, bool large = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(label,
-              style: pw.TextStyle(
-                  fontSize: large ? 13 : 10, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
-          pw.Text(_money(amount, dash: false),
-              style: pw.TextStyle(
-                  fontSize: large ? 13 : 10, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
-        ],
-      ),
-    );
-  }
-}
-
-// Summary card widget
-class _SummaryCard extends StatelessWidget {
-  final String label;
-  final num amount;
-  final Color color;
-
-  const _SummaryCard({required this.label, required this.amount, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDeco(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: _ps(13, c: _C.muted)),
-          const SizedBox(height: 8),
-          Text(_ugx(amount), style: _ps(20, w: FontWeight.w700, c: color)),
-        ],
-      ),
-    );
-  }
-}
-
-// Income breakdown card
-class _IncomeBreakdown extends StatelessWidget {
-  final num interest, charges, fees, penalties, other, total;
-  final num prevInterest, prevCharges, prevFees, prevPenalties, prevOther, prevTotal;
-
-  const _IncomeBreakdown({
-    required this.interest,
-    required this.charges,
-    required this.fees,
-    required this.penalties,
-    required this.other,
-    required this.total,
-    required this.prevInterest,
-    required this.prevCharges,
-    required this.prevFees,
-    required this.prevPenalties,
-    required this.prevOther,
-    required this.prevTotal,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDeco(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.trending_up, color: _C.green, size: 20),
-              const SizedBox(width: 8),
-              Text('INCOME', style: _ps(15, w: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _IncomeStatementRow(label: 'Interest on loans', amount: interest, prev: prevInterest),
-          _IncomeStatementRow(label: 'Loan charges', amount: charges, prev: prevCharges),
-          _IncomeStatementRow(label: 'Fees', amount: fees, prev: prevFees),
-          _IncomeStatementRow(label: 'Penalties', amount: penalties, prev: prevPenalties),
-          _IncomeStatementRow(label: 'Other', amount: other, prev: prevOther),
-          const Divider(height: 24),
-          _IncomeStatementRow(label: 'Total', amount: total, prev: prevTotal, bold: true),
-        ],
-      ),
-    );
-  }
-}
-
-// Expense breakdown card
-class _ExpenseBreakdown extends StatelessWidget {
-  final num salaries, utilities, office, other, total;
-  final num prevSalaries, prevUtilities, prevOffice, prevOther, prevTotal;
-
-  const _ExpenseBreakdown({
-    required this.salaries,
-    required this.utilities,
-    required this.office,
-    required this.other,
-    required this.total,
-    required this.prevSalaries,
-    required this.prevUtilities,
-    required this.prevOffice,
-    required this.prevOther,
-    required this.prevTotal,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDeco(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.trending_down, color: _C.red, size: 20),
-              const SizedBox(width: 8),
-              Text('EXPENSES', style: _ps(15, w: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _IncomeStatementRow(label: 'Salaries & wages', amount: salaries, prev: prevSalaries),
-          _IncomeStatementRow(label: 'Utilities', amount: utilities, prev: prevUtilities),
-          _IncomeStatementRow(label: 'Office expenses', amount: office, prev: prevOffice),
-          _IncomeStatementRow(label: 'Other', amount: other, prev: prevOther),
-          const Divider(height: 24),
-          _IncomeStatementRow(label: 'Total', amount: total, prev: prevTotal, bold: true),
-        ],
-      ),
-    );
-  }
-}
-
-// Income statement row with comparison
-class _IncomeStatementRow extends StatelessWidget {
-  final String label;
-  final num amount, prev;
-  final bool bold;
-
-  const _IncomeStatementRow({required this.label, required this.amount, required this.prev, this.bold = false});
-
-  String get change {
-    if (prev == 0) return amount == 0 ? '-' : '+100%';
-    final pct = ((amount - prev) / prev * 100);
-    if (pct == 0) return '-';
-    return '${pct > 0 ? '+' : ''}${pct.toStringAsFixed(1)}%';
-  }
-
-  Color get changeColor {
-    if (amount == prev) return _C.muted;
-    return amount > prev ? _C.green : _C.red;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Text(label, style: _ps(13, w: bold ? FontWeight.w600 : FontWeight.w400)),
-          ),
-          Expanded(
-            flex: 2,
-            child: _amount(amount, bold: bold, size: bold ? 14 : 13),
-          ),
-          SizedBox(
-            width: 70,
-            child: Text(change,
-                textAlign: TextAlign.right,
-                style: GoogleFonts.robotoMono(fontSize: 11, fontWeight: FontWeight.w500, color: changeColor)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Portfolio quality card
-class _PortfolioQuality extends StatelessWidget {
-  final num outstanding, overdue, par;
-
-  const _PortfolioQuality({required this.outstanding, required this.overdue, required this.par});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDeco(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.assessment, color: _C.blue, size: 20),
-              const SizedBox(width: 8),
-              Text('PORTFOLIO QUALITY', style: _ps(15, w: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _MetricRow(label: 'Outstanding principal', value: _ugx(outstanding)),
-          _MetricRow(label: 'Overdue amount', value: _ugx(overdue)),
-          _MetricRow(label: 'Portfolio at Risk (PAR)', value: '${par.toStringAsFixed(2)}%'),
-        ],
-      ),
-    );
-  }
-}
-
-class _MetricRow extends StatelessWidget {
-  final String label, value;
-
-  const _MetricRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: _ps(13)),
-          Text(value, style: _ps(13, w: FontWeight.w600)),
-        ],
-      ),
     );
   }
 }
@@ -3172,4 +4779,171 @@ class _BadgeInfo {
   final String label;
   final Color color;
   const _BadgeInfo(this.label, this.color);
+}
+
+// Chart helper functions
+BarChartGroupData _barGroup(int x, double y, Color color) {
+  return BarChartGroupData(
+    x: x,
+    barRods: [
+      BarChartRodData(
+        toY: y,
+        color: color,
+        width: 24,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(4),
+          topRight: Radius.circular(4),
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _legendItem(String label, Color color, String value) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _ps(10.5, c: _C.muted)),
+          Text(value, style: _ps(13, w: FontWeight.w600)),
+        ],
+      ),
+    ],
+  );
+}
+
+// New PDF helper functions for professional monthly report
+pw.Widget _pdfKpiBox(String label, String value, PdfColor color) {
+  return pw.Expanded(
+    child: pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      margin: const pw.EdgeInsets.only(right: 8),
+      decoration: pw.BoxDecoration(
+        color: color,
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            label,
+            style: const pw.TextStyle(
+              fontSize: 9,
+              color: PdfColors.white,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.white,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+pw.Widget _pdfSectionHeader(String text) {
+  return pw.Container(
+    width: double.infinity,
+    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+    margin: const pw.EdgeInsets.only(bottom: 4),
+    decoration: const pw.BoxDecoration(
+      color: PdfColors.grey200,
+    ),
+    child: pw.Text(
+      text,
+      style: pw.TextStyle(
+        fontSize: 10,
+        fontWeight: pw.FontWeight.bold,
+        color: PdfColors.grey800,
+      ),
+    ),
+  );
+}
+
+pw.Widget _pdfTable(List<List<String>> rows) {
+  return pw.Table(
+    border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+    columnWidths: {
+      0: const pw.FlexColumnWidth(3),
+      1: const pw.FlexColumnWidth(2),
+    },
+    children: rows.map((row) {
+      return pw.TableRow(
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            child: pw.Text(
+              row[0],
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            child: pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text(
+                row[1],
+                style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      );
+    }).toList(),
+  );
+}
+
+pw.Widget _pdfTableTotal(String label, String value, PdfColor color) {
+  // Create a lighter version of the color by mixing with white
+  final lightColor = PdfColor(
+    color.red + (1 - color.red) * 0.9,
+    color.green + (1 - color.green) * 0.9,
+    color.blue + (1 - color.blue) * 0.9,
+  );
+  
+  return pw.Container(
+    padding: const pw.EdgeInsets.all(10),
+    margin: const pw.EdgeInsets.only(top: 4),
+    decoration: pw.BoxDecoration(
+      color: lightColor,
+    ),
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          label,
+          style: pw.TextStyle(
+            fontSize: 10,
+            fontWeight: pw.FontWeight.bold,
+            color: color,
+          ),
+        ),
+        pw.Text(
+          value,
+          style: pw.TextStyle(
+            fontSize: 11,
+            fontWeight: pw.FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
 }

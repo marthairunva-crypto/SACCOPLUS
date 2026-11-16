@@ -2426,6 +2426,7 @@ class FirebaseService {
     final savingsTxnRef = _db.collection(AppConstants.savingsTxnCol).doc(savingsId);
     batch.set(savingsTxnRef, {
       'id': savingsId,
+      'tenantId': sessionTenantId, // FIX Bug #6: add tenantId
       'uid': uid,
       'memberId': uid, // For admin queries
       'memberName': profile['name'] ?? profile['fullName'] ?? profile['firstName'] ??
@@ -2784,6 +2785,7 @@ class FirebaseService {
     final walletTxnRef = _db.collection(AppConstants.walletTxnCol).doc(walletTxnId);
     batch.set(walletTxnRef, {
       'id': walletTxnId,
+      'tenantId': sessionTenantId, // FIX Bug #6: add tenantId
       'uid': uid,
       'type': 'debit',
       'amount': totalAmount,
@@ -2798,6 +2800,7 @@ class FirebaseService {
     final sharesTxnRef = _db.collection(AppConstants.sharesCol).doc(shareId);
     batch.set(sharesTxnRef, {
       'id': shareId,
+      'tenantId': sessionTenantId, // FIX Bug #6: add tenantId
       'uid': uid,
       'type': 'purchase',
       'numberOfShares': numberOfShares,
