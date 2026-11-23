@@ -11,6 +11,7 @@ import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/interest_service.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/subscription_warning_banner.dart';
 import '../auth/professional_login_screen.dart';
 import '../common/about_screen.dart';
 import '../common/settings_screen.dart';
@@ -18,6 +19,7 @@ import 'loan_approval_screen.dart';
 import 'members_detailed_screen.dart';
 import 'create_loan_screen.dart';
 import 'loan_data_correction_screen.dart';
+import 'data_fix_screen.dart';
 import 'reports_screen.dart';
 import 'comprehensive_reports_screen.dart';
 import 'teller_screen.dart';
@@ -56,6 +58,7 @@ import 'risk_provisioning_screen.dart';
 import 'payment_screens.dart';
 import 'finance_screens.dart' hide GeneralLedgerScreen;
 import 'general_ledger_screen.dart';
+import 'subscription_management_screen.dart';
 import '../../scripts/reconcile_savings.dart';
 import '../../services/update_service.dart';
 import '../../widgets/update_dialog.dart';
@@ -193,6 +196,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return const CreateLoanScreen();
       case 'loan_correction':
         return const LoanDataCorrectionScreenEnhanced();
+      case 'data_fix':
+        return const DataFixScreen();
       case 'loan_products':
         return const LoanProductsScreen();
       case 'loan_calc':
@@ -246,6 +251,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       // SYSTEM
       case 'settings':
         return const SaccoSettingsScreen();
+      case 'subscription':
+        return const SubscriptionManagementScreen(embedded: true);
       case 'audit':
         return const EnhancedAuditScreen(embedded: true);
       case 'reports':
@@ -296,16 +303,34 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     setState(() => _navCollapsed = !navCollapsed),
               ),
             ),
-            // Main content: only the selected screen is mounted.
-            Expanded(child: _currentScreen()),
+            // Main content with warning banner
+            Expanded(
+              child: Column(
+                children: [
+                  // ⚠️ Subscription warning banner at the top
+                  const SubscriptionWarningBanner(),
+                  // Main content - only the selected screen is mounted
+                  Expanded(child: _currentScreen()),
+                ],
+              ),
+            ),
           ],
         ),
       );
     } else {
       // Mobile layout with drawer - show current screen only
-      final wrappedScreen = Container(
-        color: const Color(0xFFF5F7FA),
-        child: _currentScreen(),
+      final wrappedScreen = Column(
+        children: [
+          // ⚠️ Subscription warning banner at the top
+          const SubscriptionWarningBanner(),
+          // Main content
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF5F7FA),
+              child: _currentScreen(),
+            ),
+          ),
+        ],
       );
 
       return Scaffold(

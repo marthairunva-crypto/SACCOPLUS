@@ -1749,6 +1749,80 @@ class TellerService {
     }
   }
 
+  // ─── Internal Transfer (Cash ↔ Bank) ─────────────────────────────────────
+  /// Record an internal transfer between SACCO's own accounts (bank <-> cash).
+  /// This is a contra entry that does NOT count as revenue or expense.
+  /// - Cash from bank: Dr Cash in Hand, Cr Bank (direction: 'in')
+  /// - Cash to bank:   Dr Bank, Cr Cash in Hand (direction: 'out')
+  static Future<void> recordInternalTransfer({
+    required int amount,
+    required String direction, // 'in' (cash from bank) or 'out' (cash to bank)
+    required String description,
+    required String tellerName,
+    required String tellerId,
+    required TillSession tillSession,
+  }) async {
+    try {
+      final transactionRef = _db.collection(AppConstants.tellerTxnCol).doc();
+      final transactionId = transactionRef.id;
+      final timestamp = DateTime.now();
+
+      // Create transaction record (internal transfer, not revenue/expense)
+      final transaction = {
+        'id': transactionId,
+        'tenantId': _tenantId,
+        'type': 'internal_transfer',
+        'direction': direction, // 'in' or 'out'
+        'amount': amount,
+        'description': description,
+        'timestamp': timestamp,
+        'receiptNumber': _generateReceiptNumber(timestamp),
+        'tellerName': tellerName,
+        'tellerId': tellerId,
+        'source': 'teller',
+        'status': 'completed',
+      };
+
+      await transactionRef.set(transaction);
+
+      // Post till entry (cash increases for 'in', decreases for 'out')
+      await TillService.postEntry(
+        tillSessionId: tillSession.id,
+        tellerId: tellerId,
+        tellerName: tellerName,
+        input: TillEntryInput(
+          entryType: direction == 'in' ? 'internal_transfer_in' : 'internal_transfer_out',
+          amount: amount,
+          affectsCash: true,
+          paymentMethod: 'Cash',
+          notes: 'Internal transfer: $description',
+        ),
+      );
+
+      await _safe(
+        () => AuditService.log(
+          action: 'INTERNAL_TRANSFER',
+          details: 'Internal transfer ($direction): $description - ${_formatAmount(amount)}',
+          userId: tellerId,
+          metadata: {
+            'amount': amount,
+            'direction': direction,
+            'transactionId': transactionId,
+            'description': description,
+          },
+        ),
+        'internal transfer audit',
+      );
+
+      print('✅ Internal transfer recorded: $description - ${_formatAmount(amount)} ($direction)');
+    } catch (e, st) {
+      print('❌ Error recording internal transfer: $e');
+      print(st);
+      rethrow;
+    }
+  }
+
+  // ─── Revenue Entry ────────────────────────────────────────────────────────
   /// Record a revenue entry (increases till cash)
   static Future<void> recordRevenueEntry({
     required String description,

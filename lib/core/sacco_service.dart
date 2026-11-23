@@ -43,6 +43,15 @@ class SaccoService {
           .get(const GetOptions(source: Source.server));
       if (doc.exists) {
         _current = SaccoProfile.fromMap({...doc.data()!, 'tenantId': tid});
+        
+        // Auto-update subscription status if expired
+        if (_current.isSubscriptionExpired && _current.subscriptionStatus != 'expired') {
+          _db.collection(AppConstants.saccoCol).doc(tid).update({
+            'subscriptionStatus': 'expired',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }).catchError((_) {});
+        }
+        
         return _current;
       }
     } catch (_) {}
@@ -155,6 +164,82 @@ class SaccoService {
       'status':    status,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  // ── Subscription management ────────────────────────────────────────────────
+
+  /// Extend subscription by specified months
+  static Future<void> extendSubscription({
+    required String tenantId,
+    required int months,
+    String plan = 'Growth',
+  }) async {
+    final doc = await _db
+        .collection(AppConstants.saccoCol)
+        .doc(tenantId)
+        .get();
+    
+    DateTime newEnd;
+    if (doc.exists) {
+      final data = doc.data()!;
+      final currentEnd = data['subscriptionEnd'] is Timestamp
+          ? (data['subscriptionEnd'] as Timestamp).toDate()
+          : null;
+      
+      // If expired or no end date, start from now
+      if (currentEnd == null || DateTime.now().isAfter(currentEnd)) {
+        newEnd = DateTime.now().add(Duration(days: months * 30));
+      } else {
+        // Extend from current end date
+        newEnd = currentEnd.add(Duration(days: months * 30));
+      }
+    } else {
+      newEnd = DateTime.now().add(Duration(days: months * 30));
+    }
+
+    await _db.collection(AppConstants.saccoCol).doc(tenantId).set({
+      'subscriptionEnd': Timestamp.fromDate(newEnd),
+      'subscriptionPlan': plan,
+      'subscriptionStatus': 'active',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    
+    // Reload if this is the current SACCO
+    if (tenantId == _current.tenantId) {
+      await loadById(tenantId);
+    }
+  }
+
+  /// Set subscription expiry date
+  static Future<void> setSubscriptionExpiry({
+    required String tenantId,
+    required DateTime expiryDate,
+    String plan = 'Growth',
+  }) async {
+    await _db.collection(AppConstants.saccoCol).doc(tenantId).set({
+      'subscriptionEnd': Timestamp.fromDate(expiryDate),
+      'subscriptionPlan': plan,
+      'subscriptionStatus': 'active',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    
+    // Reload if this is the current SACCO
+    if (tenantId == _current.tenantId) {
+      await loadById(tenantId);
+    }
+  }
+
+  /// Mark subscription as expired (manual override)
+  static Future<void> expireSubscription(String tenantId) async {
+    await _db.collection(AppConstants.saccoCol).doc(tenantId).update({
+      'subscriptionStatus': 'expired',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    // Reload if this is the current SACCO
+    if (tenantId == _current.tenantId) {
+      await loadById(tenantId);
+    }
   }
 
   // ── Create a SACCO admin user ──────────────────────────────────────────────

@@ -44,6 +44,11 @@ class SaccoProfile {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  // ── Subscription ──────────────────────────────────────────────────────────
+  final DateTime? subscriptionEnd;      // When subscription expires
+  final String? subscriptionPlan;        // 'Free', 'Starter', 'Growth', 'Enterprise'
+  final String? subscriptionStatus;      // 'active' | 'expired' | 'trial'
+
   const SaccoProfile({
     required this.tenantId,
     required this.saccoName,
@@ -70,9 +75,36 @@ class SaccoProfile {
     this.status       = 'active',
     this.createdAt,
     this.updatedAt,
+    this.subscriptionEnd,
+    this.subscriptionPlan   = 'Free',
+    this.subscriptionStatus = 'trial',
   });
 
   bool get isActive => status == 'active';
+  
+  /// Check if subscription is valid (not expired)
+  bool get hasValidSubscription {
+    if (subscriptionStatus == 'active') return true;
+    if (subscriptionEnd == null) return true; // No expiry set
+    return DateTime.now().isBefore(subscriptionEnd!);
+  }
+  
+  /// Days remaining until subscription expires (null if no expiry)
+  int? get daysUntilExpiry {
+    if (subscriptionEnd == null) return null;
+    final diff = subscriptionEnd!.difference(DateTime.now());
+    return diff.inDays;
+  }
+  
+  /// Check if subscription has expired
+  bool get isSubscriptionExpired {
+    // If status is expired, it's expired
+    if (subscriptionStatus == 'expired') return true;
+    // If no end date, it's not expired (unlimited)
+    if (subscriptionEnd == null) return false;
+    // Check if end date has passed
+    return DateTime.now().isAfter(subscriptionEnd!);
+  }
 
   // ── Serialise ─────────────────────────────────────────────────────────────
 
@@ -100,6 +132,9 @@ class SaccoProfile {
     'shareValue':     shareValue,
     'minShares':      minShares,
     'status':         status,
+    'subscriptionEnd': subscriptionEnd != null ? Timestamp.fromDate(subscriptionEnd!) : null,
+    'subscriptionPlan': subscriptionPlan ?? 'Free',
+    'subscriptionStatus': subscriptionStatus ?? 'trial',
     'updatedAt':      FieldValue.serverTimestamp(),
   };
 
@@ -135,6 +170,9 @@ class SaccoProfile {
       shareValue:     (d['shareValue']    as num?)?.toInt()    ?? 1000,
       minShares:      (d['minShares']     as num?)?.toInt()    ?? 1,
       status:         d['status']         as String? ?? 'active',
+      subscriptionEnd: _timestamp(d['subscriptionEnd']),
+      subscriptionPlan: d['subscriptionPlan'] as String? ?? 'Free',
+      subscriptionStatus: d['subscriptionStatus'] as String? ?? 'trial',
       createdAt: _timestamp(d['createdAt']),
       updatedAt: _timestamp(d['updatedAt']),
     );
@@ -168,6 +206,9 @@ class SaccoProfile {
     int?      shareValue,
     int?      minShares,
     String?   status,
+    DateTime? subscriptionEnd,
+    String?   subscriptionPlan,
+    String?   subscriptionStatus,
   }) => SaccoProfile(
     tenantId:       tenantId,
     saccoName:      saccoName      ?? this.saccoName,
@@ -192,6 +233,9 @@ class SaccoProfile {
     shareValue:     shareValue     ?? this.shareValue,
     minShares:      minShares      ?? this.minShares,
     status:         status         ?? this.status,
+    subscriptionEnd: subscriptionEnd ?? this.subscriptionEnd,
+    subscriptionPlan: subscriptionPlan ?? this.subscriptionPlan,
+    subscriptionStatus: subscriptionStatus ?? this.subscriptionStatus,
     createdAt:      createdAt,
     updatedAt:      updatedAt,
   );

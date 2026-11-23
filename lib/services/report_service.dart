@@ -695,6 +695,10 @@ class ReportService {
           final date = _firstDate(d, ['timestamp', 'createdAt']);
           if (!within(date)) continue;
           final type = _st(d['type']);
+          
+          // Skip internal transfers (bank ↔ cash movements)
+          if (type == 'internal_transfer') continue;
+          
           final amt = _i(d['amount']).abs();
           if (type == 'revenue') {
             final src = _st(d['source']);

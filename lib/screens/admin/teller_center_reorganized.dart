@@ -889,6 +889,20 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
           onTap: _journalEntry,
         ),
         _tile(
+          title: 'Cash from bank',
+          description: 'Transfer money from bank to cash in hand.',
+          icon: Icons.arrow_circle_down_outlined,
+          color: TC.blue,
+          onTap: () => _internalTransfer(direction: 'in'),
+        ),
+        _tile(
+          title: 'Cash to bank',
+          description: 'Transfer cash in hand to bank account.',
+          icon: Icons.arrow_circle_up_outlined,
+          color: TC.blue,
+          onTap: () => _internalTransfer(direction: 'out'),
+        ),
+        _tile(
           title: 'Expense payment',
           description: 'Record organisational expenses and bills.',
           icon: Icons.receipt_long_outlined,
@@ -1671,6 +1685,140 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
     }
   }
 
+  // ─── Internal Transfer (Cash ↔ Bank) ───────────────────────────────────────
+  Future<void> _internalTransfer({required String direction}) async {
+    if (!_requireTill()) return;
+
+    final isIn = direction == 'in';
+    final title = isIn ? 'Cash from bank' : 'Cash to bank';
+    final desc = isIn
+        ? 'Money withdrawn from bank and brought to till'
+        : 'Cash deposited from till to bank';
+
+    final amountCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    String? err;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: _dlgShape,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: _dlgInset,
+          title: dialogTitle(
+            isIn ? Icons.arrow_circle_down_outlined : Icons.arrow_circle_up_outlined,
+            TC.blue,
+            title,
+          ),
+          content: SizedBox(
+            width: _dialogWidth(ctx, 450),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(desc, style: ts(13, c: TC.muted)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amountCtrl,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: fieldDeco('Amount', prefix: 'UGX ', error: err),
+                    onChanged: (_) => setD(() => err = null),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: fieldDeco('Notes (optional)'),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: TC.blue.withOpacity(0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: TC.blue.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: TC.blue),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'This is an internal transfer between SACCO accounts. '
+                            'It will NOT count as revenue or expense.',
+                            style: ts(11, c: TC.muted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: primaryButton(TC.blue),
+              onPressed: () {
+                if (amountCtrl.text.trim().isEmpty) {
+                  setD(() => err = 'Enter amount');
+                  return;
+                }
+                final amt = int.tryParse(amountCtrl.text.trim()) ?? 0;
+                if (amt <= 0) {
+                  setD(() => err = 'Enter a valid amount');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: Text('Record $title'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != true || !mounted) return;
+
+    final amount = int.parse(amountCtrl.text.trim());
+    final notes = notesCtrl.text.trim();
+    final description = notes.isEmpty
+        ? (isIn ? 'Cash from bank' : 'Cash to bank')
+        : (isIn ? 'Cash from bank: $notes' : 'Cash to bank: $notes');
+
+    final till = _till;
+    if (till == null) {
+      tillToast(context, 'Your till was closed. Open it and try again.', error: true);
+      return;
+    }
+
+    await _withLoading('Recording $title...', () async {
+      await TellerService.recordInternalTransfer(
+        amount: amount,
+        direction: direction,
+        description: description,
+        tellerName: currentTellerName(),
+        tellerId: FirebaseService.sessionUid,
+        tillSession: till,
+      );
+    });
+
+    if (mounted) {
+      _refreshHistory();
+      tillToast(context, '$title recorded successfully');
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // MEMBER PICKER (shared)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2204,6 +2352,13 @@ class _TellerCenterReorganizedState extends State<TellerCenterReorganized> {
       
       if (name.isEmpty) {
         name = type == 'revenue' ? 'Revenue Entry' : 'Expense Payment';
+      }
+    } else if (type == 'internal_transfer') {
+      // Internal transfer between bank/cash accounts
+      final direction = (txn['direction'] ?? '').toString();
+      name = (txn['description']?.toString() ?? '').trim();
+      if (name.isEmpty) {
+        name = direction == 'in' ? 'Cash from bank' : 'Cash to bank';
       }
     } else {
       // For member transactions

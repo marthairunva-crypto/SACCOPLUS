@@ -1468,6 +1468,15 @@ class _AccountDetailsViewState extends State<_AccountDetailsView> {
     if (saved == true && mounted) _toast(context, 'Account updated');
   }
 
+  Future<void> _editBalance(_Account a) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _EditBalanceDialog(account: a),
+    );
+    if (ok == true && mounted) _toast(context, 'Balance adjusted');
+  }
+
   Future<void> _toggleActive(_Account a) async {
     try {
       await FirebaseFirestore.instance
@@ -1527,6 +1536,7 @@ class _AccountDetailsViewState extends State<_AccountDetailsView> {
 
             final actions = Wrap(spacing: 8, runSpacing: 8, children: [
               _ghostBtn('Edit', Icons.edit_outlined, () => _edit(acc)),
+              _ghostBtn('Edit Balance', Icons.tune, () => _editBalance(acc)),
               _ghostBtn(
                 acc.active ? 'Deactivate' : 'Activate',
                 acc.active ? Icons.block : Icons.check_circle_outline,
@@ -3066,6 +3076,196 @@ class _EntryDialogState extends State<_EntryDialog> {
           child: const Text('Cancel'),
         ),
         _primaryBtn(_busy ? 'Saving…' : 'Save', Icons.check, _busy ? null : _save),
+      ],
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EDIT BALANCE DIALOG
+// Manual balance adjustment for reconciliation
+// ─────────────────────────────────────────────────────────────────────────────
+class _EditBalanceDialog extends StatefulWidget {
+  final _Account account;
+  const _EditBalanceDialog({required this.account});
+
+  @override
+  State<_EditBalanceDialog> createState() => _EditBalanceDialogState();
+}
+
+class _EditBalanceDialogState extends State<_EditBalanceDialog> {
+  late final TextEditingController _newBalance;
+  final _reason = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _newBalance = TextEditingController(text: widget.account.balance.toStringAsFixed(0));
+  }
+
+  @override
+  void dispose() {
+    _newBalance.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final newBal = double.tryParse(_newBalance.text.trim().replaceAll(',', ''));
+    final reason = _reason.text.trim();
+    
+    if (newBal == null) {
+      setState(() => _error = 'Enter a valid balance.');
+      return;
+    }
+    if (reason.isEmpty) {
+      setState(() => _error = 'Enter a reason for this adjustment.');
+      return;
+    }
+    if (newBal == widget.account.balance) {
+      setState(() => _error = 'Balance is unchanged.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      final db = FirebaseFirestore.instance;
+      final ref = db.collection('accounts').doc(widget.account.id);
+      final diff = newBal - widget.account.balance;
+      
+      await db.runTransaction((tx) async {
+        // Update balance
+        tx.update(ref, {
+          'balance': newBal,
+          'lastMovementAt': FieldValue.serverTimestamp(),
+        });
+        
+        // Create adjustment movement record
+        tx.set(ref.collection('movements').doc(), {
+          'type': 'adjustment',
+          'amount': diff.abs(),
+          'description': 'Balance adjustment: $reason',
+          'date': FieldValue.serverTimestamp(),
+          'balanceBefore': widget.account.balance,
+          'balanceAfter': newBal,
+          'adjustment': diff,
+          'createdBy': FirebaseService.sessionUid,
+        });
+      });
+
+      await _audit(
+        'account_balance_adjusted',
+        'Adjusted "${widget.account.name}" balance from ${_ugx(widget.account.balance)} to ${_ugx(newBal)}. Reason: $reason',
+        meta: {
+          'accountId': widget.account.id,
+          'oldBalance': widget.account.balance,
+          'newBalance': newBal,
+          'adjustment': diff,
+          'reason': reason,
+        },
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = _errText(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = (double.tryParse(_newBalance.text.trim().replaceAll(',', '')) ?? widget.account.balance) - widget.account.balance;
+    
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: Text('Edit Balance', style: _t(17, FontWeight.w700, _K.ink)),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const SizedBox(height: 4),
+            Text('Account: ${widget.account.name}', style: _t(13.5, FontWeight.w600, _K.ink)),
+            const SizedBox(height: 4),
+            Text('Current balance: ${_ugx(widget.account.balance)}', style: _t(13, FontWeight.w400, _K.muted)),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _newBalance,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+              decoration: _dec('New balance', prefix: 'UGX '),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (diff != 0) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: diff > 0 ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: diff > 0 ? const Color(0xFFD1FAE5) : const Color(0xFFFECACA)),
+                ),
+                child: Row(children: [
+                  Icon(
+                    diff > 0 ? Icons.trending_up : Icons.trending_down,
+                    size: 20,
+                    color: diff > 0 ? _K.pos : _K.neg,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${diff > 0 ? '+' : ''}${_ugx(diff)}',
+                      style: _t(13.5, FontWeight.w600, diff > 0 ? _K.pos : _K.neg),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 14),
+            TextField(
+              controller: _reason,
+              maxLines: 3,
+              decoration: _dec('Reason for adjustment', hint: 'e.g. Bank reconciliation correction, Opening balance fix'),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.warning_amber, size: 18, color: _K.warn),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'This creates a manual adjustment. Use only for corrections or reconciliation.',
+                    style: _t(12, FontWeight.w400, _K.sub),
+                  ),
+                ),
+              ]),
+            ),
+            _errorLine(_error),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        _primaryBtn(_busy ? 'Saving…' : 'Save adjustment', Icons.check, _busy ? null : _save),
       ],
     );
   }

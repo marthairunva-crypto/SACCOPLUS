@@ -8,7 +8,9 @@ import '../../theme/modern_theme.dart';
 import '../../core/constants.dart';
 import '../../core/firebase_service.dart';
 import '../../core/sacco_service.dart';
+import '../../services/subscription_reminder_service.dart';
 import '../auth/professional_login_screen.dart';
+import '../auth/subscription_expired_screen.dart';
 import '../admin/admin_dashboard.dart';
 import '../farmer/farmer_dashboard.dart';
 
@@ -67,6 +69,27 @@ class _SplashScreenState extends State<SplashScreen>
           
           // Load tenant profile
           await SaccoService.loadForUser(data);
+          
+          // ⚠️ Check and send subscription reminders (2 days before expiry)
+          SubscriptionReminderService.checkAndSendReminders().catchError((e) {
+            print('Failed to check subscription reminders: $e');
+          });
+          
+          // ⚠️ Check subscription status - block access if expired
+          if (SaccoService.current.isSubscriptionExpired) {
+            print('❌ Subscription expired, showing lock screen');
+            if (!mounted) return;
+            Navigator.pushReplacement(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (_, a, __) => const SubscriptionExpiredScreen(),
+                transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+                transitionDuration: const Duration(milliseconds: 600),
+              ),
+            );
+            return;
+          }
           
           if (!mounted) return;
           

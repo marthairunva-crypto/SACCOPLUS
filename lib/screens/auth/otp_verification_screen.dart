@@ -5,7 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/modern_theme.dart';
 import '../../core/firebase_service.dart';
+import '../../core/sacco_service.dart';
 import '../admin/admin_dashboard.dart';
+import 'subscription_expired_screen.dart';
 
 /// OTP Verification Screen for Admin Login
 /// Sends 6-digit OTP via SMS and verifies before allowing access
@@ -271,6 +273,21 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> with Widg
     await Future.delayed(const Duration(seconds: 2));
 
     if (mounted) {
+      // Load tenant profile and check subscription
+      await SaccoService.loadForUser(widget.profile);
+      
+      // Check if subscription expired
+      if (SaccoService.current.isSubscriptionExpired) {
+        Navigator.pop(context); // Close dialog
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const SubscriptionExpiredScreen(),
+          ),
+        );
+        return;
+      }
+      
       Navigator.pop(context); // Close dialog
       Navigator.pushReplacement(
         context,

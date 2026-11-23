@@ -7,6 +7,7 @@ import '../../core/audit_service.dart';
 import '../../core/sacco_service.dart';
 import '../../core/theme.dart';
 import '../../widgets/app_widgets.dart';
+import 'subscription_management_screen.dart';
 
 class SaccoSettingsScreen extends StatefulWidget {
   const SaccoSettingsScreen({super.key});
@@ -225,6 +226,86 @@ class _SaccoSettingsScreenState extends State<SaccoSettingsScreen> {
                 _field(_phoneCtrl,   'Phone Number',         Icons.phone_rounded,  type: TextInputType.phone),
                 _field(_addressCtrl, 'Physical Address',     Icons.location_on_outlined),
                 _field(_regNoCtrl,   'Registration Number',  Icons.badge_outlined),
+
+                const SizedBox(height: 16),
+                // Subscription Management Button
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [const Color(0xFF2F8F6B), const Color(0xFF1565C0)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.pop(context); // Close settings
+                        // Navigate to subscription screen in dashboard
+                        setState(() {
+                          // This needs to trigger parent navigation
+                          // For now, open as modal
+                        });
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SubscriptionManagementScreen(),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.shield_outlined,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Manage Subscription',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Starter: 100,000 UGX/mo • Set expiry date',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.white.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
 
                 const SizedBox(height: 8),
                 _section('Loan Settings'),
