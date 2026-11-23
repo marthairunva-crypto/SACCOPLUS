@@ -30,25 +30,21 @@ jobs:
       
       - name: Build Windows Release
         run: |
-          # List available VS installations
-          Write-Host "=== Searching for Visual Studio installations ==="
-          if (Test-Path "C:\Program Files\Microsoft Visual Studio") {
-            Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -Directory | ForEach-Object {
-              Write-Host "Found VS at: $($_.FullName)"
-            }
+          # Setup Visual Studio environment
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Write-Host "Using Visual Studio at: $vsPath"
+          
+          # Import VS environment
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
+          
+          # Clean any cached CMake files
+          if (Test-Path "build\windows") {
+            Remove-Item -Path "build\windows" -Recurse -Force
+            Write-Host "Cleaned previous build cache"
           }
           
-          # Try to find vswhere
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            Write-Host "=== VS Installations via vswhere ==="
-            & $vswhere -all -format json | ConvertFrom-Json | ForEach-Object {
-              Write-Host "Version: $($_.installationVersion), Path: $($_.installationPath)"
-            }
-          }
-          
-          # Set CMake to use Ninja generator instead of Visual Studio
-          $env:CMAKE_GENERATOR = "Ninja"
+          # Build with verbose output
           flutter build windows --release --verbose
       
       - name: List build output (for debugging)
