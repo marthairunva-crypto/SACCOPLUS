@@ -3,14 +3,14 @@ name: Build Windows EXE
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:  # Allows manual trigger
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     
     steps:
       - name: Checkout code
@@ -19,53 +19,27 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'latest'
+          flutter-version: '3.32.0'
           channel: 'stable'
+          cache: true
       
-      - name: Flutter Doctor
-        run: flutter doctor -v
+      - name: Verify Flutter and Dart versions
+        run: flutter --version
       
-      - name: Install dependencies
+      - name: Get dependencies
         run: flutter pub get
       
       - name: Build Windows Release
-        run: |
-          # Setup Visual Studio environment
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          Write-Host "Using Visual Studio at: $vsPath"
-          
-          # Import VS environment
-          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
-          
-          # Clean any cached CMake files
-          if (Test-Path "build\windows") {
-            Remove-Item -Path "build\windows" -Recurse -Force
-            Write-Host "Cleaned previous build cache"
-          }
-          
-          # Build with verbose output
-          flutter build windows --release --verbose
-      
-      - name: List build output (for debugging)
-        run: |
-          Write-Host "=== Build output structure ==="
-          Get-ChildItem -Path build\windows\x64\runner\Release -Force | Select-Object Name, Length
-          Write-Host ""
-          Write-Host "=== Searching for EXE files ==="
-          Get-ChildItem -Path build\windows -Recurse -Filter "*.exe" | Select-Object FullName
+        run: flutter build windows --release
       
       - name: Create Portable ZIP
         run: |
           $releaseFolder = "build\windows\x64\runner\Release"
           if (Test-Path $releaseFolder) {
-            Write-Host "Release folder exists at: $releaseFolder"
-            Get-ChildItem $releaseFolder | Select-Object Name
+            Write-Host "Packaging release from: $releaseFolder"
             Compress-Archive -Path "$releaseFolder\*" -DestinationPath "MBADIFA_SACCO_Portable.zip" -Force
-            if (Test-Path "MBADIFA_SACCO_Portable.zip") {
-              $zipSize = (Get-Item "MBADIFA_SACCO_Portable.zip").Length / 1MB
-              Write-Host "ZIP file size: $([math]::Round($zipSize, 2)) MB"
-            }
+            $zipSize = (Get-Item "MBADIFA_SACCO_Portable.zip").Length / 1MB
+            Write-Host "ZIP created: $([math]::Round($zipSize, 2)) MB"
           } else {
             Write-Error "Release folder not found at: $releaseFolder"
             exit 1
@@ -73,7 +47,7 @@ jobs:
       
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' && success()
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Release v1.0.${{ github.run_number }}
@@ -108,6 +82,8 @@ jobs:
             - Windows 10/11 (64-bit)
             - 4GB RAM minimum
             - Internet connection for Firebase sync
+            
+            Built with Flutter ${{ steps.flutter.outputs.version }}
           files: MBADIFA_SACCO_Portable.zip
           draft: false
           prerelease: false

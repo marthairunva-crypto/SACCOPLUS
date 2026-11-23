@@ -1,0 +1,433 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Create `database/migrations/002_member_portal.sql` with all new tables": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268235
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567285703
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567684924
+      }
+    ],
+    "1.2 Create `database/migrations/003_member_columns.sql` with ALTER TABLE additions": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268340
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567286051
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567685285
+      }
+    ],
+    "2.1 Create `app/Core/RateLimiter.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268495
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567690275
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567757729
+      }
+    ],
+    "2.2 Create `app/Core/AuditLogger.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268584
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567690451
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567758032
+      }
+    ],
+    "2.3 Create `app/Core/PasswordValidator.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268652
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567690766
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567758258
+      }
+    ],
+    "3.1 Create `app/Services/LedgerService.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268721
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567775169
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568188673
+      }
+    ],
+    "4.1 Create `app/Controllers/Member/MemberAuthController.php` (does NOT extend `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268805
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568267849
+      }
+    ],
+    "4.2 Register all `member/login`, `member/login/otp`, `member/forgot-password`, `member/reset-password`, `member/change-password`, `member/logout`, `member/api/ping` routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268887
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568268285
+      }
+    ],
+    "4.3 Create member auth views in `app/Views/member/auth/`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567268954
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568268706
+      }
+    ],
+    "5.1 Create `app/Controllers/Member/MemberBaseController.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269068
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568269203
+      }
+    ],
+    "5.2 Extend `public/index.php` routing guard (`$router->before()`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269155
+      },
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568269498
+      }
+    ],
+    "5.3 Create `app/Views/member/layout.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269248
+      }
+    ],
+    "6.1 Create `app/Controllers/Member/MemberDashboardController.php` (extends `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269325
+      }
+    ],
+    "6.2 Rewrite `app/Views/member/dashboard.php` with full layout": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269405
+      }
+    ],
+    "6.3 Register `GET member/dashboard` in `public/index.php` pointing to new `App\\Controllers\\Member\\MemberDashboardController`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269488
+      }
+    ],
+    "7.1 Create `app/Controllers/Member/MemberProfileController.php` (extends `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269586
+      }
+    ],
+    "7.2 Create profile views in `app/Views/member/profile/`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269667
+      }
+    ],
+    "7.3 Register profile routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269738
+      }
+    ],
+    "8.1 Create `app/Controllers/Member/MemberAccountController.php` (extends `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269810
+      }
+    ],
+    "8.2 Create account views in `app/Views/member/accounts/`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269885
+      }
+    ],
+    "8.3 Register account routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567269958
+      }
+    ],
+    "9.1 Create `app/Services/PaymentService.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270025
+      }
+    ],
+    "9.2 Create `app/Services/ReceiptService.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270089
+      }
+    ],
+    "10.1 Create deposit methods in `MemberAccountController`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270178
+      }
+    ],
+    "10.2 Create `app/Controllers/Member/MemberWebhookController.php` (no `MemberBaseController`, no session guard)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270268
+      }
+    ],
+    "10.3 Create `app/Views/member/deposits/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270423
+      }
+    ],
+    "10.4 Register deposit + webhook routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270489
+      }
+    ],
+    "11.1 Create `app/Services/LienService.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270561
+      }
+    ],
+    "11.2 Create withdrawal methods in `MemberAccountController`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270649
+      }
+    ],
+    "11.3 Create `app/Views/member/withdrawals/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270720
+      }
+    ],
+    "11.4 Register withdrawal routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270796
+      }
+    ],
+    "12.1 Create `app/Services/NotificationService.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270881
+      }
+    ],
+    "12.2 Create `app/Controllers/Member/MemberNotificationController.php` (extends `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567270963
+      }
+    ],
+    "12.3 Create `app/Views/member/notifications/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271049
+      }
+    ],
+    "12.4 Register notification routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271130
+      }
+    ],
+    "13.1 Create `app/Controllers/Member/MemberLoanController.php` (extends `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271219
+      }
+    ],
+    "13.2 Create loan application views in `app/Views/member/loans/`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271307
+      }
+    ],
+    "13.3 Register loan routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271389
+      }
+    ],
+    "14.1 Add `repay()` method to `MemberLoanController`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271466
+      }
+    ],
+    "14.2 Implement SMS installment reminders as a callable method in `MemberLoanController`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271575
+      }
+    ],
+    "15.1 Create `app/Controllers/Member/MemberGuarantorController.php` (extends `MemberBaseController`)": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271671
+      }
+    ],
+    "15.2 Create `app/Views/member/guarantors/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271754
+      }
+    ],
+    "15.3 Add lien auto-release hook to loan clearing logic": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271838
+      }
+    ],
+    "15.4 Register guarantor routes in `public/index.php`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567271918
+      }
+    ],
+    "16. Checkpoint — wire all Phase 1 routes, smoke-test end-to-end": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567272015
+      }
+    ],
+    "18. Final checkpoint — all tests, security review": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567272096
+      }
+    ],
+    "1. Database migrations — new tables and member column additions": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567685351
+      }
+    ],
+    "2. Core infrastructure — `RateLimiter`, `AuditLogger`, `PasswordValidator`": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793567758357
+      }
+    ],
+    "3. `LedgerService` — extracted double-entry posting shared service": [
+      {
+        "executionId": "8b0a5cc2-e81a-4b14-ad83-a5a2815e1bb2",
+        "chatSessionId": "sess_b2750632-2a86-43b6-aaa2-df20bfea48b9",
+        "timestamp": 1793568188885
+      }
+    ]
+  }
+}

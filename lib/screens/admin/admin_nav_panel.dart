@@ -67,6 +67,7 @@ const kAdminNavGroups = <NavGroup>[
   ]),
   NavGroup('System', Icons.settings_outlined, [
     NavItem('SACCO Settings', 'settings'),
+    NavItem('Fix Transaction Data', 'data_fix'),
     NavItem('Audit Trail', 'audit'),
   ]),
 ];

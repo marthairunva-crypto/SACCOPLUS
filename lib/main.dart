@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:device_preview/device_preview.dart'; // ✅ ADDED
 import 'firebase_options.dart';
 import 'core/sacco_service.dart';
 import 'theme/modern_theme.dart';
@@ -29,13 +28,8 @@ void main() async {
     FlutterError.presentError(details);
   };
 
-  // Run app with DevicePreview
-  runApp(
-    DevicePreview(
-      enabled: false, // Enabled in debug/profile mode only
-      builder: (context) => const SaccoPlusApp(),
-    ),
-  );
+  // Run app
+  runApp(const SaccoPlusApp());
 }
 
 class SaccoPlusApp extends StatefulWidget {
@@ -65,9 +59,6 @@ class _SaccoPlusAppState extends State<SaccoPlusApp> {
           : 'MBADIFA SACCO',
       debugShowCheckedModeBanner: false,
       theme: theme,
-      useInheritedMediaQuery: true,
-      locale: DevicePreview.locale(context),
-      builder: DevicePreview.appBuilder,
       home: const SplashScreen(),
     );
   }
