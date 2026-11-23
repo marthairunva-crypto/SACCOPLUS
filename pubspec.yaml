@@ -24,7 +24,7 @@ dependencies:
   # UI & utilities
   google_fonts: ^6.2.1
   fl_chart: ^0.69.0
-  intl: ^0.20.2
+  intl: ^0.19.0
   image_picker: ^1.1.2
   file_picker: ^8.0.0
   http: ^1.2.2
@@ -42,10 +42,8 @@ dependencies:
   path_provider: ^2.1.4
   csv: ^6.0.0
   msix: ^3.18.0
-  device_preview: ^1.2.0
-  # device_preview: INCOMPATIBLE with Flutter 3.44.5
-  # All versions use deprecated APIs (subtitle2, headline6, backgroundColor, toggleableActiveColor)
-  # Alternative: Use Chrome DevTools device emulation or resize the window manually
+  # device_preview: REMOVED - incompatible with Dart 3.5
+  # Use Chrome DevTools device emulation instead
       
 dev_dependencies:
   flutter_test:
