@@ -56,6 +56,20 @@ jobs:
             
             ### 🎉 What's New in This Release:
             
+            **✨ Income Statement (SACCO Format)**
+            - Complete SACCO-format Income Statement matching paper format
+            - Income section: Balance b/f, Principle, Interest, Savings, Loan forms, Membership, Stationery, Shares, Penalties
+            - Expenditure section: All expense categories from teller transactions
+            - Balance c/d calculation (surplus/deficit)
+            - Shared opening balance with Monthly Report
+            - PDF export with clean formatting
+            - Queries all transaction sources: repayments, savings, shares, teller revenue
+            
+            **✨ Share Management Enhancements**
+            - 7 preset share value filters (Zero, Exactly 10K, Below 10K, 10K-50K, 50K-150K, 150K-500K, Above 500K)
+            - CSV and PDF export for filtered share data
+            - Professional data table with pagination
+            
             **✨ Subscription Management System**
             - In-app subscription manager (Settings → Manage Subscription)
             - Auto-lock system when subscription expires
@@ -64,14 +78,18 @@ jobs:
             - Plans: Starter (100K), Growth (350K), Enterprise (750K)
             
             **🐛 Bug Fixes**
+            - Fixed Income Statement to show all income from teller revenue transactions
+            - Fixed expenses to display correctly from teller expense transactions
             - Fixed "Cash from bank" internal transfers counted as revenue
             - Fixed till session display for internal transfers
             - Fixed Income Report to exclude internal transfers
+            - Fixed PDF export font issue (en-dash → hyphen)
             
             **🎨 UI Improvements**
             - Rebuilt Bank Transfers screen (Mobile Money style)
             - Added Edit Balance feature for bank accounts
             - Clean warning banners and notifications
+            - Professional Income Statement layout matching SACCO paper format
             
             ### 📥 Download and Installation:
             1. Download `MBADIFA_SACCO_Portable.zip`
@@ -83,7 +101,7 @@ jobs:
             - 4GB RAM minimum
             - Internet connection for Firebase sync
             
-            Built with Flutter ${{ steps.flutter.outputs.version }}
+            Built with Flutter 3.32.0
           files: MBADIFA_SACCO_Portable.zip
           draft: false
           prerelease: false
