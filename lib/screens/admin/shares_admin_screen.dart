@@ -806,6 +806,68 @@ class _MemberSharesListState extends State<_MemberSharesList> {
     ));
   }
 
+  Future<Map<String, dynamic>?> _handleCustomShareFilter(BuildContext context) async {
+    final minController = TextEditingController();
+    final maxController = TextEditingController();
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Custom Share Value Range', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: minController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Minimum Share Value (UGX)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixText: 'UGX ',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: maxController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Maximum Share Value (UGX)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixText: 'UGX ',
+                hintText: 'Leave empty for no maximum',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final min = double.tryParse(minController.text.replaceAll(',', '')) ?? 0;
+              final max = maxController.text.isEmpty 
+                  ? double.infinity 
+                  : double.tryParse(maxController.text.replaceAll(',', '')) ?? double.infinity;
+              
+              Navigator.pop(context, {
+                'min': min,
+                'max': max,
+                'filter': (dynamic row) {
+                  final value = (row['shareValue'] as num?)?.toDouble() ?? 0.0;
+                  return value >= min && value <= max;
+                },
+              });
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            child: const Text('APPLY'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSharesTable(List<Map<String, dynamic>> membersList, double totalShares) {
     return ProfessionalDataTable(
       tableKey: 'shares_admin',
@@ -891,16 +953,20 @@ class _MemberSharesListState extends State<_MemberSharesList> {
           key: 'shareValue',
           label: 'Share Range',
           options: const [
+            FilterOption(value: 'all', label: 'All Shares'),
             FilterOption(value: 'zero', label: 'Zero Shares (0)'),
             FilterOption(value: 'exactly_10k', label: 'Exactly 10K'),
             FilterOption(value: 'below_10k', label: 'Below 10K'),
+            FilterOption(value: '10k_above', label: '10K and Above'),
             FilterOption(value: '10k_50k', label: '10K - 50K'),
             FilterOption(value: '50k_150k', label: '50K - 150K'),
             FilterOption(value: '150k_500k', label: '150K - 500K'),
             FilterOption(value: 'above_500k', label: 'Above 500K'),
+            FilterOption(value: 'custom', label: 'Custom Range'),
           ],
         ),
       ],
+      onCustomFilter: _handleCustomShareFilter,
     );
   }
 

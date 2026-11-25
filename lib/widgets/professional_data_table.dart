@@ -117,12 +117,16 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
             if (filter.key == 'shareValue' && row.containsKey('shareValue')) {
               final value = (row['shareValue'] as num?)?.toDouble() ?? 0.0;
               switch (selectedValue) {
+                case 'all':
+                  return true;
                 case 'zero':
                   return value == 0;
                 case 'exactly_10k':
                   return value == 10000;
                 case 'below_10k':
                   return value > 0 && value < 10000;
+                case '10k_above':
+                  return value >= 10000;
                 case '10k_50k':
                   return value >= 10000 && value < 50000;
                 case '50k_150k':
@@ -131,6 +135,12 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                   return value >= 150000 && value < 500000;
                 case 'above_500k':
                   return value >= 500000;
+                case 'custom':
+                  // Custom filter handled by callback
+                  if (_customFilterData != null && _customFilterData!['filter'] != null) {
+                    return _customFilterData!['filter'](row);
+                  }
+                  return true;
                 default:
                   return true;
               }
