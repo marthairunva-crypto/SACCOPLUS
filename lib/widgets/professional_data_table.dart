@@ -114,6 +114,8 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
               switch (selectedValue) {
                 case 'zero':
                   return value == 0;
+                case 'exactly_10k':
+                  return value == 10000;
                 case 'below_10k':
                   return value > 0 && value < 10000;
                 case '10k_50k':

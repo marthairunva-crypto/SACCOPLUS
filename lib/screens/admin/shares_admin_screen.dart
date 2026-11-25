@@ -749,6 +749,7 @@ class _MemberSharesListState extends State<_MemberSharesList> {
           label: 'Share Range',
           options: const [
             FilterOption(value: 'zero', label: 'Zero Shares (0)'),
+            FilterOption(value: 'exactly_10k', label: 'Exactly 10K'),
             FilterOption(value: 'below_10k', label: 'Below 10K'),
             FilterOption(value: '10k_50k', label: '10K - 50K'),
             FilterOption(value: '50k_150k', label: '50K - 150K'),
