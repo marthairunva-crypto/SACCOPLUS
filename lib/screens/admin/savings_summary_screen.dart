@@ -227,14 +227,21 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                               key: 'savingsBalance',
                               label: 'Balance Range',
                               options: const [
+                                FilterOption(value: 'all', label: 'All Balances'),
                                 FilterOption(value: 'zero', label: 'Zero Balance'),
-                                FilterOption(value: 'below_100k', label: 'Below 100K'),
+                                FilterOption(value: 'below_10k', label: 'Below 10K'),
+                                FilterOption(value: 'exactly_10k', label: 'Exactly 10K'),
+                                FilterOption(value: '10k_above', label: '10K and Above'),
+                                FilterOption(value: '10k_50k', label: '10K - 50K'),
+                                FilterOption(value: '50k_100k', label: '50K - 100K'),
                                 FilterOption(value: '100k_500k', label: '100K - 500K'),
                                 FilterOption(value: '500k_1m', label: '500K - 1M'),
                                 FilterOption(value: 'above_1m', label: 'Above 1M'),
+                                FilterOption(value: 'custom', label: 'Custom Range'),
                               ],
                             ),
                           ],
+                          onCustomFilter: _handleCustomFilter,
                         ),
                       ),
                     ),
@@ -249,6 +256,68 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
   }
 
   // ───────────────────────── Helpers ─────────────────────────
+
+  Future<Map<String, dynamic>?> _handleCustomFilter(BuildContext context) async {
+    final minController = TextEditingController();
+    final maxController = TextEditingController();
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Custom Balance Range', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: minController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Minimum Balance (UGX)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixText: 'UGX ',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: maxController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Maximum Balance (UGX)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixText: 'UGX ',
+                hintText: 'Leave empty for no maximum',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final min = double.tryParse(minController.text.replaceAll(',', '')) ?? 0;
+              final max = maxController.text.isEmpty 
+                  ? double.infinity 
+                  : double.tryParse(maxController.text.replaceAll(',', '')) ?? double.infinity;
+              
+              Navigator.pop(context, {
+                'min': min,
+                'max': max,
+                'filter': (dynamic row) {
+                  final balance = (row['savingsBalance'] as num).toDouble();
+                  return balance >= min && balance <= max;
+                },
+              });
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            child: const Text('APPLY'),
+          ),
+        ],
+      ),
+    );
+  }
 
   BoxDecoration _cardDecoration() {
     return BoxDecoration(

@@ -10,6 +10,7 @@ class ProfessionalDataTable extends StatefulWidget {
   final String searchPlaceholder;
   final String? tableKey; // Unique key to persist pagination state
   final Function(List<Map<String, dynamic>> filteredData, String format)? onExport;
+  final Future<Map<String, dynamic>?> Function(BuildContext)? onCustomFilter; // Custom filter handler
 
   /// Extra space under the last row so floating buttons (e.g. "Add Member")
   /// never cover the data.
@@ -26,6 +27,7 @@ class ProfessionalDataTable extends StatefulWidget {
     this.tableKey,
     this.listBottomPadding = 88,
     this.onExport,
+    this.onCustomFilter,
   }) : super(key: key);
 
   @override
@@ -35,6 +37,7 @@ class ProfessionalDataTable extends StatefulWidget {
 class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
   String _searchQuery = '';
   final Map<String, String?> _selectedFilters = {};
+  Map<String, dynamic>? _customFilterData; // Store custom filter data
   int _currentPage = 0;
   final int _rowsPerPage = 25;
   late ScrollController _horizontalScrollController;
@@ -135,16 +138,32 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
             if (filter.key == 'savingsBalance' && row.containsKey('savingsBalance')) {
               final value = (row['savingsBalance'] as num?)?.toDouble() ?? 0.0;
               switch (selectedValue) {
+                case 'all':
+                  return true;
                 case 'zero':
                   return value == 0;
-                case 'below_100k':
-                  return value > 0 && value < 100000;
+                case 'below_10k':
+                  return value > 0 && value < 10000;
+                case 'exactly_10k':
+                  return value == 10000;
+                case '10k_above':
+                  return value >= 10000;
+                case '10k_50k':
+                  return value >= 10000 && value < 50000;
+                case '50k_100k':
+                  return value >= 50000 && value < 100000;
                 case '100k_500k':
                   return value >= 100000 && value < 500000;
                 case '500k_1m':
                   return value >= 500000 && value < 1000000;
                 case 'above_1m':
                   return value >= 1000000;
+                case 'custom':
+                  // Custom filter handled by callback
+                  if (_customFilterData != null && _customFilterData!['filter'] != null) {
+                    return _customFilterData!['filter'](row);
+                  }
+                  return true;
                 default:
                   return true;
               }
@@ -461,11 +480,24 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
               );
             }),
           ],
-          onChanged: (value) {
-            setState(() {
-              _selectedFilters[filter.key] = value;
-              _currentPage = 0;
-            });
+          onChanged: (value) async {
+            if (value == 'custom' && widget.onCustomFilter != null) {
+              // Show custom filter dialog
+              final result = await widget.onCustomFilter!(context);
+              if (result != null) {
+                setState(() {
+                  _customFilterData = result;
+                  _selectedFilters[filter.key] = value;
+                  _currentPage = 0;
+                });
+              }
+            } else {
+              setState(() {
+                _customFilterData = null; // Clear custom filter when switching to preset
+                _selectedFilters[filter.key] = value;
+                _currentPage = 0;
+              });
+            }
           },
         ),
       ),
