@@ -178,8 +178,9 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
       final data = doc.data();
       final principal = ((data['principalPaid'] ?? 0) as num).toDouble();
       final interest = ((data['interestPaid'] ?? 0) as num).toDouble();
-      income['principal'] = (income['principal'] ?? 0) + principal;
+      income['principle'] = (income['principle'] ?? 0) + principal;  // Note: 'principle' to match _incomeLabels key
       income['interest'] = (income['interest'] ?? 0) + interest;
+      debugPrint('  Repayment: principal=$principal, interest=$interest');
     }
 
     // ── 2. SAVINGS DEPOSITS ──
@@ -255,19 +256,8 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
     // month's closing balance.
     income['balBF'] = 0.0;
 
-    final loansSnapshot = await db
-        .collection('saccoplus-loans')
-        .where('tenantId', isEqualTo: tenantId)
-        .where('disbursedDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('disbursedDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-        .where('status', isEqualTo: 'Active')
-        .get();
-
-    var totalDisbursed = 0.0;
-    for (final doc in loansSnapshot.docs) {
-      totalDisbursed += ((doc.data()['amount'] ?? 0) as num).toDouble();
-    }
-    income['principle'] = totalDisbursed;
+    debugPrint('💰 Income totals: principle=${income['principle']}, interest=${income['interest']}, savings=${income['savings']}, shares=${income['shares']}');
+    debugPrint('💸 Expense categories: ${expenses.keys.join(", ")}');
 
     final expenseLines = expenses.entries.map((e) => _Line(_prettyLabel(e.key), e.value)).toList()
       ..sort((a, b) => b.amount.compareTo(a.amount));
