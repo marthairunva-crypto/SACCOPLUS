@@ -397,48 +397,32 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
       }
     }
 
-    // ── 5. LEDGER/ACCOUNTS TRANSACTIONS (all other income) ──
-    // This captures income from general ledger which includes loan processing fees,
-    // insurance, stamp duty, appraisals, photos, etc.
-    final ledgerSnap = await db
-        .collection(AppConstants.ledgerCol)
-        .where('tenantId', isEqualTo: tenantId)
+    // ── 5. INCOME & EXPENSE LEDGER (all other income/expenses) ──
+    // These are the collections that Monthly Report and Income Report use
+    final incomeSnap = await db
+        .collection('income')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
         .get();
 
-    debugPrint('📊 Loaded ${ledgerSnap.docs.length} total ledger entries');
-    int ledgerIncomeCount = 0;
-    for (final doc in ledgerSnap.docs) {
+    debugPrint('📊 Loaded ${incomeSnap.docs.length} income entries');
+    for (final doc in incomeSnap.docs) {
       final data = doc.data();
-      final timestampTs = data['date'] as Timestamp?;
-      if (timestampTs == null) continue;
+      final tid = data['tenantId'];
+      if (tid != null && tid != tenantId) continue;  // Filter by tenant (some docs don't have tenantId)
       
-      final timestamp = timestampTs.toDate();
-      if (timestamp.isBefore(startDate) || timestamp.isAfter(endDate)) continue;
-      
-      final type = (data['type'] ?? '').toString().toLowerCase();
-      final category = (data['category'] ?? '').toString().toLowerCase();
+      final description = (data['description'] ?? '').toString().toLowerCase();
       final source = (data['source'] ?? '').toString().toLowerCase();
+      final category = (data['category'] ?? '').toString().toLowerCase();
       final amount = ((data['amount'] ?? 0) as num).toDouble();
-
-      // Only process credit/income entries
-      if (type != 'credit' && type != 'income') {
-        // Track expenses
-        if (type == 'debit' || type == 'expense') {
-          final key = category.isNotEmpty ? category : source.isNotEmpty ? source : 'other';
-          expenses[key] = (expenses[key] ?? 0) + amount;
-        }
-        continue;
-      }
-      
-      ledgerIncomeCount++;
       
       void add(String k) {
         income[k] = (income[k] ?? 0) + amount;
-        debugPrint('  💰 Ledger income ($k): +$amount from "$source"');
+        debugPrint('  💰 Income ($k): +$amount from "$source" - $description');
       }
 
-      // Categorize based on source/category keywords
-      final combined = '$source $category'.toLowerCase();
+      // Categorize based on description, source, and category
+      final combined = '$description $source $category'.toLowerCase();
       
       if (combined.contains('loan') && (combined.contains('form') || combined.contains('application'))) {
         add('loanForms');
@@ -456,15 +440,38 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
         add('stationery');
       } else if (combined.contains('penalty') || combined.contains('penalties')) {
         add('penalties');
-      } else if (combined.contains('interest') && !combined.contains('repayment')) {
+      } else if (combined.contains('interest')) {
         add('interest');
       } else if (combined.contains('share')) {
         add('shares');
-      } else if (combined.contains('deposit') || combined.contains('savings')) {
+      } else if (combined.contains('savings')) {
         add('savings');
+      } else {
+        // Default: add to loan forms if it's a fee/charge, otherwise to stationery
+        if (combined.contains('fee') || combined.contains('charge')) {
+          add('loanForms');
+        } else {
+          add('stationery');
+        }
       }
     }
-    debugPrint('📊 Filtered to $ledgerIncomeCount ledger income entries for $year-$month');
+
+    final expenseSnap = await db
+        .collection('expenses')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+        .get();
+
+    debugPrint('📊 Loaded ${expenseSnap.docs.length} expense entries');
+    for (final doc in expenseSnap.docs) {
+      final data = doc.data();
+      final tid = data['tenantId'];
+      if (tid != null && tid != tenantId) continue;
+      
+      final category = (data['category'] ?? data['originalCategory'] ?? 'Other').toString();
+      final amount = ((data['amount'] ?? 0) as num).toDouble();
+      expenses[category] = (expenses[category] ?? 0) + amount;
+    }
 
     // Opening balance: use manual value if set, otherwise 0
     income['balBF'] = _manualOpeningBalance ?? 0.0;
