@@ -516,59 +516,6 @@ class _MemberSharesList extends StatefulWidget {
 }
 
 class _MemberSharesListState extends State<_MemberSharesList> {
-  String _selectedFilter = 'all';
-  double? _customMin;
-  double? _customMax;
-
-  List<Map<String, dynamic>> _applyFilter(List<Map<String, dynamic>> members) {
-    if (_selectedFilter == 'all') return members;
-    
-    if (_selectedFilter == 'zero') {
-      return members.where((m) => (m['shareValue'] as double) == 0).toList();
-    }
-    
-    if (_selectedFilter == 'below10k') {
-      return members.where((m) {
-        final val = m['shareValue'] as double;
-        return val > 0 && val < 10000;
-      }).toList();
-    }
-    
-    if (_selectedFilter == '10k-50k') {
-      return members.where((m) {
-        final val = m['shareValue'] as double;
-        return val >= 10000 && val <= 50000;
-      }).toList();
-    }
-    
-    if (_selectedFilter == '50k-150k') {
-      return members.where((m) {
-        final val = m['shareValue'] as double;
-        return val > 50000 && val <= 150000;
-      }).toList();
-    }
-    
-    if (_selectedFilter == '150k-500k') {
-      return members.where((m) {
-        final val = m['shareValue'] as double;
-        return val > 150000 && val <= 500000;
-      }).toList();
-    }
-    
-    if (_selectedFilter == 'above500k') {
-      return members.where((m) => (m['shareValue'] as double) > 500000).toList();
-    }
-    
-    if (_selectedFilter == 'custom' && _customMin != null && _customMax != null) {
-      return members.where((m) {
-        final val = m['shareValue'] as double;
-        return val >= _customMin! && val <= _customMax!;
-      }).toList();
-    }
-    
-    return members;
-  }
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
@@ -619,137 +566,13 @@ class _MemberSharesListState extends State<_MemberSharesList> {
         }).toList()
           ..sort((a, b) => (b['shareValue'] as double).compareTo(a['shareValue'] as double));
 
-        // Apply filter
-        final filteredMembers = _applyFilter(membersList);
-
-        final totalShares = filteredMembers.fold<double>(0, (sum, m) => sum + (m['shareValue'] as double));
-        final totalMembers = filteredMembers.where((m) => (m['totalShares'] as int) > 0).length;
+        final totalShares = membersList.fold<double>(0, (sum, m) => sum + (m['shareValue'] as double));
+        final totalMembers = membersList.where((m) => (m['totalShares'] as int) > 0).length;
 
         return LayoutBuilder(
           builder: (context, constraints) {
             return Column(
               children: [
-                // Filter Section
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.filter_list_rounded, size: 20, color: AppTheme.primary),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Filter by:',
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: PopupMenuButton<String>(
-                          initialValue: _selectedFilter,
-                          onSelected: (value) {
-                            if (value == 'custom') {
-                              _showCustomRangeDialog();
-                            } else {
-                              setState(() {
-                                _selectedFilter = value;
-                              });
-                            }
-                          },
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          itemBuilder: (context) => [
-                            _buildMenuItem('all', 'All Share Ranges'),
-                            const PopupMenuDivider(),
-                            _buildMenuItem('zero', 'Zero Shares (0)'),
-                            _buildMenuItem('below10k', 'Below 10K'),
-                            _buildMenuItem('10k-50k', '10K - 50K'),
-                            _buildMenuItem('50k-150k', '50K - 150K'),
-                            _buildMenuItem('150k-500k', '150K - 500K'),
-                            _buildMenuItem('above500k', 'Above 500K'),
-                            const PopupMenuDivider(),
-                            _buildMenuItem('custom', 'Custom Range...', icon: Icons.tune_rounded),
-                          ],
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    _getFilterLabel(),
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppTheme.primary,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Icon(Icons.arrow_drop_down_rounded, size: 20, color: AppTheme.primary),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (_selectedFilter != 'all') ...[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedFilter = 'all';
-                              _customMin = null;
-                              _customMax = null;
-                            });
-                          },
-                          icon: const Icon(Icons.clear_rounded, size: 18),
-                          tooltip: 'Clear filter',
-                          color: AppTheme.error,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-                // Filter results count
-                if (_selectedFilter != 'all')
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Showing ${filteredMembers.length} of ${membersList.length} entries',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: AppTheme.textSecondary,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ),
-                  ),
-
                 // Summary Card
                 Container(
                   margin: const EdgeInsets.all(16),
@@ -828,7 +651,7 @@ class _MemberSharesListState extends State<_MemberSharesList> {
                           ],
                         ),
                         clipBehavior: Clip.hardEdge,
-                        child: _buildSharesTable(filteredMembers, totalShares),
+                        child: _buildSharesTable(membersList, totalShares),
                       );
                     },
                   ),
@@ -838,163 +661,6 @@ class _MemberSharesListState extends State<_MemberSharesList> {
           },
         );
       },
-    );
-  }
-
-  PopupMenuItem<String> _buildMenuItem(String value, String label, {IconData? icon}) {
-    return PopupMenuItem<String>(
-      value: value,
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16, color: AppTheme.primary),
-            const SizedBox(width: 8),
-          ],
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              fontWeight: _selectedFilter == value ? FontWeight.w600 : FontWeight.w400,
-              color: _selectedFilter == value ? AppTheme.primary : AppTheme.textPrimary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _getFilterLabel() {
-    switch (_selectedFilter) {
-      case 'all':
-        return 'All Share Ranges';
-      case 'zero':
-        return 'Zero Shares (0)';
-      case 'below10k':
-        return 'Below 10K';
-      case '10k-50k':
-        return '10K - 50K';
-      case '50k-150k':
-        return '50K - 150K';
-      case '150k-500k':
-        return '150K - 500K';
-      case 'above500k':
-        return 'Above 500K';
-      case 'custom':
-        if (_customMin != null && _customMax != null) {
-          return 'UGX ${widget.fmt.format(_customMin)} - ${widget.fmt.format(_customMax)}';
-        }
-        return 'Custom Range';
-      default:
-        return 'All Share Ranges';
-    }
-  }
-
-  void _showCustomRangeDialog() {
-    final minCtrl = TextEditingController(text: _customMin?.toInt().toString() ?? '');
-    final maxCtrl = TextEditingController(text: _customMax?.toInt().toString() ?? '');
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.tune_rounded, color: AppTheme.primary, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Text('Custom Share Range', 
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Filter members by custom share value range (UGX)',
-              style: GoogleFonts.poppins(fontSize: 12, color: AppTheme.textSecondary),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: minCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Minimum Value (UGX)',
-                prefixIcon: const Icon(Icons.arrow_upward_rounded),
-                hintText: 'e.g., 10000',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: maxCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Maximum Value (UGX)',
-                prefixIcon: const Icon(Icons.arrow_downward_rounded),
-                hintText: 'e.g., 100000',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final min = double.tryParse(minCtrl.text.trim());
-              final max = double.tryParse(maxCtrl.text.trim());
-              
-              if (min == null || max == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter valid numbers'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-
-              if (min > max) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Minimum value must be less than maximum'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-
-              setState(() {
-                _selectedFilter = 'custom';
-                _customMin = min;
-                _customMax = max;
-              });
-
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: Text('Apply Filter', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1083,11 +749,11 @@ class _MemberSharesListState extends State<_MemberSharesList> {
           label: 'Share Range',
           options: const [
             FilterOption(value: 'zero', label: 'Zero Shares (0)'),
-            FilterOption(value: 'below_150k', label: 'Below 150K'),
+            FilterOption(value: 'below_10k', label: 'Below 10K'),
+            FilterOption(value: '10k_50k', label: '10K - 50K'),
+            FilterOption(value: '50k_150k', label: '50K - 150K'),
             FilterOption(value: '150k_500k', label: '150K - 500K'),
-            FilterOption(value: '500k_1m', label: '500K - 1M'),
-            FilterOption(value: '1m_2m', label: '1M - 2M'),
-            FilterOption(value: 'above_2m', label: 'Above 2M'),
+            FilterOption(value: 'above_500k', label: 'Above 500K'),
           ],
         ),
       ],
