@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../../core/constants.dart';
 import '../../core/audit_service.dart';
 import '../../core/firebase_service.dart';
@@ -664,9 +667,149 @@ class _MemberSharesListState extends State<_MemberSharesList> {
     );
   }
 
+  Future<void> _exportFilteredShares(List<Map<String, dynamic>> data, String format) async {
+    if (format == 'csv') {
+      CsvExport.exportShares(data);
+      _snack('CSV exported successfully! Check your Downloads folder.', AppTheme.success);
+    } else if (format == 'pdf') {
+      await _exportSharesPDF(data);
+    }
+  }
+
+  Future<void> _exportSharesPDF(List<Map<String, dynamic>> data) async {
+    try {
+      final pdf = pw.Document();
+      final now = DateTime.now();
+      final dateStr = DateFormat('MMM d, yyyy - HH:mm').format(now);
+      
+      // Calculate totals
+      final totalValue = data.fold<double>(0, (sum, m) => sum + (m['shareValue'] as double));
+      final totalMembers = data.length;
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (context) => [
+            // Header
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('MBADIFA SACCO',
+                        style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Share Holdings Report', style: const pw.TextStyle(fontSize: 14)),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text('Generated: $dateStr', style: const pw.TextStyle(fontSize: 10)),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Total Members: $totalMembers', style: const pw.TextStyle(fontSize: 10)),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            
+            // Summary Box
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.blue50,
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Total Share Value:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('UGX ${widget.fmt.format(totalValue)}',
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+
+            // Table
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(2),
+                1: const pw.FlexColumnWidth(3),
+                2: const pw.FlexColumnWidth(2),
+              },
+              children: [
+                // Header row
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('Account No.', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('Member Name', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('Share Value (UGX)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                // Data rows
+                ...data.map((row) {
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(row['accountNumber']?.toString() ?? '—'),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(row['memberName']?.toString() ?? '—'),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(widget.fmt.format(row['shareValue'])),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final bytes = await pdf.save();
+      final fileName = 'Share_Holdings_${DateFormat('yyyyMMdd_HHmmss').format(now)}.pdf';
+      
+      await Printing.sharePdf(bytes: bytes, filename: fileName);
+      _snack('PDF exported successfully!', AppTheme.success);
+    } catch (e) {
+      _snack('PDF export failed: $e', AppTheme.error);
+    }
+  }
+
+  void _snack(String msg, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: GoogleFonts.poppins()),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   Widget _buildSharesTable(List<Map<String, dynamic>> membersList, double totalShares) {
     return ProfessionalDataTable(
       tableKey: 'shares_admin',
+      onExport: (filteredData, format) => _exportFilteredShares(filteredData, format),
       columns: [
         const DataTableColumn(key: 'accountNumber', label: 'Account No.', flex: 2),
         const DataTableColumn(key: 'memberName', label: 'Member Name', flex: 3),

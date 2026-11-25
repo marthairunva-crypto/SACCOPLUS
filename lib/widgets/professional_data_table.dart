@@ -9,6 +9,7 @@ class ProfessionalDataTable extends StatefulWidget {
   final bool showSearch;
   final String searchPlaceholder;
   final String? tableKey; // Unique key to persist pagination state
+  final Function(List<Map<String, dynamic>> filteredData, String format)? onExport;
 
   /// Extra space under the last row so floating buttons (e.g. "Add Member")
   /// never cover the data.
@@ -24,6 +25,7 @@ class ProfessionalDataTable extends StatefulWidget {
     this.searchPlaceholder = 'Search...',
     this.tableKey,
     this.listBottomPadding = 88,
+    this.onExport,
   }) : super(key: key);
 
   @override
@@ -271,6 +273,10 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
                           width: compact ? (innerW - 8 - 50) / 2 : 180,
                           child: _buildFilterDropdown(filter),
                         )),
+                  if (widget.onExport != null) ...[
+                    _buildExportButton(Icons.table_chart_rounded, 'CSV', 'csv'),
+                    _buildExportButton(Icons.picture_as_pdf_rounded, 'PDF', 'pdf'),
+                  ],
                   _buildColumnToggle(),
                 ],
               ),
@@ -383,6 +389,44 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
           }
         });
       },
+    );
+  }
+
+  Widget _buildExportButton(IconData icon, String label, String format) {
+    return Tooltip(
+      message: 'Export to $label',
+      child: InkWell(
+        onTap: () {
+          if (widget.onExport != null) {
+            widget.onExport!(_filteredData, format);
+          }
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: _headerColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _headerColor.withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: _headerColor, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _headerColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
