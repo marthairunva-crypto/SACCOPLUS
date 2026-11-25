@@ -351,14 +351,15 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
     }
     debugPrint('📊 Filtered to $sharesCount share purchases for $year-$month');
 
-    // ── 4. TELLER TRANSACTIONS (for fees, penalties, etc.) ──
+    // ── 4. TELLER TRANSACTIONS (for fees, penalties, revenue) ──
     final tellerSnap = await db
         .collection(AppConstants.tellerTxnCol)
         .where('tenantId', isEqualTo: tenantId)
         .get();
 
     debugPrint('📊 Loaded ${tellerSnap.docs.length} total teller transactions');
-    int tellerCount = 0;
+    int tellerIncomeCount = 0;
+    int tellerExpenseCount = 0;
     for (final doc in tellerSnap.docs) {
       final data = doc.data();
       final timestampTs = data['timestamp'] as Timestamp?;
@@ -367,111 +368,59 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
       final timestamp = timestampTs.toDate();
       if (timestamp.isBefore(startDate) || timestamp.isAfter(endDate)) continue;
       
-      tellerCount++;
       final type = (data['type'] ?? '').toString().toLowerCase();
       final category = (data['category'] ?? '').toString().toLowerCase();
       final source = (data['source'] ?? '').toString().toLowerCase();
-      final amount = ((data['amount'] ?? 0) as num).toDouble();
+      final description = (data['description'] ?? '').toString().toLowerCase();
+      final amount = ((data['amount'] ?? 0) as num).toDouble().abs();
 
-      void add(String k) => income[k] = (income[k] ?? 0) + amount;
-
-      if (type == 'income' || type == 'credit') {
-        if (source.contains('loan application') ||
-            source.contains('loan form') ||
-            category.contains('loan forms')) {
-          add('loanForms');
-        } else if (source.contains('membership') || category.contains('membership')) {
-          add('membership');
-        } else if (source.contains('stationery') || category.contains('stationery')) {
-          add('stationery');
-        } else if (source.contains('penalty') ||
-            source.contains('penalties') ||
-            category.contains('penalty')) {
-          add('penalties');
-        } else if (type.contains('deposit') || category.contains('savings')) {
-          add('savings');
+      // INCOME: type == 'revenue'
+      if (type == 'revenue') {
+        tellerIncomeCount++;
+        
+        void add(String k) {
+          income[k] = (income[k] ?? 0) + amount;
+          debugPrint('  💰 Teller income ($k): +$amount from "$source"');
         }
-      } else if (type == 'expense' || type == 'debit') {
+
+        final combined = '$description $source $category'.toLowerCase();
+        
+        if (combined.contains('loan') && (combined.contains('form') || combined.contains('application'))) {
+          add('loanForms');
+        } else if (combined.contains('processing') || combined.contains('appraisal')) {
+          add('loanForms');
+        } else if (combined.contains('stamp') || combined.contains('duty')) {
+          add('loanForms');
+        } else if (combined.contains('insurance')) {
+          add('loanForms');
+        } else if (combined.contains('membership')) {
+          add('membership');
+        } else if (combined.contains('stationery')) {
+          add('stationery');
+        } else if (combined.contains('transport') || combined.contains('photo')) {
+          add('stationery');
+        } else if (combined.contains('penalty') || combined.contains('penalties')) {
+          add('penalties');
+        } else if (combined.contains('interest')) {
+          add('interest');
+        } else if (combined.contains('share')) {
+          add('shares');
+        } else if (combined.contains('savings') || combined.contains('deposit')) {
+          add('savings');
+        } else if (combined.contains('fee') || combined.contains('charge')) {
+          add('loanForms');
+        } else {
+          add('stationery');  // Default fallback
+        }
+      }
+      // EXPENSES: type == 'expense'
+      else if (type == 'expense') {
+        tellerExpenseCount++;
         final key = category.isNotEmpty ? category : 'other';
         expenses[key] = (expenses[key] ?? 0) + amount;
       }
     }
-
-    // ── 5. INCOME & EXPENSE LEDGER (all other income/expenses) ──
-    // These are the collections that Monthly Report and Income Report use
-    final incomeSnap = await db
-        .collection('income')
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-        .get();
-
-    debugPrint('📊 Loaded ${incomeSnap.docs.length} income entries');
-    for (final doc in incomeSnap.docs) {
-      final data = doc.data();
-      final tid = data['tenantId'];
-      if (tid != null && tid != tenantId) continue;  // Filter by tenant (some docs don't have tenantId)
-      
-      final description = (data['description'] ?? '').toString().toLowerCase();
-      final source = (data['source'] ?? '').toString().toLowerCase();
-      final category = (data['category'] ?? '').toString().toLowerCase();
-      final amount = ((data['amount'] ?? 0) as num).toDouble();
-      
-      void add(String k) {
-        income[k] = (income[k] ?? 0) + amount;
-        debugPrint('  💰 Income ($k): +$amount from "$source" - $description');
-      }
-
-      // Categorize based on description, source, and category
-      final combined = '$description $source $category'.toLowerCase();
-      
-      if (combined.contains('loan') && (combined.contains('form') || combined.contains('application'))) {
-        add('loanForms');
-      } else if (combined.contains('processing') || combined.contains('appraisal')) {
-        add('loanForms');
-      } else if (combined.contains('stamp') || combined.contains('duty')) {
-        add('loanForms');
-      } else if (combined.contains('insurance')) {
-        add('loanForms');
-      } else if (combined.contains('membership')) {
-        add('membership');
-      } else if (combined.contains('stationery')) {
-        add('stationery');
-      } else if (combined.contains('transport') || combined.contains('photo')) {
-        add('stationery');
-      } else if (combined.contains('penalty') || combined.contains('penalties')) {
-        add('penalties');
-      } else if (combined.contains('interest')) {
-        add('interest');
-      } else if (combined.contains('share')) {
-        add('shares');
-      } else if (combined.contains('savings')) {
-        add('savings');
-      } else {
-        // Default: add to loan forms if it's a fee/charge, otherwise to stationery
-        if (combined.contains('fee') || combined.contains('charge')) {
-          add('loanForms');
-        } else {
-          add('stationery');
-        }
-      }
-    }
-
-    final expenseSnap = await db
-        .collection('expenses')
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-        .get();
-
-    debugPrint('📊 Loaded ${expenseSnap.docs.length} expense entries');
-    for (final doc in expenseSnap.docs) {
-      final data = doc.data();
-      final tid = data['tenantId'];
-      if (tid != null && tid != tenantId) continue;
-      
-      final category = (data['category'] ?? data['originalCategory'] ?? 'Other').toString();
-      final amount = ((data['amount'] ?? 0) as num).toDouble();
-      expenses[category] = (expenses[category] ?? 0) + amount;
-    }
+    debugPrint('📊 Filtered to $tellerIncomeCount teller income and $tellerExpenseCount expenses for $year-$month');
 
     // Opening balance: use manual value if set, otherwise 0
     income['balBF'] = _manualOpeningBalance ?? 0.0;
