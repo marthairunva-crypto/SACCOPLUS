@@ -397,6 +397,75 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
       }
     }
 
+    // ── 5. LEDGER/ACCOUNTS TRANSACTIONS (all other income) ──
+    // This captures income from general ledger which includes loan processing fees,
+    // insurance, stamp duty, appraisals, photos, etc.
+    final ledgerSnap = await db
+        .collection(AppConstants.ledgerCol)
+        .where('tenantId', isEqualTo: tenantId)
+        .get();
+
+    debugPrint('📊 Loaded ${ledgerSnap.docs.length} total ledger entries');
+    int ledgerIncomeCount = 0;
+    for (final doc in ledgerSnap.docs) {
+      final data = doc.data();
+      final timestampTs = data['date'] as Timestamp?;
+      if (timestampTs == null) continue;
+      
+      final timestamp = timestampTs.toDate();
+      if (timestamp.isBefore(startDate) || timestamp.isAfter(endDate)) continue;
+      
+      final type = (data['type'] ?? '').toString().toLowerCase();
+      final category = (data['category'] ?? '').toString().toLowerCase();
+      final source = (data['source'] ?? '').toString().toLowerCase();
+      final amount = ((data['amount'] ?? 0) as num).toDouble();
+
+      // Only process credit/income entries
+      if (type != 'credit' && type != 'income') {
+        // Track expenses
+        if (type == 'debit' || type == 'expense') {
+          final key = category.isNotEmpty ? category : source.isNotEmpty ? source : 'other';
+          expenses[key] = (expenses[key] ?? 0) + amount;
+        }
+        continue;
+      }
+      
+      ledgerIncomeCount++;
+      
+      void add(String k) {
+        income[k] = (income[k] ?? 0) + amount;
+        debugPrint('  💰 Ledger income ($k): +$amount from "$source"');
+      }
+
+      // Categorize based on source/category keywords
+      final combined = '$source $category'.toLowerCase();
+      
+      if (combined.contains('loan') && (combined.contains('form') || combined.contains('application'))) {
+        add('loanForms');
+      } else if (combined.contains('processing') || combined.contains('appraisal')) {
+        add('loanForms');
+      } else if (combined.contains('stamp') || combined.contains('duty')) {
+        add('loanForms');
+      } else if (combined.contains('insurance')) {
+        add('loanForms');
+      } else if (combined.contains('membership')) {
+        add('membership');
+      } else if (combined.contains('stationery')) {
+        add('stationery');
+      } else if (combined.contains('transport') || combined.contains('photo')) {
+        add('stationery');
+      } else if (combined.contains('penalty') || combined.contains('penalties')) {
+        add('penalties');
+      } else if (combined.contains('interest') && !combined.contains('repayment')) {
+        add('interest');
+      } else if (combined.contains('share')) {
+        add('shares');
+      } else if (combined.contains('deposit') || combined.contains('savings')) {
+        add('savings');
+      }
+    }
+    debugPrint('📊 Filtered to $ledgerIncomeCount ledger income entries for $year-$month');
+
     // Opening balance: use manual value if set, otherwise 0
     income['balBF'] = _manualOpeningBalance ?? 0.0;
 
