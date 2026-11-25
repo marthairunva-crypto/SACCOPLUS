@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -56,7 +55,7 @@ final NumberFormat _nf = NumberFormat('#,##0', 'en_US');
 
 /// Accounting style: negatives in brackets, zero as a dash.
 String _money(num v, {bool dash = true}) {
-  if (v == 0) return dash ? '–' : '0';
+  if (v == 0) return dash ? '-' : '0';
   final s = _nf.format(v.abs().round());
   return v < 0 ? '($s)' : s;
 }
@@ -340,16 +339,14 @@ class _ReportLoaderState<T> extends State<_ReportLoader<T>> {
   @override
   void initState() {
     super.initState();
-    print('🔵 _ReportLoader initState - loading data...');
     _run();
   }
-  
+
   @override
   void didUpdateWidget(_ReportLoader<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     // If key changed (which it does when refresh is triggered), reload data
     if (widget.key != oldWidget.key) {
-      print('🔄 _ReportLoader didUpdateWidget - key changed, reloading...');
       _run();
     }
   }
@@ -911,6 +908,32 @@ class _StatementCard extends StatelessWidget {
             ],
           ),
         );
+      case _K.warning:
+        return Container(
+          margin: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 18, color: _C.amber),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.label, style: _ps(12.5, w: FontWeight.w600, c: _C.amber)),
+                    if (r.hint != null) Text(r.hint!, style: _ps(11, c: _C.text)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
       default:
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -1164,7 +1187,7 @@ class _TxnTable extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Text(
-                t.receipt.isEmpty ? '–' : t.receipt,
+                t.receipt.isEmpty ? '-' : t.receipt,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.robotoMono(fontSize: 11.5, color: const Color(0xFF9CA3AF)),
@@ -1290,7 +1313,7 @@ List<Widget> _txnReport(
       .whereType<Map>()
       .map((t) => _Txn(
             date: t['date'] is DateTime ? t['date'] as DateTime : null,
-            description: '${t['description'] ?? ''}'.trim().isEmpty ? '–' : '${t['description']}',
+            description: '${t['description'] ?? ''}'.trim().isEmpty ? '-' : '${t['description']}',
             group: groupOf(t),
             receipt: '${t['receiptNumber'] ?? ''}'.replaceAll('null', ''),
             amount: _n(t['amount']),
@@ -1342,6 +1365,15 @@ List<Widget> _txnReport(
     await _saveCsv(ctx, '${fileStem}_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
   }
 
+  pw.Widget pdfCell(String text, {double size = 8, bool bold = false, bool right = false}) => pw.Padding(
+        padding: const pw.EdgeInsets.all(6),
+        child: pw.Text(
+          text,
+          textAlign: right ? pw.TextAlign.right : pw.TextAlign.left,
+          style: pw.TextStyle(fontSize: size, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal),
+        ),
+      );
+
   Future<void> exportPdf() async {
     final pdf = pw.Document();
     pdf.addPage(
@@ -1349,7 +1381,6 @@ List<Widget> _txnReport(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
         build: (context) => [
-          // Header
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
@@ -1358,7 +1389,8 @@ List<Widget> _txnReport(
                 children: [
                   pw.Text('MBADIFA SACCO', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 4),
-                  pw.Text('Mbarara District Farmers Association', style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                  pw.Text('Mbarara District Farmers Association',
+                      style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
                 ],
               ),
             ],
@@ -1368,10 +1400,8 @@ List<Widget> _txnReport(
           pw.SizedBox(height: 10),
           pw.Text('$nounCap Report', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 4),
-          pw.Text('Period: $period', style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+          pw.Text('Period: $period', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
           pw.SizedBox(height: 20),
-          
-          // Summary
           pw.Container(
             padding: const pw.EdgeInsets.all(12),
             decoration: pw.BoxDecoration(
@@ -1382,13 +1412,12 @@ List<Widget> _txnReport(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text('Total $nounCap:', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                pw.Text('UGX ${_nf.format(total.round())}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                pw.Text('UGX ${_nf.format(total.round())}',
+                    style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
               ],
             ),
           ),
           pw.SizedBox(height: 20),
-          
-          // Transactions Table
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.grey400),
             columnWidths: {
@@ -1399,102 +1428,42 @@ List<Widget> _txnReport(
               4: const pw.FlexColumnWidth(2),
             },
             children: [
-              // Header
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                 children: [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text('Date', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text('Description', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text(groupLabel, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text('Receipt', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text('Amount (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
+                  pdfCell('Date', size: 9, bold: true),
+                  pdfCell('Description', size: 9, bold: true),
+                  pdfCell(groupLabel, size: 9, bold: true),
+                  pdfCell('Receipt', size: 9, bold: true),
+                  pdfCell('Amount (UGX)', size: 9, bold: true, right: true),
                 ],
               ),
-              // Data rows
               for (final t in txns)
                 pw.TableRow(
                   children: [
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(
-                        t.date != null ? DateFormat('MMM d, yyyy').format(t.date!) : 'N/A',
-                        style: const pw.TextStyle(fontSize: 8),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(_cap(t.description), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(_cap(t.group), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(t.receipt.isEmpty ? '-' : t.receipt, style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(
-                        _nf.format(t.amount.round()),
-                        textAlign: pw.TextAlign.right,
-                        style: const pw.TextStyle(fontSize: 8),
-                      ),
-                    ),
+                    pdfCell(t.date != null ? DateFormat('MMM d, yyyy').format(t.date!) : 'N/A'),
+                    pdfCell(_cap(t.description)),
+                    pdfCell(_cap(t.group)),
+                    pdfCell(t.receipt.isEmpty ? '-' : t.receipt),
+                    pdfCell(_nf.format(t.amount.round()), right: true),
                   ],
                 ),
-              // Total row
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey100),
                 children: [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text(''),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text(''),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text(''),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text('TOTAL', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text(
-                      _nf.format(total.round()),
-                      textAlign: pw.TextAlign.right,
-                      style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-                    ),
-                  ),
+                  pdfCell(''),
+                  pdfCell(''),
+                  pdfCell(''),
+                  pdfCell('TOTAL', size: 9, bold: true),
+                  pdfCell(_nf.format(total.round()), size: 9, bold: true, right: true),
                 ],
               ),
             ],
           ),
-          
           pw.SizedBox(height: 20),
           pw.Text(
             'Generated: ${DateFormat('d MMMM yyyy, HH:mm').format(DateTime.now())}',
-            style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
           ),
         ],
       ),
@@ -1528,7 +1497,12 @@ List<Widget> _txnReport(
     const SizedBox(height: 14),
     _KpiGrid(children: [
       _Kpi(label: 'Total $noun', value: _ugx(total), sub: period, icon: icon, color: accent),
-      _Kpi(label: 'Transactions', value: '${txns.length}', sub: 'Recorded this period', icon: Icons.receipt_long_outlined, color: _C.blue),
+      _Kpi(
+          label: 'Transactions',
+          value: '${txns.length}',
+          sub: 'Recorded this period',
+          icon: Icons.receipt_long_outlined,
+          color: _C.blue),
       _Kpi(label: 'Average per transaction', value: _ugx(avg), icon: Icons.functions, color: _C.teal),
       _Kpi(
         label: 'Top ${groupLabel.toLowerCase()}',
@@ -1678,7 +1652,7 @@ class _PeriodTab extends StatefulWidget {
 class _PeriodTabState extends State<_PeriodTab> {
   int _month = DateTime.now().month;
   int _year = DateTime.now().year;
-  int _refreshKey = 0; // Add refresh key for manual rebuilds
+  int _refreshKey = 0; // bumped to force a reload
 
   Widget _picker() {
     Widget dd(int value, List<DropdownMenuItem<int>> items, ValueChanged<int> onChanged) {
@@ -1733,7 +1707,7 @@ class _PeriodTabState extends State<_PeriodTab> {
         _PageHeader(title: widget.title, subtitle: widget.subtitle, trailing: _picker()),
         Expanded(
           child: _ReportLoader<Map<String, dynamic>>(
-            key: ValueKey('$_month-$_year-${widget.title}-$_refreshKey'), // Include refresh key
+            key: ValueKey('$_month-$_year-${widget.title}-$_refreshKey'),
             load: () => ReportService.generateMonthlyReport(year: _year, month: _month),
             builder: (ctx, r) => widget.builder(ctx, r, _month, _year),
           ),
@@ -1741,8 +1715,8 @@ class _PeriodTabState extends State<_PeriodTab> {
       ],
     );
   }
-  
-  // Public method to trigger refresh from descendants
+
+  // Called from descendants (e.g. after saving an opening balance).
   void refresh() {
     setState(() {
       _refreshKey++;
@@ -1760,7 +1734,6 @@ class _MonthlyTab extends StatelessWidget {
       title: 'Monthly Report',
       subtitle: 'Complete cash movement, income, expenses and portfolio snapshot',
       builder: (ctx, r, month, year) {
-        // Extract data with proper fallbacks
         final loans = _m(r['loans']);
         final rep = _m(r['repayments']);
         final sav = _m(r['savings']);
@@ -1779,18 +1752,12 @@ class _MonthlyTab extends StatelessWidget {
         final totalInflows = _n(r['totalInflows']);
         final totalOutflows = _n(r['totalOutflows']);
         final net = _n(r['netCashFlow']);
-        
-        String tx(Map m, [String label = 'transactions']) => 
-            '${_n(m['count']).toInt()} $label';
-        
-        String change(String key) {
-          final c = _n(prev[key]);
-          final cur = _n(r[key] ?? (key == 'income' ? income['total'] : (key == 'expenses' ? expense['total'] : 0)));
-          if (c == 0) return '';
-          final pct = ((cur - c) / c * 100);
-          final sign = pct > 0 ? '+' : '';
-          return '$sign${pct.toStringAsFixed(1)}% vs last month';
-        }
+
+        final hasManualOpening = cash['hasManualOpening'] == true;
+        final hasNoCashAccounts = cash['hasNoCashAccounts'] == true;
+        final unexplained = _n(cash['unexplained']);
+
+        String tx(Map m, [String label = 'transactions']) => '${_n(m['count']).toInt()} $label';
 
         String changeAmt(num current, String prevKey) {
           final p = _n(prev[prevKey]);
@@ -1800,16 +1767,16 @@ class _MonthlyTab extends StatelessWidget {
           return '$sign${pct.toStringAsFixed(1)}%';
         }
 
-        // Build cash movement statement rows
+        // ── Cash movement statement rows ─────────────────────────────────────
         final rows = <_Row>[
           _Row.item(
-            'Opening cash balance', 
-            cash['hasManualOpening'] == true ? _n(cash['opening']) : 0, 
-            isFirst: true, 
-            hint: cash['hasManualOpening'] == true 
-              ? 'Manually set' 
-              : 'Not set (auto-calculated: ${_ugx(_n(cash['opening']))})',
-            showZero: true
+            'Opening cash balance',
+            hasManualOpening ? _n(cash['opening']) : 0,
+            isFirst: true,
+            hint: hasManualOpening
+                ? 'Manually set'
+                : 'Not set (auto-calculated: ${_ugx(_n(cash['opening']))})',
+            showZero: true,
           ),
           const _Row.header('CASH INFLOWS'),
           _Row.item('Loan repayments — principal', _n(rep['principal']), hint: tx(rep)),
@@ -1825,7 +1792,8 @@ class _MonthlyTab extends StatelessWidget {
           const _Row.header('CASH OUTFLOWS'),
           _Row.item('Loans disbursed', _n(loans['amount']), hint: tx(loans)),
           _Row.item('Savings withdrawals', _n(savWd['amount']), hint: tx(savWd, 'withdrawals')),
-          _Row.item('Mobile money withdrawals (MTN & Airtel)', _n(payouts['amount']), hint: tx(payouts, 'withdrawals')),
+          _Row.item('Mobile money withdrawals (MTN & Airtel)', _n(payouts['amount']),
+              hint: tx(payouts, 'withdrawals')),
           _Row.item('Salaries & allowances', _n(expense['salaries'])),
           _Row.item('Utilities & transport', _n(expense['utilities'])),
           _Row.item('Office expenses', _n(expense['officeExpenses'])),
@@ -1837,29 +1805,18 @@ class _MonthlyTab extends StatelessWidget {
           _Row.grand('Total closing cash', _n(cash['totalClosing'])),
         ];
 
-        // Add appropriate reconciliation message
-        final hasManualOpening = cash['hasManualOpening'] == true;
-        final hasNoCashAccounts = cash['hasNoCashAccounts'] == true;
-        final unexplained = _n(cash['unexplained']);
-        
         if (!hasManualOpening) {
-          rows.add(_Row.warning(
-            'Opening balance not set',
-            'Set the opening balance for this month to enable cash reconciliation.'
-          ));
+          rows.add(const _Row.warning(
+              'Opening balance not set', 'Set the opening balance for this month to enable cash reconciliation.'));
         } else if (hasNoCashAccounts) {
-          rows.add(_Row.warning(
-            'Cash accounts not set up',
-            'Add your bank and cash accounts in Finance > Cash & Bank to track balances.'
-          ));
+          rows.add(const _Row.warning('Cash accounts not set up',
+              'Add your bank and cash accounts in Finance > Cash & Bank to track balances.'));
         } else if (unexplained.abs() > 100) {
-          rows.add(_Row.warning(
-            'Unexplained difference: ${_ugx(unexplained)}',
-            'Cash moved without being recorded (till sessions, manual adjustments, or missing entries).'
-          ));
+          rows.add(_Row.warning('Unexplained difference: ${_ugx(unexplained)}',
+              'Cash moved without being recorded (till sessions, manual adjustments, or missing entries).'));
         }
 
-        // CSV Export
+        // ── CSV export ───────────────────────────────────────────────────────
         Future<void> exportCsv() async {
           final b = StringBuffer()
             ..writeln('MBADIFA SACCO')
@@ -1867,16 +1824,16 @@ class _MonthlyTab extends StatelessWidget {
             ..writeln()
             ..writeln('Category,Count,Amount (UGX)');
 
-          // Opening balance display
-          if (cash['hasNoCashAccounts'] == true) {
+          if (hasNoCashAccounts) {
             b.writeln('Opening Cash Balance,,"Cash accounts not set up"');
-          } else if (cash['hasManualOpening'] != true) {
+          } else if (!hasManualOpening) {
             b.writeln('Opening Cash Balance,,"Opening balance not set"');
           } else {
             b.writeln('Opening Cash Balance,,${_n(cash['opening'])}');
           }
 
-          b..writeln()
+          b
+            ..writeln()
             ..writeln('CASH INFLOWS')
             ..writeln('Loan Repayments - Principal,${_n(rep['count'])},${_n(rep['principal'])}')
             ..writeln('Loan Repayments - Interest,,${_n(rep['interest'])}')
@@ -1884,26 +1841,26 @@ class _MonthlyTab extends StatelessWidget {
             ..writeln('Savings Deposits,${_n(sav['count'])},${_n(sav['amount'])}')
             ..writeln('Share Purchases,${_n(sh['count'])},${_n(sh['amount'])}')
             ..writeln('Fixed Deposits,${_n(fd['count'])},${_n(fd['amount'])}');
-          
-          // Only show MTN row if there are actual top-ups
+
           if (_n(topups['amount']) > 0) {
             b.writeln('MTN Mobile Money & Airtel Money Top-ups,${_n(topups['count'])},${_n(topups['amount'])}');
           }
-          
-          b..writeln('Fees & Penalties,,${_n(income['fees']) + _n(income['penalties'])}')
+
+          b
+            ..writeln('Fees & Penalties,,${_n(income['fees']) + _n(income['penalties'])}')
             ..writeln('Other Income,,${_n(income['other'])}')
             ..writeln('Total Inflows,,$totalInflows')
             ..writeln()
             ..writeln('CASH OUTFLOWS')
             ..writeln('Loans Disbursed,${_n(loans['count'])},${_n(loans['amount'])}')
             ..writeln('Savings Withdrawals,${_n(savWd['count'])},${_n(savWd['amount'])}');
-          
-          // Only show MTN payouts row if there are actual payouts
+
           if (_n(payouts['amount']) > 0) {
             b.writeln('MTN Mobile Money & Airtel Money Payouts,${_n(payouts['count'])},${_n(payouts['amount'])}');
           }
-          
-          b..writeln('Salaries,,${_n(expense['salaries'])}')
+
+          b
+            ..writeln('Salaries,,${_n(expense['salaries'])}')
             ..writeln('Utilities,,${_n(expense['utilities'])}')
             ..writeln('Office Expenses,,${_n(expense['officeExpenses'])}')
             ..writeln('Other Expenses,,${_n(expense['other'])}')
@@ -1914,34 +1871,32 @@ class _MonthlyTab extends StatelessWidget {
             ..writeln('Cash with Tellers,,${_n(cash['tillsNow'])}')
             ..writeln('Total Closing Cash,,${_n(cash['totalClosing'])}');
 
-          // Unexplained difference display
-          if (cash['hasNoCashAccounts'] != true && cash['hasManualOpening'] == true && unexplained.abs() > 100) {
+          if (!hasNoCashAccounts && hasManualOpening && unexplained.abs() > 100) {
             b.writeln('Unexplained Difference,,$unexplained');
           }
 
-          b..writeln()
+          b
+            ..writeln()
             ..writeln('PORTFOLIO SNAPSHOT')
             ..writeln('Live Loans,${_n(port['liveLoans'])},${_n(port['outstanding'])}')
             ..writeln('Overdue Loans,${_n(port['overdueLoans'])},${_n(port['overdueAmount'])}')
             ..writeln('PAR %,,${_n(port['parPercent']).toStringAsFixed(1)}%')
             ..writeln('Total Members,${_n(memb['total'])}')
             ..writeln('New Members This Month,${_n(memb['newThisMonth'])}');
-          
+
           await _saveCsv(ctx, 'monthly_report_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
         }
 
-        // PDF Export
+        // ── PDF export ───────────────────────────────────────────────────────
         Future<void> exportPdf() async {
           try {
             final pdf = pw.Document();
-            
-            // Build PDF content with professional layout
+
             pdf.addPage(
               pw.MultiPage(
                 pageFormat: PdfPageFormat.a4,
                 margin: const pw.EdgeInsets.all(32),
                 build: (pw.Context pdfContext) => [
-                  // Header with logo area and title
                   pw.Container(
                     padding: const pw.EdgeInsets.only(bottom: 16),
                     decoration: const pw.BoxDecoration(
@@ -1953,42 +1908,22 @@ class _MonthlyTab extends StatelessWidget {
                         pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            pw.Text(
-                              'MBADIFA SACCO',
-                              style: pw.TextStyle(
-                                fontSize: 22,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.blue900,
-                              ),
-                            ),
+                            pw.Text('MBADIFA SACCO',
+                                style: pw.TextStyle(
+                                    fontSize: 22, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                             pw.SizedBox(height: 4),
-                            pw.Text(
-                              'Monthly Financial Report',
-                              style: const pw.TextStyle(
-                                fontSize: 11,
-                                color: PdfColors.grey700,
-                              ),
-                            ),
+                            pw.Text('Monthly Financial Report',
+                                style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
                           ],
                         ),
                         pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.end,
                           children: [
-                            pw.Text(
-                              r['period'] ?? '$month/$year',
-                              style: pw.TextStyle(
-                                fontSize: 16,
-                                fontWeight: pw.FontWeight.bold,
-                              ),
-                            ),
+                            pw.Text('${r['period'] ?? '$month/$year'}',
+                                style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                             pw.SizedBox(height: 4),
-                            pw.Text(
-                              'All amounts in UGX',
-                              style: const pw.TextStyle(
-                                fontSize: 9,
-                                color: PdfColors.grey700,
-                              ),
-                            ),
+                            pw.Text('All amounts in UGX',
+                                style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
                           ],
                         ),
                       ],
@@ -1996,7 +1931,6 @@ class _MonthlyTab extends StatelessWidget {
                   ),
                   pw.SizedBox(height: 20),
 
-                  // Executive Summary KPIs in colored boxes
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
@@ -2014,19 +1948,12 @@ class _MonthlyTab extends StatelessWidget {
                   ),
                   pw.SizedBox(height: 24),
 
-                  // Cash Movement Statement Table
-                  pw.Text(
-                    'CASH MOVEMENT STATEMENT',
-                    style: pw.TextStyle(
-                      fontSize: 13,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.blue900,
-                    ),
-                  ),
+                  pw.Text('CASH MOVEMENT STATEMENT',
+                      style: pw.TextStyle(
+                          fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                   pw.SizedBox(height: 12),
-                  
-                  // Opening balance with conditional display
-                  if (cash['hasNoCashAccounts'] == true)
+
+                  if (hasNoCashAccounts)
                     pw.Container(
                       padding: const pw.EdgeInsets.all(10),
                       margin: const pw.EdgeInsets.only(bottom: 12),
@@ -2034,16 +1961,11 @@ class _MonthlyTab extends StatelessWidget {
                         color: PdfColors.blue50,
                         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
                       ),
-                      child: pw.Text(
-                        'NOTE: Cash accounts not set up',
-                        style: pw.TextStyle(
-                          fontSize: 9,
-                          color: PdfColors.blue900,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
+                      child: pw.Text('NOTE: Cash accounts not set up',
+                          style: pw.TextStyle(
+                              fontSize: 9, color: PdfColors.blue900, fontWeight: pw.FontWeight.bold)),
                     )
-                  else if (cash['hasManualOpening'] != true)
+                  else if (!hasManualOpening)
                     pw.Container(
                       padding: const pw.EdgeInsets.all(10),
                       margin: const pw.EdgeInsets.only(bottom: 12),
@@ -2051,39 +1973,27 @@ class _MonthlyTab extends StatelessWidget {
                         color: PdfColors.orange50,
                         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
                       ),
-                      child: pw.Text(
-                        'WARNING: Opening balance not set for this month',
-                        style: pw.TextStyle(
-                          fontSize: 9,
-                          color: PdfColors.orange900,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
+                      child: pw.Text('WARNING: Opening balance not set for this month',
+                          style: pw.TextStyle(
+                              fontSize: 9, color: PdfColors.orange900, fontWeight: pw.FontWeight.bold)),
                     )
                   else
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                      ),
+                      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
                       child: pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text(
-                            'Opening cash balance',
-                            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-                          ),
-                          pw.Text(
-                            _ugx(_n(cash['opening'])),
-                            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-                          ),
+                          pw.Text('Opening cash balance',
+                              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                          pw.Text(_ugx(_n(cash['opening'])),
+                              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
                         ],
                       ),
                     ),
-                  
+
                   pw.SizedBox(height: 8),
-                  
-                  // INFLOWS TABLE
+
                   _pdfSectionHeader('CASH INFLOWS'),
                   _pdfTable([
                     ['Loan repayments — principal', _ugx(_n(rep['principal']))],
@@ -2098,8 +2008,7 @@ class _MonthlyTab extends StatelessWidget {
                   ]),
                   _pdfTableTotal('Total inflows', _ugx(totalInflows), PdfColors.green700),
                   pw.SizedBox(height: 16),
-                  
-                  // OUTFLOWS TABLE
+
                   _pdfSectionHeader('CASH OUTFLOWS'),
                   _pdfTable([
                     ['Loans disbursed', _ugx(_n(loans['amount']))],
@@ -2112,8 +2021,7 @@ class _MonthlyTab extends StatelessWidget {
                   ]),
                   _pdfTableTotal('Total outflows', _ugx(totalOutflows), PdfColors.red700),
                   pw.SizedBox(height: 16),
-                  
-                  // NET CASH FLOW SUMMARY
+
                   pw.Container(
                     padding: const pw.EdgeInsets.all(12),
                     decoration: pw.BoxDecoration(
@@ -2123,28 +2031,21 @@ class _MonthlyTab extends StatelessWidget {
                     child: pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text(
-                          'NET CASH FLOW',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: net >= 0 ? PdfColors.green900 : PdfColors.red900,
-                          ),
-                        ),
-                        pw.Text(
-                          _ugx(net),
-                          style: pw.TextStyle(
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: net >= 0 ? PdfColors.green900 : PdfColors.red900,
-                          ),
-                        ),
+                        pw.Text('NET CASH FLOW',
+                            style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: net >= 0 ? PdfColors.green900 : PdfColors.red900)),
+                        pw.Text(_ugx(net),
+                            style: pw.TextStyle(
+                                fontSize: 12,
+                                fontWeight: pw.FontWeight.bold,
+                                color: net >= 0 ? PdfColors.green900 : PdfColors.red900)),
                       ],
                     ),
                   ),
                   pw.SizedBox(height: 12),
-                  
-                  // CLOSING BALANCE TABLE
+
                   _pdfTable([
                     ['Closing cash balance (Bank & Cash)', _ugx(_n(cash['closing']))],
                     if (_n(cash['tillsNow']) > 0)
@@ -2152,9 +2053,8 @@ class _MonthlyTab extends StatelessWidget {
                     else if (_n(cash['nonTillAccounts']) == 0)
                       ['Cash with tellers', 'No open till sessions'],
                   ]),
-                  
-                  // Total closing cash - with helpful messages
-                  if (_n(cash['hasNoCashAccounts']) == true)
+
+                  if (hasNoCashAccounts)
                     pw.Container(
                       padding: const pw.EdgeInsets.all(12),
                       decoration: pw.BoxDecoration(
@@ -2164,56 +2064,33 @@ class _MonthlyTab extends StatelessWidget {
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          pw.Text(
-                            'TOTAL CLOSING CASH: Not set up',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.orange900,
-                            ),
-                          ),
+                          pw.Text('TOTAL CLOSING CASH: Not set up',
+                              style: pw.TextStyle(
+                                  fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
                           pw.SizedBox(height: 4),
-                          pw.Text(
-                            'Add cash/bank/mobile money accounts in Finance > Cash & Bank',
-                            style: pw.TextStyle(
-                              fontSize: 9,
-                              color: PdfColors.orange800,
-                            ),
-                          ),
+                          pw.Text('Add cash/bank/mobile money accounts in Finance > Cash & Bank',
+                              style: const pw.TextStyle(fontSize: 9, color: PdfColors.orange800)),
                         ],
                       ),
                     )
                   else
                     pw.Container(
                       padding: const pw.EdgeInsets.all(12),
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.blue900,
-                      ),
+                      decoration: const pw.BoxDecoration(color: PdfColors.blue900),
                       child: pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text(
-                            'TOTAL CLOSING CASH',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.white,
-                            ),
-                          ),
-                          pw.Text(
-                            _ugx(_n(cash['totalClosing'])),
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.white,
-                            ),
-                          ),
+                          pw.Text('TOTAL CLOSING CASH',
+                              style: pw.TextStyle(
+                                  fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+                          pw.Text(_ugx(_n(cash['totalClosing'])),
+                              style: pw.TextStyle(
+                                  fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
                         ],
                       ),
                     ),
-                  
-                  // Unexplained difference with conditional display
-                  if (cash['hasNoCashAccounts'] != true && cash['hasManualOpening'] == true && unexplained.abs() > 100) ...[
+
+                  if (!hasNoCashAccounts && hasManualOpening && unexplained.abs() > 100) ...[
                     pw.SizedBox(height: 12),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(10),
@@ -2223,21 +2100,11 @@ class _MonthlyTab extends StatelessWidget {
                       ),
                       child: pw.Row(
                         children: [
-                          pw.Text(
-                            'Unexplained difference: ',
-                            style: pw.TextStyle(
-                              fontSize: 9,
-                              color: PdfColors.amber900,
-                            ),
-                          ),
-                          pw.Text(
-                            _ugx(unexplained),
-                            style: pw.TextStyle(
-                              fontSize: 9,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.amber900,
-                            ),
-                          ),
+                          pw.Text('Unexplained difference: ',
+                              style: const pw.TextStyle(fontSize: 9, color: PdfColors.amber900)),
+                          pw.Text(_ugx(unexplained),
+                              style: pw.TextStyle(
+                                  fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.amber900)),
                         ],
                       ),
                     ),
@@ -2245,22 +2112,13 @@ class _MonthlyTab extends StatelessWidget {
 
                   pw.SizedBox(height: 24),
 
-                  // Portfolio Snapshot Section
-                  pw.Text(
-                    'PORTFOLIO SNAPSHOT',
-                    style: pw.TextStyle(
-                      fontSize: 13,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.blue900,
-                    ),
-                  ),
+                  pw.Text('PORTFOLIO SNAPSHOT',
+                      style: pw.TextStyle(
+                          fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                   pw.SizedBox(height: 4),
                   pw.Text(
                     'As of ${DateFormat('d MMMM yyyy').format(_dt(port['asOf']) ?? DateTime.now())}',
-                    style: const pw.TextStyle(
-                      fontSize: 9,
-                      color: PdfColors.grey700,
-                    ),
+                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
                   ),
                   pw.SizedBox(height: 12),
                   _pdfTable([
@@ -2278,27 +2136,22 @@ class _MonthlyTab extends StatelessWidget {
                     ['New members this month', '${_n(memb['newThisMonth']).toInt()}'],
                   ]),
 
-                  // Footer
                   pw.SizedBox(height: 32),
                   pw.Divider(),
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text(
-                        'Generated on ${DateFormat('d MMMM yyyy, HH:mm').format(DateTime.now())}',
-                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
-                      ),
-                      pw.Text(
-                        'MBADIFA SACCO',
-                        style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, fontWeight: pw.FontWeight.bold),
-                      ),
+                      pw.Text('Generated on ${DateFormat('d MMMM yyyy, HH:mm').format(DateTime.now())}',
+                          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                      pw.Text('MBADIFA SACCO',
+                          style: pw.TextStyle(
+                              fontSize: 8, color: PdfColors.grey600, fontWeight: pw.FontWeight.bold)),
                     ],
                   ),
                 ],
               ),
             );
 
-            // Show PDF
             await Printing.layoutPdf(
               onLayout: (PdfPageFormat format) async => pdf.save(),
               name: 'monthly_report_${year}_${month.toString().padLeft(2, '0')}.pdf',
@@ -2310,15 +2163,51 @@ class _MonthlyTab extends StatelessWidget {
           }
         }
 
-        // Build the UI
+        // ── Set / edit opening balance (shared by both banners) ──────────────
+        Future<void> editOpening() async {
+          final result = await showDialog<int>(
+            context: ctx,
+            builder: (dialogCtx) => _SetOpeningBalanceDialog(
+              year: year,
+              month: month,
+              currentValue: hasManualOpening ? _n(cash['opening']).toInt() : null,
+            ),
+          );
+          if (result == null || !ctx.mounted) return;
+          try {
+            final monthKey = '$year-${month.toString().padLeft(2, '0')}';
+            await _db
+                .collection('account_snapshots')
+                .doc('${FirebaseService.sessionTenantId}-$monthKey')
+                .set({
+              'tenantId': FirebaseService.sessionTenantId,
+              'month': monthKey,
+              'opening': result,
+              'hasManualOpening': true,
+              'setAt': FieldValue.serverTimestamp(),
+              'setBy': FirebaseService.currentUser?.displayName ??
+                  FirebaseService.currentUser?.email ??
+                  'Unknown',
+            }, SetOptions(merge: true));
+
+            if (!ctx.mounted) return;
+            _toast(ctx, 'Opening balance ${hasManualOpening ? 'updated to' : 'set to'} ${_ugx(result)}');
+            ctx.findAncestorStateOfType<_PeriodTabState>()?.refresh();
+          } catch (e) {
+            if (ctx.mounted) {
+              _toast(ctx, 'Failed to set opening balance: $e', error: true);
+            }
+          }
+        }
+
+        // ── UI ───────────────────────────────────────────────────────────────
         return [
-          // Opening balance status - clean and professional
-          if (cash['hasManualOpening'] == true)
+          if (hasManualOpening)
             Container(
               padding: const EdgeInsets.all(14),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
+                gradient: const LinearGradient(
                   colors: [Color(0xFF0EA5E9), Color(0xFF06B6D4)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -2326,9 +2215,9 @@ class _MonthlyTab extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0xFF0EA5E9).withOpacity(0.2),
+                    color: const Color(0xFF0EA5E9).withOpacity(0.2),
                     blurRadius: 8,
-                    offset: Offset(0, 2),
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
@@ -2340,91 +2229,42 @@ class _MonthlyTab extends StatelessWidget {
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.account_balance_wallet, color: Colors.white, size: 22),
+                    child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Opening Balance',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withOpacity(0.9),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
+                        Text('Opening Balance',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withOpacity(0.9),
+                              letterSpacing: 0.5,
+                            )),
                         const SizedBox(height: 3),
-                        Text(
-                          _ugx(_n(cash['opening'])),
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
+                        Text(_ugx(_n(cash['opening'])),
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            )),
                       ],
                     ),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    onPressed: () async {
-                      final result = await showDialog<int>(
-                        context: ctx,
-                        builder: (dialogCtx) => _SetOpeningBalanceDialog(
-                          year: year,
-                          month: month,
-                          currentValue: cash['hasManualOpening'] == true ? _n(cash['opening']).toInt() : null,
-                        ),
-                      );
-                      if (result != null && ctx.mounted) {
-                        try {
-                          final monthKey = '$year-${month.toString().padLeft(2, '0')}';
-                          await _db
-                              .collection('account_snapshots')
-                              .doc('${FirebaseService.sessionTenantId}-$monthKey')
-                              .set({
-                            'tenantId': FirebaseService.sessionTenantId,
-                            'month': monthKey,
-                            'opening': result,
-                            'hasManualOpening': true,
-                            'setAt': FieldValue.serverTimestamp(),
-                            'setBy': FirebaseService.currentUser?.displayName ??
-                                FirebaseService.currentUser?.email ??
-                                'Unknown',
-                          }, SetOptions(merge: true));
-                          
-                          print('✅ Opening balance saved: $result for $monthKey');
-                          print('📝 Document: ${FirebaseService.sessionTenantId}-$monthKey');
-                          
-                          _toast(ctx, 'Opening balance updated to ${_ugx(result)}');
-                          // Trigger rebuild by calling refresh method on parent state
-                          final periodState = ctx.findAncestorStateOfType<_PeriodTabState>();
-                          if (periodState != null) {
-                            print('🔄 Triggering refresh...');
-                            periodState.refresh();
-                          } else {
-                            print('⚠️ Could not find _PeriodTabState for refresh');
-                          }
-                        } catch (e) {
-                          print('❌ Failed to set opening balance: $e');
-                          _toast(ctx, 'Failed to set opening balance: $e', error: true);
-                        }
-                      }
-                    },
-                    icon: Icon(Icons.edit, size: 16),
-                    label: Text('Edit'),
+                    onPressed: editOpening,
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Edit'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
-                      foregroundColor: Color(0xFF0EA5E9),
+                      foregroundColor: const Color(0xFF0EA5E9),
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ],
@@ -2435,104 +2275,51 @@ class _MonthlyTab extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: Color(0xFFFEF3C7),
+                color: const Color(0xFFFEF3C7),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Color(0xFFFDE047), width: 1.5),
+                border: Border.all(color: const Color(0xFFFDE047), width: 1.5),
               ),
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Color(0xFFFDE047),
+                      color: const Color(0xFFFDE047),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.info_outline, color: Color(0xFF92400E), size: 20),
+                    child: const Icon(Icons.info_outline, color: Color(0xFF92400E), size: 20),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(
+                  const Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Opening balance not set',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF92400E),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Set the starting cash balance for accurate reconciliation',
-                          style: TextStyle(fontSize: 11.5, color: Color(0xFFA16207)),
-                        ),
+                        Text('Opening balance not set',
+                            style: TextStyle(
+                                fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
+                        SizedBox(height: 2),
+                        Text('Set the starting cash balance for accurate reconciliation',
+                            style: TextStyle(fontSize: 11.5, color: Color(0xFFA16207))),
                       ],
                     ),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    onPressed: () async {
-                      final result = await showDialog<int>(
-                        context: ctx,
-                        builder: (dialogCtx) => _SetOpeningBalanceDialog(
-                          year: year,
-                          month: month,
-                          currentValue: null,
-                        ),
-                      );
-                      if (result != null && ctx.mounted) {
-                        try {
-                          final monthKey = '$year-${month.toString().padLeft(2, '0')}';
-                          await _db
-                              .collection('account_snapshots')
-                              .doc('${FirebaseService.sessionTenantId}-$monthKey')
-                              .set({
-                            'tenantId': FirebaseService.sessionTenantId,
-                            'month': monthKey,
-                            'opening': result,
-                            'hasManualOpening': true,
-                            'setAt': FieldValue.serverTimestamp(),
-                            'setBy': FirebaseService.currentUser?.displayName ??
-                                FirebaseService.currentUser?.email ??
-                                'Unknown',
-                          }, SetOptions(merge: true));
-                          
-                          print('✅ Opening balance saved: $result for $monthKey');
-                          print('📝 Document: ${FirebaseService.sessionTenantId}-$monthKey');
-                          
-                          _toast(ctx, 'Opening balance set to ${_ugx(result)}');
-                          // Trigger rebuild
-                          final periodState = ctx.findAncestorStateOfType<_PeriodTabState>();
-                          if (periodState != null) {
-                            print('🔄 Triggering refresh...');
-                            periodState.refresh();
-                          } else {
-                            print('⚠️ Could not find _PeriodTabState for refresh');
-                          }
-                        } catch (e) {
-                          print('❌ Failed to set opening balance: $e');
-                          _toast(ctx, 'Failed to set opening balance: $e', error: true);
-                        }
-                      }
-                    },
-                    icon: Icon(Icons.add_circle_outline, size: 18),
-                    label: Text('Set Balance'),
+                    onPressed: editOpening,
+                    icon: const Icon(Icons.add_circle_outline, size: 18),
+                    label: const Text('Set Balance'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFFFBBF24),
-                      foregroundColor: Color(0xFF92400E),
+                      backgroundColor: const Color(0xFFFBBF24),
+                      foregroundColor: const Color(0xFF92400E),
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ],
               ),
             ),
-          
-          // Export buttons row
+
           Align(
             alignment: Alignment.centerRight,
             child: Wrap(
@@ -2544,8 +2331,7 @@ class _MonthlyTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          
-          // KPI Cards with comparisons
+
           _KpiGrid(children: [
             _Kpi(
               label: 'Total inflows',
@@ -2570,12 +2356,10 @@ class _MonthlyTab extends StatelessWidget {
             ),
             _Kpi(
               label: 'Total closing cash',
-              value: _n(cash['hasNoCashAccounts']) == true 
-                  ? 'Not set up' 
-                  : _ugx(_n(cash['totalClosing'])),
-              sub: _n(cash['hasNoCashAccounts']) == true
+              value: hasNoCashAccounts ? 'Not set up' : _ugx(_n(cash['totalClosing'])),
+              sub: hasNoCashAccounts
                   ? 'Add accounts in Finance > Cash & Bank'
-                  : (_n(cash['tillsNow']) > 0 
+                  : (_n(cash['tillsNow']) > 0
                       ? 'Incl. ${_ugx(_n(cash['tillsNow']))} with tellers'
                       : _n(cash['nonTillAccounts']) > 0
                           ? 'Bank & cash accounts'
@@ -2585,12 +2369,11 @@ class _MonthlyTab extends StatelessWidget {
             ),
           ]),
           const SizedBox(height: 16),
-          
-          // Charts Row
+
+          // Charts row
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Cash Flow Breakdown Pie Chart
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -2604,28 +2387,32 @@ class _MonthlyTab extends StatelessWidget {
                       const SizedBox(height: 16),
                       SizedBox(
                         height: 140,
-                        child: PieChart(
-                          PieChartData(
-                            sections: [
-                              PieChartSectionData(
-                                value: totalInflows.toDouble(),
-                                title: '${((totalInflows / (totalInflows + totalOutflows)) * 100).toStringAsFixed(1)}%',
-                                color: const Color(0xFF059669), // Professional teal-green
-                                radius: 50,
-                                titleStyle: _ps(11, c: Colors.white, w: FontWeight.w600),
+                        child: (totalInflows + totalOutflows) <= 0
+                            ? Center(child: Text('No cash movement', style: _ps(12, c: _C.muted)))
+                            : PieChart(
+                                PieChartData(
+                                  sections: [
+                                    PieChartSectionData(
+                                      value: totalInflows.toDouble(),
+                                      title:
+                                          '${((totalInflows / (totalInflows + totalOutflows)) * 100).toStringAsFixed(1)}%',
+                                      color: const Color(0xFF059669),
+                                      radius: 50,
+                                      titleStyle: _ps(11, c: Colors.white, w: FontWeight.w600),
+                                    ),
+                                    PieChartSectionData(
+                                      value: totalOutflows.toDouble(),
+                                      title:
+                                          '${((totalOutflows / (totalInflows + totalOutflows)) * 100).toStringAsFixed(1)}%',
+                                      color: const Color(0xFFDC2626),
+                                      radius: 50,
+                                      titleStyle: _ps(11, c: Colors.white, w: FontWeight.w600),
+                                    ),
+                                  ],
+                                  sectionsSpace: 2,
+                                  centerSpaceRadius: 30,
+                                ),
                               ),
-                              PieChartSectionData(
-                                value: totalOutflows.toDouble(),
-                                title: '${((totalOutflows / (totalInflows + totalOutflows)) * 100).toStringAsFixed(1)}%',
-                                color: const Color(0xFFDC2626), // Professional red
-                                radius: 50,
-                                titleStyle: _ps(11, c: Colors.white, w: FontWeight.w600),
-                              ),
-                            ],
-                            sectionsSpace: 2,
-                            centerSpaceRadius: 30,
-                          ),
-                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -2640,8 +2427,6 @@ class _MonthlyTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 16),
-              
-              // Arrears Aging Bar Chart
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -2658,17 +2443,20 @@ class _MonthlyTab extends StatelessWidget {
                         child: BarChart(
                           BarChartData(
                             alignment: BarChartAlignment.spaceAround,
-                            maxY: [
-                              _n(port['arrears1_30']),
-                              _n(port['arrears31_60']),
-                              _n(port['arrears61_90']),
-                              _n(port['arrears90Plus']),
-                            ].reduce((a, b) => a > b ? a : b).toDouble() * 1.2,
+                            maxY: () {
+                              final m = [
+                                _n(port['arrears1_30']),
+                                _n(port['arrears31_60']),
+                                _n(port['arrears61_90']),
+                                _n(port['arrears90Plus']),
+                              ].reduce((a, b) => a > b ? a : b).toDouble();
+                              return m <= 0 ? 1.0 : m * 1.2;
+                            }(),
                             barGroups: [
-                              _barGroup(0, _n(port['arrears1_30']).toDouble(), const Color(0xFFF59E0B)), // Amber
-                              _barGroup(1, _n(port['arrears31_60']).toDouble(), const Color(0xFFEA580C)), // Orange  
-                              _barGroup(2, _n(port['arrears61_90']).toDouble(), const Color(0xFFDC2626)), // Red
-                              _barGroup(3, _n(port['arrears90Plus']).toDouble(), const Color(0xFF991B1B)), // Dark red
+                              _barGroup(0, _n(port['arrears1_30']).toDouble(), const Color(0xFFF59E0B)),
+                              _barGroup(1, _n(port['arrears31_60']).toDouble(), const Color(0xFFEA580C)),
+                              _barGroup(2, _n(port['arrears61_90']).toDouble(), const Color(0xFFDC2626)),
+                              _barGroup(3, _n(port['arrears90Plus']).toDouble(), const Color(0xFF991B1B)),
                             ],
                             titlesData: FlTitlesData(
                               leftTitles: AxisTitles(
@@ -2688,7 +2476,7 @@ class _MonthlyTab extends StatelessWidget {
                                 sideTitles: SideTitles(
                                   showTitles: true,
                                   getTitlesWidget: (value, meta) {
-                                    final labels = ['1-30', '31-60', '61-90', '90+'];
+                                    const labels = ['1-30', '31-60', '61-90', '90+'];
                                     if (value.toInt() >= 0 && value.toInt() < labels.length) {
                                       return Padding(
                                         padding: const EdgeInsets.only(top: 8),
@@ -2706,21 +2494,14 @@ class _MonthlyTab extends StatelessWidget {
                               show: true,
                               drawVerticalLine: false,
                               horizontalInterval: 1000000,
-                              getDrawingHorizontalLine: (value) {
-                                return FlLine(
-                                  color: _C.border,
-                                  strokeWidth: 1,
-                                );
-                              },
+                              getDrawingHorizontalLine: (value) => FlLine(color: _C.border, strokeWidth: 1),
                             ),
                             borderData: FlBorderData(show: false),
                           ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Center(
-                        child: Text('Days overdue', style: _ps(10.5, c: _C.muted)),
-                      ),
+                      Center(child: Text('Days overdue', style: _ps(10.5, c: _C.muted))),
                     ],
                   ),
                 ),
@@ -2728,8 +2509,7 @@ class _MonthlyTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          
-          // Main content split
+
           _Split(
             main: _StatementCard(
               title: 'Cash movement - ${r['period'] ?? ''}',
@@ -2738,7 +2518,6 @@ class _MonthlyTab extends StatelessWidget {
             side: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Inflows vs Outflows
                 _BarsCard(
                   title: 'Inflows vs outflows',
                   subtitle: 'Net: ${_ugx(net)}',
@@ -2748,8 +2527,6 @@ class _MonthlyTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
-                // Portfolio snapshot
                 _Panel(
                   title: 'Portfolio snapshot',
                   subtitle: 'As of ${DateFormat('d MMM yyyy').format(_dt(port['asOf']) ?? DateTime.now())}',
@@ -2803,19 +2580,20 @@ class _MonthlyTab extends StatelessWidget {
       ),
     );
   }
-
 }
 
-// Set Opening Balance Dialog
+// ═══════════════════════════════════════════════════════════════════════════════
+// Set Opening Balance dialog
+// ═══════════════════════════════════════════════════════════════════════════════
 class _SetOpeningBalanceDialog extends StatefulWidget {
   final int year, month;
   final int? currentValue;
   const _SetOpeningBalanceDialog({
-    required this.year, 
+    required this.year,
     required this.month,
     this.currentValue,
   });
-  
+
   @override
   State<_SetOpeningBalanceDialog> createState() => _SetOpeningBalanceDialogState();
 }
@@ -2823,27 +2601,26 @@ class _SetOpeningBalanceDialog extends StatefulWidget {
 class _SetOpeningBalanceDialogState extends State<_SetOpeningBalanceDialog> {
   final _controller = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  
+
   @override
   void initState() {
     super.initState();
-    // Pre-fill with current value if exists
     if (widget.currentValue != null) {
       _controller.text = widget.currentValue.toString();
     }
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final monthName = DateFormat.yMMMM().format(DateTime(widget.year, widget.month));
     final isEditing = widget.currentValue != null;
-    
+
     return AlertDialog(
       title: Text('${isEditing ? 'Edit' : 'Set'} Opening Cash Balance'),
       content: Form(
@@ -2852,16 +2629,13 @@ class _SetOpeningBalanceDialogState extends State<_SetOpeningBalanceDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'For $monthName',
-              style: _ps(14, w: FontWeight.w600),
-            ),
+            Text('For $monthName', style: _ps(14, w: FontWeight.w600)),
             const SizedBox(height: 8),
             Text(
-              isEditing 
-                ? 'Update the opening cash position for this month.'
-                : 'This is a one-time manual entry for the starting cash position. '
-                  'Use this when migrating from another system or correcting historical data.',
+              isEditing
+                  ? 'Update the opening cash position for this month.'
+                  : 'This is a one-time manual entry for the starting cash position. '
+                      'Use this when migrating from another system or correcting historical data.',
               style: _ps(12, c: _C.muted),
             ),
             if (isEditing) ...[
@@ -2892,11 +2666,11 @@ class _SetOpeningBalanceDialogState extends State<_SetOpeningBalanceDialog> {
               controller: _controller,
               keyboardType: TextInputType.number,
               autofocus: true,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Opening Balance (UGX)',
                 hintText: '0',
                 prefixText: 'UGX ',
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(),
                 helperText: 'Enter the total cash + bank balance at start of month',
               ),
               validator: (value) {
@@ -2939,12 +2713,11 @@ class _SetOpeningBalanceDialogState extends State<_SetOpeningBalanceDialog> {
   }
 }
 
-// Helper for _Panel widget (add if not exists)
 class _Panel extends StatelessWidget {
   final String title;
   final String? subtitle;
   final Widget child;
-  
+
   const _Panel({
     required this.title,
     this.subtitle,
@@ -2984,1175 +2757,20 @@ class _Panel extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Income Statement Tab - Now navigates to dedicated SACCO format screen
+// Income Statement Tab - navigates to the dedicated SACCO-format screen
 // ═══════════════════════════════════════════════════════════════════════════════
 class _IncomeStatementTab extends StatelessWidget {
   const _IncomeStatementTab();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.assessment_outlined, size: 80, color: AppTheme.primary.withOpacity(0.5)),
-          const SizedBox(height: 24),
-          Text(
-            'Professional Income Statement',
-            style: GoogleFonts.poppins(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'View detailed income and expenditure in SACCO format',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: AppTheme.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const IncomeStatementSACCO(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.arrow_forward_rounded),
-            label: Text(
-              'Open Income Statement',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-        final income = _m(r['income']);
-        final expense = _m(r['expenses']);
-        final prev = _m(r['previous']);
-        final port = _m(r['portfolio']);
-        final loans = _m(r['loans']);
-        final rep = _m(r['repayments']);
-        final cash = _m(r['cash']);
-        
-        // Cash position
-        final openingCash = _n(cash['opening']);
-        final closingCash = _n(cash['closing']);
-        final tillsNow = _n(cash['tillsNow']);
-        final totalClosingCash = closingCash + tillsNow;
-        
-        // Interest income comes from loan repayments
-        final interestIncome = _n(rep['interest']);
-        final feesIncome = _n(income['fees']);
-        final penaltiesIncome = _n(income['penalties']);
-        final otherIncome = _n(income['other']);
-        
-        final totalIncome = interestIncome + feesIncome + penaltiesIncome + otherIncome;
-        final totalExpenses = _n(expense['total']);
-        final netSurplus = totalIncome - totalExpenses;
-        final margin = totalIncome > 0 ? (netSurplus / totalIncome * 100) : 0.0;
-        
-        // Previous month values
-        final prevInterest = _n(prev['repayments'] is Map ? prev['repayments']['interest'] : 0);
-        final prevFees = _n(prev['feesIncome']);
-        final prevPenalties = _n(prev['penaltiesIncome']);
-        final prevOther = _n(prev['otherIncome']);
-        final prevTotalIncome = prevInterest + prevFees + prevPenalties + prevOther;
-        final prevExpenses = _n(prev['expenses']);
-        
-        String changePercent(num current, num previous) {
-          if (previous == 0) return '-';
-          final change = ((current - previous) / previous * 100);
-          final sign = change > 0 ? '+' : '';
-          return '$sign${change.toStringAsFixed(1)}%';
-        }
-        
-        // PDF helper functions
-        pw.TableRow _pdfIncomeRow(String label, num thisMonth, num lastMonth, String Function(num, num) changePercent) {
-          return pw.TableRow(
-            children: [
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(6),
-                child: pw.Text(label, style: pw.TextStyle(fontSize: 9)),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(6),
-                child: pw.Text(_nf.format(thisMonth), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9)),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(6),
-                child: pw.Text(_nf.format(lastMonth), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9)),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(6),
-                child: pw.Text(changePercent(thisMonth, lastMonth), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9)),
-              ),
-            ],
-          );
-        }
-        
-        pw.TableRow _pdfPortfolioRow(String label, String value) {
-          return pw.TableRow(
-            children: [
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(label, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(value, textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 10)),
-              ),
-            ],
-          );
-        }
-        
-        // CSV Export
-        Future<void> exportCsv() async {
-          final b = StringBuffer()
-            ..writeln('MBADIFA SACCO')
-            ..writeln('Monthly Financial Report')
-            ..writeln('Month: ${DateFormat.yMMMM().format(DateTime(year, month))}')
-            ..writeln('Prepared by: ${FirebaseService.currentUser?.displayName ?? FirebaseService.currentUser?.email ?? ""}')
-            ..writeln('Date: ${DateFormat('d MMMM yyyy').format(DateTime.now())}')
-            ..writeln()
-            ..writeln('Summary')
-            ..writeln('Total income,${totalIncome}')
-            ..writeln('Total expenses,${totalExpenses}')
-            ..writeln('Net surplus / (deficit),${netSurplus}')
-            ..writeln('Margin,${margin.toStringAsFixed(1)}%')
-            ..writeln()
-            ..writeln('1. Income')
-            ..writeln('Item,This month (UGX),Last month (UGX),Change %')
-            ..writeln('Interest on loans,${interestIncome},${prevInterest},${changePercent(interestIncome, prevInterest)}')
-            ..writeln('Loan processing fees,${feesIncome},${prevFees},${changePercent(feesIncome, prevFees)}')
-            ..writeln('Insurance and appraisal fees,0,0,-')
-            ..writeln('Penalties and late fees,${penaltiesIncome},${prevPenalties},${changePercent(penaltiesIncome, prevPenalties)}')
-            ..writeln('Membership and registration fees,0,0,-')
-            ..writeln('Other income,${otherIncome},${prevOther},${changePercent(otherIncome, prevOther)}')
-            ..writeln('Total income,${totalIncome},${prevTotalIncome},${changePercent(totalIncome, prevTotalIncome)}')
-            ..writeln()
-            ..writeln('2. Expenses')
-            ..writeln('Item,This month (UGX),Last month (UGX),Change %')
-            ..writeln('Interest paid on member savings,0,0,-')
-            ..writeln('Salaries and wages,${_n(expense['salaries'])},${_n(prev['salaries'])},${changePercent(_n(expense['salaries']), _n(prev['salaries']))}')
-            ..writeln('Rent and utilities,${_n(expense['utilities'])},${_n(prev['utilities'])},${changePercent(_n(expense['utilities']), _n(prev['utilities']))}')
-            ..writeln('Transport and communication,0,0,-')
-            ..writeln('Loan loss provisions / write-offs,0,0,-')
-            ..writeln('Other operating expenses,${_n(expense['officeExpenses']) + _n(expense['other'])},${_n(prev['officeExpenses']) + _n(prev['other'])},-')
-            ..writeln('Total expenses,${totalExpenses},${prevExpenses},${changePercent(totalExpenses, prevExpenses)}')
-            ..writeln()
-            ..writeln('NET SURPLUS / (DEFICIT),${netSurplus}')
-            ..writeln()
-            ..writeln('3. Cash Position')
-            ..writeln('Opening cash balance,${openingCash}')
-            ..writeln('Net surplus / (deficit),${netSurplus}')
-            ..writeln('Closing cash (bank/safe),${closingCash}')
-            ..writeln('Cash with tellers,${tillsNow}')
-            ..writeln('Total closing cash,${totalClosingCash}')
-            ..writeln()
-            ..writeln('4. Loan portfolio snapshot')
-            ..writeln('Loans disbursed this month,${_n(loans['amount'])}')
-            ..writeln('Repayments collected,${_n(rep['amount'])}')
-            ..writeln('Outstanding loan book (month end),${_n(port['outstanding'])}')
-            ..writeln('Loans in arrears,${_n(port['overdueAmount'])}')
-            ..writeln('Portfolio at risk (arrears / outstanding),${_n(port['parPercent']).toStringAsFixed(1)}%')
-            ..writeln('Active borrowers,${_n(port['liveLoans'])}')
-            ..writeln()
-            ..writeln('Basis: cash. Interest income is counted when a repayment is recorded. Amounts in Uganda Shillings (UGX).');
-          
-          await _saveCsv(ctx, 'income_statement_${year}_${month.toString().padLeft(2, '0')}.csv', b.toString());
-        }
-        
-        // PDF Export - Professional template matching
-        Future<void> exportPdf() async {
-          try {
-            final pdf = pw.Document();
-            final monthName = DateFormat.yMMMM().format(DateTime(year, month));
-            
-            // Load logo
-            final logoData = await rootBundle.load('assets/images/mbadifa-logo.png');
-            final logoImage = pw.MemoryImage(logoData.buffer.asUint8List());
-            
-            pdf.addPage(
-              pw.MultiPage(
-                pageFormat: PdfPageFormat.a4,
-                margin: const pw.EdgeInsets.all(40),
-                build: (ctx) => [
-                  // Professional Header with Logo
-                  pw.Container(
-                    padding: const pw.EdgeInsets.only(bottom: 20),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border(bottom: pw.BorderSide(width: 2, color: PdfColors.grey800)),
-                    ),
-                    child: pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        // Logo and SACCO name
-                        pw.Row(
-                          crossAxisAlignment: pw.CrossAxisAlignment.center,
-                          children: [
-                            pw.Container(
-                              width: 60,
-                              height: 60,
-                              decoration: pw.BoxDecoration(
-                                border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-                              ),
-                              child: pw.Padding(
-                                padding: const pw.EdgeInsets.all(6),
-                                child: pw.Image(logoImage),
-                              ),
-                            ),
-                            pw.SizedBox(width: 12),
-                            pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text(
-                                  'MBADIFA SACCO',
-                                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900),
-                                ),
-                                pw.SizedBox(height: 2),
-                                pw.Text(
-                                  'Mbarara District Farmers Association',
-                                  style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
-                                ),
-                                pw.SizedBox(height: 4),
-                                pw.Text(
-                                  'Monthly Financial Report',
-                                  style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        // Report details
-                        pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.end,
-                          children: [
-                            pw.Text('Period', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                            pw.Text(monthName, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                            pw.SizedBox(height: 8),
-                            pw.Text('Prepared by', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                            pw.Text(
-                              FirebaseService.currentUser?.displayName ?? FirebaseService.currentUser?.email ?? '__________',
-                              style: pw.TextStyle(fontSize: 10),
-                            ),
-                            pw.SizedBox(height: 4),
-                            pw.Text('Date: ${DateFormat('d MMM yyyy').format(DateTime.now())}', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 20),
-                  
-                  // Summary box
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(14),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey100,
-                      border: pw.Border.all(width: 1.5, color: PdfColors.grey800),
-                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-                    ),
-                    child: pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-                      children: [
-                        pw.Column(children: [
-                          pw.Text('Total income', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
-                          pw.SizedBox(height: 2),
-                          pw.Text('UGX ${_nf.format(totalIncome)}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                        ]),
-                        pw.Container(width: 1, height: 30, color: PdfColors.grey400),
-                        pw.Column(children: [
-                          pw.Text('Total expenses', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
-                          pw.SizedBox(height: 2),
-                          pw.Text('UGX ${_nf.format(totalExpenses)}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                        ]),
-                        pw.Container(width: 1, height: 30, color: PdfColors.grey400),
-                        pw.Column(children: [
-                          pw.Text(netSurplus >= 0 ? 'Net surplus' : 'Net deficit', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
-                          pw.SizedBox(height: 2),
-                          pw.Text('UGX ${_nf.format(netSurplus.abs())}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                        ]),
-                        pw.Container(width: 1, height: 30, color: PdfColors.grey400),
-                        pw.Column(children: [
-                          pw.Text('Margin', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
-                          pw.SizedBox(height: 2),
-                          pw.Text('${margin.toStringAsFixed(1)}%', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                        ]),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 24),
-                  
-                  // Income table
-                  pw.Text('1. Income', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 8),
-                  pw.Table(
-                    border: pw.TableBorder.all(),
-                    columnWidths: {
-                      0: const pw.FlexColumnWidth(3),
-                      1: const pw.FlexColumnWidth(2),
-                      2: const pw.FlexColumnWidth(2),
-                      3: const pw.FlexColumnWidth(1),
-                    },
-                    children: [
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColors.grey300),
-                        children: [
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Item', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('This month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Last month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Change %', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                        ],
-                      ),
-                      _pdfIncomeRow('Interest on loans', interestIncome, prevInterest, changePercent),
-                      _pdfIncomeRow('Loan processing fees', feesIncome, prevFees, changePercent),
-                      _pdfIncomeRow('Insurance and appraisal fees', 0, 0, changePercent),
-                      _pdfIncomeRow('Penalties and late fees', penaltiesIncome, prevPenalties, changePercent),
-                      _pdfIncomeRow('Membership and registration fees', 0, 0, changePercent),
-                      _pdfIncomeRow('Other income', otherIncome, prevOther, changePercent),
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColors.grey200),
-                        children: [
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Total income', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(totalIncome), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(prevTotalIncome), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(changePercent(totalIncome, prevTotalIncome), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
-                        ],
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 20),
-                  
-                  // Expenses table (similar structure)
-                  pw.Text('2. Expenses', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 8),
-                  pw.Table(
-                    border: pw.TableBorder.all(),
-                    columnWidths: {
-                      0: const pw.FlexColumnWidth(3),
-                      1: const pw.FlexColumnWidth(2),
-                      2: const pw.FlexColumnWidth(2),
-                      3: const pw.FlexColumnWidth(1),
-                    },
-                    children: [
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColors.grey300),
-                        children: [
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Item', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('This month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Last month (UGX)', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Change %', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                        ],
-                      ),
-                      _pdfIncomeRow('Interest paid on member savings', 0, 0, changePercent),
-                      _pdfIncomeRow('Salaries and wages', _n(expense['salaries']), _n(prev['salaries']), changePercent),
-                      _pdfIncomeRow('Rent and utilities', _n(expense['utilities']), _n(prev['utilities']), changePercent),
-                      _pdfIncomeRow('Transport and communication', 0, 0, changePercent),
-                      _pdfIncomeRow('Loan loss provisions / write-offs', 0, 0, changePercent),
-                      _pdfIncomeRow('Other operating expenses', _n(expense['officeExpenses']) + _n(expense['other']), _n(prev['officeExpenses']) + _n(prev['other']), changePercent),
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColors.grey200),
-                        children: [
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('Total expenses', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(totalExpenses), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_nf.format(prevExpenses), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
-                          pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(changePercent(totalExpenses, prevExpenses), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 9))),
-                        ],
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 16),
-                  
-                  // Net surplus/deficit
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(12),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey800,
-                    ),
-                    child: pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('NET SURPLUS / (DEFICIT)', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-                        pw.Text('UGX ${_nf.format(netSurplus)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-                      ],
-                    ),
-                  ),
-                  
-                  pw.SizedBox(height: 24),
-                  
-                  // Cash Position
-                  pw.Text('3. Cash Position', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 8),
-                  pw.Table(
-                    border: pw.TableBorder.all(),
-                    children: [
-                      _pdfPortfolioRow('Opening cash balance', 'UGX ${_nf.format(openingCash)}'),
-                      _pdfPortfolioRow('Net surplus / (deficit)', 'UGX ${_nf.format(netSurplus)}'),
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColors.grey200),
-                        children: [
-                          pw.Container(height: 8, child: pw.SizedBox()),
-                          pw.Container(height: 8, child: pw.SizedBox()),
-                        ],
-                      ),
-                      _pdfPortfolioRow('Closing cash (bank/safe)', 'UGX ${_nf.format(closingCash)}'),
-                      _pdfPortfolioRow('Cash with tellers', 'UGX ${_nf.format(tillsNow)}'),
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColors.green100),
-                        children: [
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(10),
-                            child: pw.Text('Total closing cash', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                          ),
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(10),
-                            child: pw.Text('UGX ${_nf.format(totalClosingCash)}', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  
-                  pw.SizedBox(height: 24),
-                  
-                  // Loan portfolio snapshot
-                  pw.Text('4. Loan portfolio snapshot', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 8),
-                  pw.Table(
-                    border: pw.TableBorder.all(),
-                    children: [
-                      _pdfPortfolioRow('Loans disbursed this month', 'UGX ${_nf.format(_n(loans['amount']))}'),
-                      _pdfPortfolioRow('Repayments collected', 'UGX ${_nf.format(_n(rep['amount']))}'),
-                      _pdfPortfolioRow('Outstanding loan book (month end)', 'UGX ${_nf.format(_n(port['outstanding']))}'),
-                      _pdfPortfolioRow('Loans in arrears', 'UGX ${_nf.format(_n(port['overdueAmount']))}'),
-                      _pdfPortfolioRow('Portfolio at risk (arrears / outstanding)', '${_n(port['parPercent']).toStringAsFixed(1)}%'),
-                      _pdfPortfolioRow('Active borrowers', '${_n(port['liveLoans'])} No.'),
-                    ],
-                  ),
-                  
-                  pw.SizedBox(height: 32),
-                  
-                  // Sign-off
-                  pw.Text('5. Sign-off', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 20),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Expanded(
-                        child: pw.Container(
-                          padding: const pw.EdgeInsets.all(12),
-                          decoration: pw.BoxDecoration(
-                            border: pw.Border.all(color: PdfColors.grey400, width: 1),
-                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                          ),
-                          child: pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Text('Prepared by', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                              pw.SizedBox(height: 30),
-                              pw.Container(
-                                padding: const pw.EdgeInsets.only(bottom: 2),
-                                decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 1.5))),
-                                child: pw.Text(
-                                  FirebaseService.currentUser?.displayName ?? FirebaseService.currentUser?.email ?? '',
-                                  style: pw.TextStyle(fontSize: 10),
-                                ),
-                              ),
-                              pw.SizedBox(height: 6),
-                              pw.Text('Date: ${DateFormat('d/M/yyyy').format(DateTime.now())}', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                            ],
-                          ),
-                        ),
-                      ),
-                      pw.SizedBox(width: 12),
-                      pw.Expanded(
-                        child: pw.Container(
-                          padding: const pw.EdgeInsets.all(12),
-                          decoration: pw.BoxDecoration(
-                            border: pw.Border.all(color: PdfColors.grey400, width: 1),
-                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                          ),
-                          child: pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Text('Checked by (Manager)', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                              pw.SizedBox(height: 30),
-                              pw.Container(
-                                padding: const pw.EdgeInsets.only(bottom: 2),
-                                decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 1.5))),
-                                child: pw.Text('', style: pw.TextStyle(fontSize: 10)),
-                              ),
-                              pw.SizedBox(height: 6),
-                              pw.Text('Date: ____________', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                            ],
-                          ),
-                        ),
-                      ),
-                      pw.SizedBox(width: 12),
-                      pw.Expanded(
-                        child: pw.Container(
-                          padding: const pw.EdgeInsets.all(12),
-                          decoration: pw.BoxDecoration(
-                            border: pw.Border.all(color: PdfColors.grey400, width: 1),
-                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                          ),
-                          child: pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Text('Approved by (Chairperson)', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                              pw.SizedBox(height: 30),
-                              pw.Container(
-                                padding: const pw.EdgeInsets.only(bottom: 2),
-                                decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 1.5))),
-                                child: pw.Text('', style: pw.TextStyle(fontSize: 10)),
-                              ),
-                              pw.SizedBox(height: 6),
-                              pw.Text('Date: ____________', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  pw.SizedBox(height: 16),
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey200,
-                      border: pw.Border.all(color: PdfColors.grey300),
-                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                    ),
-                    child: pw.Text(
-                      'Basis: cash. Interest income is counted when a repayment is recorded. Amounts in Uganda Shillings (UGX). Change % = (this month - last month) / last month.',
-                      style: pw.TextStyle(fontSize: 8),
-                    ),
-                  ),
-                  
-                  // Footer
-                  pw.SizedBox(height: 20),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('MBADIFA SACCO | Monthly Report', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                      pw.Text('Page 1', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-                    ],
-                  ),
-                ],
-              ),
-            );
-            
-            await Printing.layoutPdf(
-              onLayout: (PdfPageFormat format) async => pdf.save(),
-              name: 'income_statement_${year}_${month.toString().padLeft(2, '0')}.pdf',
-            );
-          } catch (e) {
-            if (ctx.mounted) {
-              _toast(ctx, 'PDF export failed: $e', error: true);
-            }
-          }
-        }
-        
-        return [
-          // Clean Professional Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Color(0xFF1E293B), width: 2)),
-            ),
-            child: Row(
-              children: [
-                // Logo
-                Container(
-                  width: 65,
-                  height: 65,
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Color(0xFFE5E7EB)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Image.asset('assets/images/mbadifa-logo.png'),
-                ),
-                const SizedBox(width: 18),
-                // SACCO Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('MBADIFA SACCO', style: _ps(18, w: FontWeight.w700, c: _C.navy)),
-                      const SizedBox(height: 2),
-                      Text('Mbarara District Farmers Association', style: _ps(10.5, c: Color(0xFF6B7280))),
-                      const SizedBox(height: 6),
-                      Text('Monthly Financial Report', style: _ps(13, w: FontWeight.w600, c: Color(0xFF1E40AF))),
-                    ],
-                  ),
-                ),
-                // Period & Date
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('Period', style: _ps(9.5, c: Color(0xFF6B7280))),
-                    Text(DateFormat.yMMMM().format(DateTime(year, month)), style: _ps(14, w: FontWeight.w700, c: _C.navy)),
-                    const SizedBox(height: 8),
-                    Text('Prepared: ${DateFormat('d MMM yyyy').format(DateTime.now())}', style: _ps(10, c: Color(0xFF6B7280))),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          // Export buttons
-          Align(
-            alignment: Alignment.centerRight,
-            child: Wrap(
-              spacing: 8,
-              children: [
-                _btn('Export CSV', Icons.file_download_outlined, exportCsv),
-                _btn('Export PDF', Icons.picture_as_pdf_outlined, exportPdf, primary: true),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          // Clean Summary Box
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Color(0xFFE5E7EB)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SummaryKpi('Total Income', _ugx(totalIncome), Color(0xFF059669)),
-                ),
-                Container(width: 1, height: 50, color: Color(0xFFE5E7EB)),
-                Expanded(
-                  child: _SummaryKpi('Total Expenses', _ugx(totalExpenses), Color(0xFFDC2626)),
-                ),
-                Container(width: 1, height: 50, color: Color(0xFFE5E7EB)),
-                Expanded(
-                  child: _SummaryKpi(
-                    netSurplus >= 0 ? 'Net Surplus' : 'Net Deficit',
-                    _ugx(netSurplus.abs()),
-                    netSurplus >= 0 ? Color(0xFF059669) : Color(0xFFDC2626),
-                  ),
-                ),
-                Container(width: 1, height: 50, color: Color(0xFFE5E7EB)),
-                Expanded(
-                  child: _SummaryKpi('Margin', '${margin.toStringAsFixed(1)}%', Color(0xFF0B2545)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Income Table
-          _IncomeStatementSection(
-            title: '1. Income',
-            rows: [
-              _IncomeStatementRow('Interest on loans', interestIncome, prevInterest),
-              _IncomeStatementRow('Loan processing fees', feesIncome, prevFees),
-              _IncomeStatementRow('Insurance and appraisal fees', 0, 0), // Not tracked separately
-              _IncomeStatementRow('Penalties and late fees', penaltiesIncome, prevPenalties),
-              _IncomeStatementRow('Membership and registration fees', 0, 0), // Not tracked
-              _IncomeStatementRow('Other income', otherIncome, prevOther),
-            ],
-            total: _IncomeStatementRow('Total income', totalIncome, prevTotalIncome),
-          ),
-          const SizedBox(height: 24),
-          
-          // Expenses Table
-          _IncomeStatementSection(
-            title: '2. Expenses',
-            rows: [
-              _IncomeStatementRow('Interest paid on member savings', 0, 0), // Not tracked yet
-              _IncomeStatementRow('Salaries and wages', _n(expense['salaries']), _n(prev['salaries'])),
-              _IncomeStatementRow('Rent and utilities', _n(expense['utilities']), _n(prev['utilities'])),
-              _IncomeStatementRow('Transport and communication', 0, 0), // Not separated
-              _IncomeStatementRow('Loan loss provisions / write-offs', 0, 0), // Not tracked
-              _IncomeStatementRow('Other operating expenses', _n(expense['officeExpenses']) + _n(expense['other']), _n(prev['officeExpenses']) + _n(prev['other'])),
-            ],
-            total: _IncomeStatementRow('Total expenses', totalExpenses, prevExpenses),
-          ),
-          const SizedBox(height: 24),
-          
-          // Net Surplus/Deficit
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: netSurplus >= 0 ? Color(0xFFECFDF5) : Color(0xFFFEF2F2),
-              border: Border.all(
-                color: netSurplus >= 0 ? Color(0xFF10B981) : Color(0xFFEF4444),
-                width: 2,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'NET SURPLUS / (DEFICIT)',
-                  style: _ps(15, w: FontWeight.w700, c: _C.navy),
-                ),
-                Text(
-                  _ugx(netSurplus),
-                  style: GoogleFonts.robotoMono(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: netSurplus >= 0 ? Color(0xFF10B981) : Color(0xFFEF4444),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          
-          // Cash Position
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Color(0xFFE5E7EB)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('3. Cash Position', style: _ps(15, w: FontWeight.w700, c: _C.navy)),
-                const SizedBox(height: 16),
-                _PortfolioRow('Opening cash balance', _ugx(openingCash), ''),
-                _PortfolioRow('Net surplus / (deficit)', _ugx(netSurplus), ''),
-                const Divider(height: 24),
-                _PortfolioRow('Closing cash balance (bank/safe)', _ugx(closingCash), ''),
-                _PortfolioRow('Cash with tellers (open tills)', _ugx(tillsNow), ''),
-                Container(
-                  margin: const EdgeInsets.only(top: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Color(0xFFF0FDF4),
-                    border: Border.all(color: Color(0xFF059669)),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total closing cash',
-                        style: _ps(14, w: FontWeight.w700, c: Color(0xFF065F46)),
-                      ),
-                      Text(
-                        _ugx(totalClosingCash),
-                        style: GoogleFonts.robotoMono(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF065F46),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          
-          // Loan Portfolio Snapshot
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Color(0xFFE5E7EB)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('4. Loan Portfolio Snapshot', style: _ps(15, w: FontWeight.w700, c: _C.navy)),
-                const SizedBox(height: 16),
-                _PortfolioRow('Loans disbursed this month', _ugx(_n(loans['amount'])), '${_n(loans['count'])} loans'),
-                _PortfolioRow('Repayments collected', _ugx(_n(rep['amount'])), '${_n(rep['count'])} payments'),
-                _PortfolioRow('Outstanding loan book (month end)', _ugx(_n(port['outstanding'])), ''),
-                _PortfolioRow('Loans in arrears', _ugx(_n(port['overdueAmount'])), '${_n(port['overdueLoans'])} loans'),
-                _PortfolioRow('Portfolio at risk (PAR)', '${_n(port['parPercent']).toStringAsFixed(1)}%', ''),
-                _PortfolioRow('Active borrowers', '${_n(port['liveLoans'])}', 'members'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          
-          // Sign-off Section
-          Container(
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Color(0xFFE5E7EB)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('5. Sign-off', style: _ps(15, w: FontWeight.w700, c: _C.navy)),
-                const SizedBox(height: 28),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _SignatureBox(
-                        title: 'Prepared by',
-                        name: FirebaseService.currentUser?.displayName ?? 
-                              FirebaseService.currentUser?.email ?? 
-                              '',
-                        date: DateFormat('d/M/yyyy').format(DateTime.now()),
-                        showName: true,
-                      ),
-                    ),
-                    const SizedBox(width: 32),
-                    Expanded(
-                      child: _SignatureBox(
-                        title: 'Checked by (Manager)',
-                        name: '',
-                        date: '',
-                      ),
-                    ),
-                    const SizedBox(width: 32),
-                    Expanded(
-                      child: _SignatureBox(
-                        title: 'Approved by (Chairperson)',
-                        name: '',
-                        date: '',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Color(0xFFFAFAFA),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.info_outline, size: 14, color: Color(0xFF6B7280)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Basis: cash. Interest income is counted when a repayment is recorded. '
-                          'Amounts in Uganda Shillings (UGX). Change % = (this month - last month) / last month.',
-                          style: _ps(9.5, c: Color(0xFF6B7280)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ];
-      },
-    );
+    return const IncomeStatementSACCO();
   }
 }
 
-Widget _SummaryKpi(String label, String value, Color color) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Column(
-      children: [
-        Text(label, style: _ps(10.5, c: Color(0xFF6B7280))),
-        const SizedBox(height: 8),
-        Text(value, style: GoogleFonts.robotoMono(
-          fontSize: 17,
-          fontWeight: FontWeight.w700,
-          color: color,
-        )),
-      ],
-    ),
-  );
-}
-
-class _IncomeStatementRow {
-  final String label;
-  final num thisMonth;
-  final num lastMonth;
-  
-  const _IncomeStatementRow(this.label, this.thisMonth, this.lastMonth);
-  
-  String get change {
-    if (lastMonth == 0) return '-';
-    final pct = ((thisMonth - lastMonth) / lastMonth * 100);
-    final sign = pct > 0 ? '+' : '';
-    return '$sign${pct.toStringAsFixed(1)}%';
-  }
-}
-
-class _IncomeStatementSection extends StatelessWidget {
-  final String title;
-  final List<_IncomeStatementRow> rows;
-  final _IncomeStatementRow total;
-  
-  const _IncomeStatementSection({
-    required this.title,
-    required this.rows,
-    required this.total,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Color(0xFFE5E7EB)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
-            ),
-            child: Text(title, style: _ps(15, w: FontWeight.w700, c: _C.navy)),
-          ),
-          // Table
-          Table(
-            border: TableBorder.all(color: Color(0xFFD1D5DB), width: 1),
-            columnWidths: const {
-              0: FlexColumnWidth(3),
-              1: FlexColumnWidth(2),
-              2: FlexColumnWidth(2),
-              3: FlexColumnWidth(1),
-            },
-            children: [
-              // Header
-              TableRow(
-                decoration: BoxDecoration(color: Color(0xFFF9FAFB)),
-                children: [
-                  _TableCell('Item', isHeader: true),
-                  _TableCell('This month (UGX)', isHeader: true, alignRight: true),
-                  _TableCell('Last month (UGX)', isHeader: true, alignRight: true),
-                  _TableCell('Change %', isHeader: true, alignRight: true),
-                ],
-              ),
-              // Data rows
-              for (final row in rows)
-                TableRow(
-                  children: [
-                    _TableCell(row.label),
-                    _TableCell(_ugx(row.thisMonth), alignRight: true, isMono: true),
-                    _TableCell(_ugx(row.lastMonth), alignRight: true, isMuted: true, isMono: true),
-                    _TableCell(row.change, alignRight: true, changeColor: _getChangeColor(row.change)),
-                  ],
-                ),
-              // Total row
-              TableRow(
-                decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
-                children: [
-                  _TableCell(total.label, isBold: true),
-                  _TableCell(_ugx(total.thisMonth), alignRight: true, isBold: true, isMono: true),
-                  _TableCell(_ugx(total.lastMonth), alignRight: true, isMono: true),
-                  _TableCell(total.change, alignRight: true, isBold: true, changeColor: _getChangeColor(total.change)),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-Widget _TableHeader() {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-    child: Row(
-      children: [
-        Expanded(flex: 3, child: Text('Item', style: _ps(12, w: FontWeight.w600, c: _C.navy))),
-        Expanded(flex: 2, child: Text('This month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.navy))),
-        Expanded(flex: 2, child: Text('Last month (UGX)', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.navy))),
-        Expanded(flex: 1, child: Text('Change %', textAlign: TextAlign.right, style: _ps(12, w: FontWeight.w600, c: _C.navy))),
-      ],
-    ),
-  );
-}
-
-Widget _TableRow(_IncomeStatementRow row) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-    child: Row(
-      children: [
-        Expanded(flex: 3, child: Text(row.label, style: _ps(13, c: _C.text))),
-        Expanded(
-          flex: 2,
-          child: Text(
-            _ugx(row.thisMonth),
-            textAlign: TextAlign.right,
-            style: GoogleFonts.robotoMono(fontSize: 13, color: _C.ink),
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(
-            _ugx(row.lastMonth),
-            textAlign: TextAlign.right,
-            style: GoogleFonts.robotoMono(fontSize: 12.5, color: _C.muted),
-          ),
-        ),
-        Expanded(
-          flex: 1,
-          child: Text(
-            row.change,
-            textAlign: TextAlign.right,
-            style: _ps(12.5, w: FontWeight.w500, c: _getChangeColor(row.change)),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _TableCell(
-  String text, {
-  bool isHeader = false,
-  bool isBold = false,
-  bool alignRight = false,
-  bool isMono = false,
-  bool isMuted = false,
-  Color? changeColor,
-}) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    child: Text(
-      text,
-      textAlign: alignRight ? TextAlign.right : TextAlign.left,
-      style: isMono
-          ? GoogleFonts.robotoMono(
-              fontSize: isHeader || isBold ? 12 : 12,
-              fontWeight: isHeader || isBold ? FontWeight.w600 : FontWeight.w400,
-              color: changeColor ?? (isMuted ? Color(0xFF6B7280) : _C.ink),
-            )
-          : _ps(
-              isHeader || isBold ? 12 : 12,
-              w: isHeader || isBold ? FontWeight.w600 : FontWeight.w400,
-              c: changeColor ?? (isMuted ? Color(0xFF6B7280) : _C.ink),
-            ),
-    ),
-  );
-}
-
-Color _getChangeColor(String change) {
-  if (change == '-') return _C.muted;
-  if (change.startsWith('+')) return Color(0xFF10B981);
-  if (change.startsWith('-')) return Color(0xFFEF4444);
-  return _C.muted;
-}
-
-Widget _PortfolioRow(String label, String value, String subtitle) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: _ps(13, c: _C.text)),
-        Row(
-          children: [
-            if (subtitle.isNotEmpty) ...[
-              Text(subtitle, style: _ps(11, c: _C.muted)),
-              const SizedBox(width: 12),
-            ],
-            Text(
-              value,
-              style: GoogleFonts.robotoMono(fontSize: 13.5, fontWeight: FontWeight.w600, color: _C.navy),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
-
-class _SignatureBox extends StatelessWidget {
-  final String title;
-  final String name;
-  final String date;
-  final bool showName;
-  
-  const _SignatureBox({
-    required this.title,
-    required this.name,
-    required this.date,
-    this.showName = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: _ps(11, w: FontWeight.w600, c: Color(0xFF475569)),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          height: 60,
-          alignment: Alignment.bottomCenter,
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: Color(0xFF334155), width: 1.5),
-            ),
-          ),
-          child: showName && name.isNotEmpty
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    name,
-                    style: GoogleFonts.dancingScript(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      color: _C.navy,
-                    ),
-                  ),
-                )
-              : null,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          date.isNotEmpty ? 'Date: $date' : 'Date: ___________',
-          style: _ps(10, c: Color(0xFF64748B)),
-        ),
-      ],
-    );
-  }
-}
-
+// ═══════════════════════════════════════════════════════════════════════════════
+// Income / Expense
+// ═══════════════════════════════════════════════════════════════════════════════
 class _IncomeTab extends StatelessWidget {
   const _IncomeTab();
 
@@ -4314,9 +2932,19 @@ class _TrialBalanceTab extends StatelessWidget {
                     color: const Color(0xFF16345F),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     child: Row(children: [
-                      Expanded(flex: 4, child: Text('ACCOUNT', style: _ps(11, w: FontWeight.w600, c: Colors.white, ls: 1))),
-                      Expanded(flex: 2, child: Text('DEBIT', textAlign: TextAlign.right, style: _ps(11, w: FontWeight.w600, c: Colors.white, ls: 1))),
-                      Expanded(flex: 2, child: Text('CREDIT', textAlign: TextAlign.right, style: _ps(11, w: FontWeight.w600, c: Colors.white, ls: 1))),
+                      Expanded(
+                          flex: 4,
+                          child: Text('ACCOUNT', style: _ps(11, w: FontWeight.w600, c: Colors.white, ls: 1))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('DEBIT',
+                              textAlign: TextAlign.right,
+                              style: _ps(11, w: FontWeight.w600, c: Colors.white, ls: 1))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('CREDIT',
+                              textAlign: TextAlign.right,
+                              style: _ps(11, w: FontWeight.w600, c: Colors.white, ls: 1))),
                     ]),
                   );
 
@@ -4366,7 +2994,7 @@ class _TrialBalanceTab extends StatelessWidget {
               return [
                 _AsAtBar(asOf: p.asOf, actions: [
                   _Badge(balanced ? 'Debits = Credits' : 'Out of balance', balanced ? _C.green : _C.red),
-                  if (p.cashMissing) _Badge('Cash not recorded', _C.amber),
+                  if (p.cashMissing) const _Badge('Cash not recorded', _C.amber),
                   _btn('Export CSV', Icons.table_chart_outlined, csv),
                 ]),
                 _PositionSummary(p),
@@ -4495,13 +3123,32 @@ class _KycTab extends StatelessWidget {
 
               return [
                 _KpiGrid(children: [
-                  _Kpi(label: 'Total members', value: '${_n(s['total']).toInt()}', icon: Icons.people_outline, color: _C.blue),
-                  _Kpi(label: 'Verified', value: '${_n(s['verified']).toInt()}', icon: Icons.verified_user_outlined, color: _C.green),
-                  _Kpi(label: 'Pending', value: '${_n(s['pending']).toInt()}', icon: Icons.hourglass_empty, color: _C.amber),
-                  _Kpi(label: 'Rejected', value: '${_n(s['rejected']).toInt()}', icon: Icons.cancel_outlined, color: _C.red),
+                  _Kpi(
+                      label: 'Total members',
+                      value: '${_n(s['total']).toInt()}',
+                      icon: Icons.people_outline,
+                      color: _C.blue),
+                  _Kpi(
+                      label: 'Verified',
+                      value: '${_n(s['verified']).toInt()}',
+                      icon: Icons.verified_user_outlined,
+                      color: _C.green),
+                  _Kpi(
+                      label: 'Pending',
+                      value: '${_n(s['pending']).toInt()}',
+                      icon: Icons.hourglass_empty,
+                      color: _C.amber),
+                  _Kpi(
+                      label: 'Rejected',
+                      value: '${_n(s['rejected']).toInt()}',
+                      icon: Icons.cancel_outlined,
+                      color: _C.red),
                 ]),
                 const SizedBox(height: 16),
-                _RateCard(label: 'Verification rate', percent: rate, color: rate >= 80 ? _C.green : (rate >= 50 ? _C.amber : _C.red)),
+                _RateCard(
+                    label: 'Verification rate',
+                    percent: rate,
+                    color: rate >= 80 ? _C.green : (rate >= 50 ? _C.amber : _C.red)),
                 const SizedBox(height: 16),
                 _Split(mainFlex: 1, sideFlex: 1, breakpoint: 900, main: pendingCard, side: rejectedCard),
               ];
@@ -4549,12 +3196,24 @@ class _LoansTab extends StatelessWidget {
               return [
                 ...issues.map((i) => _Alert(i)),
                 _KpiGrid(maxCols: 3, children: [
-                  _Kpi(label: 'Total requested', value: _ugx(_n(f['totalAmountRequested'])), icon: Icons.request_quote_outlined, color: _C.blue),
+                  _Kpi(
+                      label: 'Total requested',
+                      value: _ugx(_n(f['totalAmountRequested'])),
+                      icon: Icons.request_quote_outlined,
+                      color: _C.blue),
                   _Kpi(label: 'Disbursed', value: _ugx(disbursed), icon: Icons.payments_outlined, color: _C.navy),
                   _Kpi(label: 'Repaid', value: _ugx(repaid), icon: Icons.check_circle_outline, color: _C.green),
                   _Kpi(label: 'Outstanding', value: _ugx(outstanding), icon: Icons.pending_actions, color: _C.amber),
-                  _Kpi(label: 'Approval rate', value: '${_n(s['approvalRate']).toDouble().toStringAsFixed(1)}%', icon: Icons.thumb_up_outlined, color: _C.teal),
-                  _Kpi(label: 'Repayment rate', value: '${_n(s['repaymentRate']).toDouble().toStringAsFixed(1)}%', icon: Icons.trending_up, color: _C.green),
+                  _Kpi(
+                      label: 'Approval rate',
+                      value: '${_n(s['approvalRate']).toDouble().toStringAsFixed(1)}%',
+                      icon: Icons.thumb_up_outlined,
+                      color: _C.teal),
+                  _Kpi(
+                      label: 'Repayment rate',
+                      value: '${_n(s['repaymentRate']).toDouble().toStringAsFixed(1)}%',
+                      icon: Icons.trending_up,
+                      color: _C.green),
                 ]),
                 const SizedBox(height: 16),
                 _Split(
@@ -4578,7 +3237,8 @@ class _LoansTab extends StatelessWidget {
                           for (final l in overdue.take(10))
                             _PersonTile(
                               name: '${l['farmerName'] ?? ''}',
-                              phone: 'Amount ${_ugx(_n(l['amount']))}  •  Outstanding ${_ugx(_n(l['outstanding']))}',
+                              phone:
+                                  'Amount ${_ugx(_n(l['amount']))}  •  Outstanding ${_ugx(_n(l['outstanding']))}',
                               note: '${_n(l['daysOverdue']).toInt()} days overdue',
                               color: _C.red,
                             ),
@@ -4610,13 +3270,13 @@ class _MembersTabState extends State<_MembersTab> {
   _BadgeInfo _status(String s) {
     switch (s) {
       case 'approved':
-        return _BadgeInfo('Verified', _C.green);
+        return const _BadgeInfo('Verified', _C.green);
       case 'pending':
-        return _BadgeInfo('Pending', _C.amber);
+        return const _BadgeInfo('Pending', _C.amber);
       case 'rejected':
-        return _BadgeInfo('Rejected', _C.red);
+        return const _BadgeInfo('Rejected', _C.red);
       default:
-        return _BadgeInfo('Not submitted', _C.muted);
+        return const _BadgeInfo('Not submitted', _C.muted);
     }
   }
 
@@ -4831,7 +3491,9 @@ class _BadgeInfo {
   const _BadgeInfo(this.label, this.color);
 }
 
-// Chart helper functions
+// ═══════════════════════════════════════════════════════════════════════════════
+// Chart helpers
+// ═══════════════════════════════════════════════════════════════════════════════
 BarChartGroupData _barGroup(int x, double y, Color color) {
   return BarChartGroupData(
     x: x,
@@ -4873,7 +3535,9 @@ Widget _legendItem(String label, Color color, String value) {
   );
 }
 
-// New PDF helper functions for professional monthly report
+// ═══════════════════════════════════════════════════════════════════════════════
+// PDF helpers for the monthly report
+// ═══════════════════════════════════════════════════════════════════════════════
 pw.Widget _pdfKpiBox(String label, String value, PdfColor color) {
   return pw.Expanded(
     child: pw.Container(
@@ -4888,10 +3552,7 @@ pw.Widget _pdfKpiBox(String label, String value, PdfColor color) {
         children: [
           pw.Text(
             label,
-            style: const pw.TextStyle(
-              fontSize: 9,
-              color: PdfColors.white,
-            ),
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.white),
           ),
           pw.SizedBox(height: 6),
           pw.Text(
@@ -4913,9 +3574,7 @@ pw.Widget _pdfSectionHeader(String text) {
     width: double.infinity,
     padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
     margin: const pw.EdgeInsets.only(bottom: 4),
-    decoration: const pw.BoxDecoration(
-      color: PdfColors.grey200,
-    ),
+    decoration: const pw.BoxDecoration(color: PdfColors.grey200),
     child: pw.Text(
       text,
       style: pw.TextStyle(
@@ -4939,10 +3598,7 @@ pw.Widget _pdfTable(List<List<String>> rows) {
         children: [
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-            child: pw.Text(
-              row[0],
-              style: const pw.TextStyle(fontSize: 9),
-            ),
+            child: pw.Text(row[0], style: const pw.TextStyle(fontSize: 9)),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
@@ -4961,37 +3617,27 @@ pw.Widget _pdfTable(List<List<String>> rows) {
 }
 
 pw.Widget _pdfTableTotal(String label, String value, PdfColor color) {
-  // Create a lighter version of the color by mixing with white
+  // Lighter tint of the colour for the background.
   final lightColor = PdfColor(
     color.red + (1 - color.red) * 0.9,
     color.green + (1 - color.green) * 0.9,
     color.blue + (1 - color.blue) * 0.9,
   );
-  
+
   return pw.Container(
     padding: const pw.EdgeInsets.all(10),
     margin: const pw.EdgeInsets.only(top: 4),
-    decoration: pw.BoxDecoration(
-      color: lightColor,
-    ),
+    decoration: pw.BoxDecoration(color: lightColor),
     child: pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
         pw.Text(
           label,
-          style: pw.TextStyle(
-            fontSize: 10,
-            fontWeight: pw.FontWeight.bold,
-            color: color,
-          ),
+          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: color),
         ),
         pw.Text(
           value,
-          style: pw.TextStyle(
-            fontSize: 11,
-            fontWeight: pw.FontWeight.bold,
-            color: color,
-          ),
+          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: color),
         ),
       ],
     ),

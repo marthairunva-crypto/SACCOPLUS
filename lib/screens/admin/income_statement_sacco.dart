@@ -37,7 +37,7 @@ TextStyle _mono(double size, {FontWeight w = FontWeight.w500, Color c = _Pal.tex
 
 final NumberFormat _nf = NumberFormat('#,##0', 'en_US');
 
-String _money(num v) => v == 0 ? '–' : (v < 0 ? '(${_nf.format(v.abs().round())})' : _nf.format(v.round()));
+String _money(num v) => v == 0 ? '-' : (v < 0 ? '(${_nf.format(v.abs().round())})' : _nf.format(v.round()));
 String _ugx(num v) => v < 0 ? '-UGX ${_nf.format(v.abs().round())}' : 'UGX ${_nf.format(v.round())}';
 
 String _prettyLabel(String s) {
@@ -348,7 +348,7 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
           row('Total income', _nf.format(d.totalIncome.round()), bold: true, shaded: true),
           pw.SizedBox(height: 12),
           row('EXPENDITURE', '', bold: true, shaded: true),
-          if (d.expenses.isEmpty) row('No expenses recorded', '–'),
+          if (d.expenses.isEmpty) row('No expenses recorded', '-'),
           ...d.expenses.map((l) => row(l.label, _money(l.amount))),
           row('Total expenditure', _nf.format(d.totalExpenses.round()), bold: true, shaded: true),
           pw.SizedBox(height: 12),
