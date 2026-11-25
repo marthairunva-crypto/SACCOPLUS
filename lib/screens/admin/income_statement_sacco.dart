@@ -166,63 +166,95 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
     final expenses = <String, double>{};
 
     // ── 1. LOAN REPAYMENTS (PRINCIPAL + INTEREST) ──
+    // Note: Querying without date range first to avoid index issues
     final repaymentsSnap = await db
         .collection(AppConstants.repaymentsCol)
         .where('tenantId', isEqualTo: tenantId)
-        .where('paidAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('paidAt', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
         .get();
 
-    debugPrint('📊 Loaded ${repaymentsSnap.docs.length} repayments for $year-$month');
+    debugPrint('📊 Loaded ${repaymentsSnap.docs.length} total repayments for tenant');
+    int matchingCount = 0;
     for (final doc in repaymentsSnap.docs) {
       final data = doc.data();
-      final principal = ((data['principalPaid'] ?? 0) as num).toDouble();
-      final interest = ((data['interestPaid'] ?? 0) as num).toDouble();
-      income['principle'] = (income['principle'] ?? 0) + principal;  // Note: 'principle' to match _incomeLabels key
+      final paymentDateTs = data['paymentDate'] as Timestamp?;
+      if (paymentDateTs == null) continue;
+      
+      final paymentDate = paymentDateTs.toDate();
+      if (paymentDate.isBefore(startDate) || paymentDate.isAfter(endDate)) continue;
+      
+      matchingCount++;
+      final principal = ((data['principalAmount'] ?? data['principalPaid'] ?? 0) as num).toDouble();
+      final interest = ((data['interestAmount'] ?? data['interestPaid'] ?? 0) as num).toDouble();
+      income['principle'] = (income['principle'] ?? 0) + principal;
       income['interest'] = (income['interest'] ?? 0) + interest;
-      debugPrint('  Repayment: principal=$principal, interest=$interest');
+      debugPrint('  ✓ Repayment ${doc.id}: principal=$principal, interest=$interest');
     }
+    debugPrint('📊 Filtered to $matchingCount repayments for $year-$month');
 
     // ── 2. SAVINGS DEPOSITS ──
     final savingsSnap = await db
         .collection(AppConstants.savingsTxnCol)
         .where('tenantId', isEqualTo: tenantId)
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('timestamp', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-        .where('type', isEqualTo: 'deposit')
         .get();
 
-    debugPrint('📊 Loaded ${savingsSnap.docs.length} savings deposits for $year-$month');
+    debugPrint('📊 Loaded ${savingsSnap.docs.length} total savings transactions');
+    int savingsCount = 0;
     for (final doc in savingsSnap.docs) {
-      final amount = ((doc.data()['amount'] ?? 0) as num).toDouble();
+      final data = doc.data();
+      final type = (data['type'] ?? '').toString().toLowerCase();
+      if (type != 'deposit') continue;
+      
+      final timestampTs = data['timestamp'] as Timestamp?;
+      if (timestampTs == null) continue;
+      
+      final timestamp = timestampTs.toDate();
+      if (timestamp.isBefore(startDate) || timestamp.isAfter(endDate)) continue;
+      
+      savingsCount++;
+      final amount = ((data['amount'] ?? 0) as num).toDouble();
       income['savings'] = (income['savings'] ?? 0) + amount;
     }
+    debugPrint('📊 Filtered to $savingsCount savings deposits for $year-$month');
 
     // ── 3. SHARE PURCHASES ──
     final sharesSnap = await db
         .collection(AppConstants.sharesCol)
         .where('tenantId', isEqualTo: tenantId)
-        .where('purchaseDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('purchaseDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
         .get();
 
-    debugPrint('📊 Loaded ${sharesSnap.docs.length} share purchases for $year-$month');
+    debugPrint('📊 Loaded ${sharesSnap.docs.length} total share purchases');
+    int sharesCount = 0;
     for (final doc in sharesSnap.docs) {
-      final amount = ((doc.data()['totalAmount'] ?? 0) as num).toDouble();
+      final data = doc.data();
+      final purchaseDateTs = data['purchaseDate'] as Timestamp?;
+      if (purchaseDateTs == null) continue;
+      
+      final purchaseDate = purchaseDateTs.toDate();
+      if (purchaseDate.isBefore(startDate) || purchaseDate.isAfter(endDate)) continue;
+      
+      sharesCount++;
+      final amount = ((data['totalAmount'] ?? 0) as num).toDouble();
       income['shares'] = (income['shares'] ?? 0) + amount;
     }
+    debugPrint('📊 Filtered to $sharesCount share purchases for $year-$month');
 
     // ── 4. TELLER TRANSACTIONS (for fees, penalties, etc.) ──
     final tellerSnap = await db
         .collection(AppConstants.tellerTxnCol)
         .where('tenantId', isEqualTo: tenantId)
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-        .where('timestamp', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
         .get();
 
-    debugPrint('📊 Loaded ${tellerSnap.docs.length} teller transactions for $year-$month');
+    debugPrint('📊 Loaded ${tellerSnap.docs.length} total teller transactions');
+    int tellerCount = 0;
     for (final doc in tellerSnap.docs) {
       final data = doc.data();
+      final timestampTs = data['timestamp'] as Timestamp?;
+      if (timestampTs == null) continue;
+      
+      final timestamp = timestampTs.toDate();
+      if (timestamp.isBefore(startDate) || timestamp.isAfter(endDate)) continue;
+      
+      tellerCount++;
       final type = (data['type'] ?? '').toString().toLowerCase();
       final category = (data['category'] ?? '').toString().toLowerCase();
       final source = (data['source'] ?? '').toString().toLowerCase();
