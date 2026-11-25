@@ -11,6 +11,8 @@ import 'package:printing/printing.dart';
 import '../../services/report_service.dart';
 import '../../utils/file_saver.dart';
 import '../../core/firebase_service.dart';
+import '../../core/theme.dart';
+import 'income_statement_sacco.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Design tokens & helpers
@@ -2982,17 +2984,65 @@ class _Panel extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Income Statement Tab (Professional SACCO Template)
+// Income Statement Tab - Now navigates to dedicated SACCO format screen
 // ═══════════════════════════════════════════════════════════════════════════════
 class _IncomeStatementTab extends StatelessWidget {
   const _IncomeStatementTab();
 
   @override
   Widget build(BuildContext context) {
-    return _PeriodTab(
-      title: 'Income Statement',
-      subtitle: 'Comprehensive income and expenses with comparison',
-      builder: (ctx, r, month, year) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.assessment_outlined, size: 80, color: AppTheme.primary.withOpacity(0.5)),
+          const SizedBox(height: 24),
+          Text(
+            'Professional Income Statement',
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'View detailed income and expenditure in SACCO format',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: AppTheme.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const IncomeStatementSACCO(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.arrow_forward_rounded),
+            label: Text(
+              'Open Income Statement',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
         final income = _m(r['income']);
         final expense = _m(r['expenses']);
         final prev = _m(r['previous']);
