@@ -119,11 +119,118 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
   bool _hideZero = false;
   String? _error;
   _Statement? _data;
+  double? _manualOpeningBalance;  // Manual balance b/f set by admin
 
   @override
   void initState() {
     super.initState();
+    _loadManualOpening();
     _loadData();
+  }
+
+  // ── Load Manual Opening Balance ────────────────────────────────────────────
+  Future<void> _loadManualOpening() async {
+    try {
+      final tenantId = FirebaseService.sessionTenantId;
+      final monthKey = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}';
+      
+      final doc = await FirebaseFirestore.instance
+          .collection('income-statement-openings')
+          .doc('$tenantId-$monthKey')
+          .get();
+      
+      if (doc.exists && mounted) {
+        setState(() {
+          _manualOpeningBalance = ((doc.data()?['openingBalance'] ?? 0) as num).toDouble();
+        });
+        debugPrint('📊 Loaded manual opening balance for $monthKey: $_manualOpeningBalance');
+      }
+    } catch (e) {
+      debugPrint('Error loading manual opening: $e');
+    }
+  }
+
+  // ── Set Manual Opening Balance ─────────────────────────────────────────────
+  Future<void> _setManualOpening() async {
+    final controller = TextEditingController(
+      text: _manualOpeningBalance?.toStringAsFixed(0) ?? '0',
+    );
+    
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Set Opening Balance', style: _ps(18, w: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Set the balance brought forward for ${DateFormat('MMMM yyyy').format(selectedDate)}',
+              style: _ps(14, c: _Pal.muted),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Opening Balance (UGX)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixText: 'UGX ',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text.replaceAll(',', '')) ?? 0;
+              Navigator.pop(context, value);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: _Pal.blue),
+            child: const Text('SAVE'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      try {
+        final tenantId = FirebaseService.sessionTenantId;
+        final monthKey = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}';
+        
+        await FirebaseFirestore.instance
+            .collection('income-statement-openings')
+            .doc('$tenantId-$monthKey')
+            .set({
+          'tenantId': tenantId,
+          'monthKey': monthKey,
+          'year': selectedDate.year,
+          'month': selectedDate.month,
+          'openingBalance': result,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': FirebaseService.sessionUid,
+        });
+
+        setState(() => _manualOpeningBalance = result);
+        _loadData();  // Reload to show new balance
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✓ Opening balance saved'), backgroundColor: Colors.green),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
   }
 
   // ── Data ───────────────────────────────────────────────────────────────────
@@ -284,10 +391,10 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
       }
     }
 
-    // Opening balance: set to 0 for now. In production, fetch the previous
-    // month's closing balance.
-    income['balBF'] = 0.0;
+    // Opening balance: use manual value if set, otherwise 0
+    income['balBF'] = _manualOpeningBalance ?? 0.0;
 
+    debugPrint('💰 Opening balance (manual): ${income['balBF']}');
     debugPrint('💰 Income totals: principle=${income['principle']}, interest=${income['interest']}, savings=${income['savings']}, shares=${income['shares']}');
     debugPrint('💸 Expense categories: ${expenses.keys.join(", ")}');
 
@@ -305,6 +412,7 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
   // ── Actions ────────────────────────────────────────────────────────────────
   void _shiftMonth(int delta) {
     setState(() => selectedDate = DateTime(selectedDate.year, selectedDate.month + delta));
+    _loadManualOpening();
     _loadData();
   }
 
@@ -320,6 +428,7 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
       final next = DateTime(picked.year, picked.month);
       if (next != selectedDate) {
         setState(() => selectedDate = next);
+        _loadManualOpening();
         _loadData();
       }
     }
@@ -496,6 +605,17 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _Pal.navy,
                   side: const BorderSide(color: _Pal.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _setManualOpening,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: Text('Set Opening Balance', style: _ps(12.5, w: FontWeight.w600, c: _Pal.teal)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _Pal.teal,
+                  side: const BorderSide(color: _Pal.teal),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
