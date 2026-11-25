@@ -241,6 +241,7 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                             ),
                           ],
                           onCustomFilter: _handleCustomFilter,
+                          onExport: _exportFilteredSavings,
                         ),
                       ),
                     ),
@@ -316,6 +317,130 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _exportFilteredSavings(List<Map<String, dynamic>> data, String format) async {
+    if (format == 'csv') {
+      CsvExport.exportSavings(data);
+    } else if (format == 'pdf') {
+      await _exportSavingsPDF(data);
+    }
+  }
+
+  Future<void> _exportSavingsPDF(List<Map<String, dynamic>> data) async {
+    try {
+      final pdf = pw.Document();
+      final now = DateTime.now();
+      final dateStr = DateFormat('MMM d, yyyy - HH:mm').format(now);
+      
+      // Calculate totals
+      final totalBalance = data.fold<double>(0, (sum, m) => sum + (m['savingsBalance'] as double));
+      final totalMembers = data.length;
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (context) => [
+            // Header
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('MBADIFA SACCO',
+                        style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Savings Summary Report', style: const pw.TextStyle(fontSize: 14)),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text('Generated: $dateStr', style: const pw.TextStyle(fontSize: 10)),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Total Members: $totalMembers', style: const pw.TextStyle(fontSize: 10)),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            
+            // Summary Box
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.green50,
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Total Savings Balance:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('UGX ${_currencyFormat.format(totalBalance)}',
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+
+            // Table
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(2),
+                1: const pw.FlexColumnWidth(3),
+                2: const pw.FlexColumnWidth(2),
+              },
+              children: [
+                // Header row
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('Account No.', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('Member Name', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('Balance (UGX)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                // Data rows
+                ...data.map((row) => pw.TableRow(
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(row['accountNumber'] ?? '-'),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(row['memberName'] ?? '-'),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(_currencyFormat.format(row['savingsBalance'])),
+                    ),
+                  ],
+                )),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+      );
+    } catch (e) {
+      debugPrint('Error exporting PDF: $e');
+    }
   }
 
   BoxDecoration _cardDecoration() {
