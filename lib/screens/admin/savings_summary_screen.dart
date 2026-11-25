@@ -227,7 +227,6 @@ class _SavingsSummaryScreenState extends State<SavingsSummaryScreen> {
                               key: 'savingsBalance',
                               label: 'Balance Range',
                               options: const [
-                                FilterOption(value: 'all', label: 'All Balances'),
                                 FilterOption(value: 'zero', label: 'Zero Balance'),
                                 FilterOption(value: 'below_10k', label: 'Below 10K'),
                                 FilterOption(value: 'exactly_10k', label: 'Exactly 10K'),

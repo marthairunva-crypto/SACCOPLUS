@@ -953,7 +953,6 @@ class _MemberSharesListState extends State<_MemberSharesList> {
           key: 'shareValue',
           label: 'Share Range',
           options: const [
-            FilterOption(value: 'all', label: 'All Shares'),
             FilterOption(value: 'zero', label: 'Zero Shares (0)'),
             FilterOption(value: 'exactly_10k', label: 'Exactly 10K'),
             FilterOption(value: 'below_10k', label: 'Below 10K'),

@@ -117,8 +117,6 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
             if (filter.key == 'shareValue' && row.containsKey('shareValue')) {
               final value = (row['shareValue'] as num?)?.toDouble() ?? 0.0;
               switch (selectedValue) {
-                case 'all':
-                  return true;
                 case 'zero':
                   return value == 0;
                 case 'exactly_10k':
@@ -148,8 +146,6 @@ class _ProfessionalDataTableState extends State<ProfessionalDataTable> {
             if (filter.key == 'savingsBalance' && row.containsKey('savingsBalance')) {
               final value = (row['savingsBalance'] as num?)?.toDouble() ?? 0.0;
               switch (selectedValue) {
-                case 'all':
-                  return true;
                 case 'zero':
                   return value == 0;
                 case 'below_10k':
