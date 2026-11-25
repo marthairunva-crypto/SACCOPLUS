@@ -119,7 +119,7 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
   bool _hideZero = false;
   String? _error;
   _Statement? _data;
-  double? _manualOpeningBalance;  // Manual balance b/f set by admin
+  double? _manualOpeningBalance;  // Opening balance from Monthly Report
 
   @override
   void initState() {
@@ -128,25 +128,31 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
     _loadData();
   }
 
-  // ── Load Manual Opening Balance ────────────────────────────────────────────
+  // ── Load Manual Opening Balance from Monthly Report ───────────────────────
   Future<void> _loadManualOpening() async {
     try {
       final tenantId = FirebaseService.sessionTenantId;
       final monthKey = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}';
       
+      // Use the same collection as Monthly Report
       final doc = await FirebaseFirestore.instance
-          .collection('income-statement-openings')
+          .collection('account_snapshots')
           .doc('$tenantId-$monthKey')
           .get();
       
       if (doc.exists && mounted) {
+        final hasManual = doc.data()?['hasManualOpening'] == true;
         setState(() {
-          _manualOpeningBalance = ((doc.data()?['openingBalance'] ?? 0) as num).toDouble();
+          _manualOpeningBalance = hasManual 
+              ? ((doc.data()?['opening'] ?? 0) as num).toDouble()
+              : null;
         });
-        debugPrint('📊 Loaded manual opening balance for $monthKey: $_manualOpeningBalance');
+        debugPrint('📊 Loaded opening balance from Monthly Report for $monthKey: $_manualOpeningBalance');
+      } else {
+        setState(() => _manualOpeningBalance = null);
       }
     } catch (e) {
-      debugPrint('Error loading manual opening: $e');
+      debugPrint('Error loading opening balance: $e');
     }
   }
 
@@ -605,17 +611,6 @@ class _IncomeStatementSACCOState extends State<IncomeStatementSACCO> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _Pal.navy,
                   side: const BorderSide(color: _Pal.border),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _setManualOpening,
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: Text('Set Opening Balance', style: _ps(12.5, w: FontWeight.w600, c: _Pal.teal)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _Pal.teal,
-                  side: const BorderSide(color: _Pal.teal),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
